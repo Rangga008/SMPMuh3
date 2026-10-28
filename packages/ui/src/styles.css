@@ -1,0 +1,79 @@
+/* ==========================================================================
+   @smpmuh3/ui — design tokens
+   Tailwind v4 CSS-first theme. Import AFTER `tailwindcss` in app globals:
+
+     @import "tailwindcss";
+     @import "@smpmuh3/ui/styles.css";
+
+   Palette: Muhammadiyah-inspired green + warm neutrals + gold accent.
+   These are design tokens, not verified school brand guidelines — adjust
+   when the school's official brand assets are confirmed.
+   ========================================================================== */
+
+@theme {
+  /* Primary — green */
+  --color-primary-50: #f0faf3;
+  --color-primary-100: #dcf3e4;
+  --color-primary-200: #bce6cc;
+  --color-primary-300: #8dd3a9;
+  --color-primary-400: #56b87f;
+  --color-primary-500: #339c60;
+  --color-primary-600: #227e4c;
+  --color-primary-700: #1d653f;
+  --color-primary-800: #1a5134;
+  --color-primary-900: #16432c;
+  --color-primary-950: #0a2518;
+
+  /* Accent — warm gold */
+  --color-accent-50: #fdf9ec;
+  --color-accent-100: #f9f0cb;
+  --color-accent-200: #f3e093;
+  --color-accent-300: #eccb5b;
+  --color-accent-400: #e6b835;
+  --color-accent-500: #d9a021;
+  --color-accent-600: #bd7e18;
+  --color-accent-700: #975b18;
+  --color-accent-800: #7d491a;
+  --color-accent-900: #6b3c1b;
+  --color-accent-950: #3e1f0a;
+
+  /* Warm neutrals (on top of tailwind's stone) used as "sand" */
+  --color-sand-50: #fafaf7;
+  --color-sand-100: #f4f3ec;
+  --color-sand-200: #e7e5d6;
+  --color-sand-300: #d4d1ba;
+  --color-sand-400: #b8b395;
+  --color-sand-500: #a1987a;
+  --color-sand-600: #857c63;
+  --color-sand-700: #6b6350;
+  --color-sand-800: #595244;
+  --color-sand-900: #4a453b;
+  --color-sand-950: #28251e;
+
+  /* Typography */
+  --font-sans: var(--font-plus-jakarta), ui-sans-serif, system-ui, sans-serif;
+
+  /* Rhythm */
+  --breakpoint-wide: 90rem;
+
+  /* Soft shadows */
+  --shadow-soft: 0 4px 24px -8px rgb(10 37 24 / 0.10);
+  --shadow-card: 0 1px 3px rgb(10 37 24 / 0.07), 0 12px 32px -16px rgb(10 37 24 / 0.16);
+  --shadow-lift: 0 2px 6px rgb(10 37 24 / 0.08), 0 20px 44px -20px rgb(10 37 24 / 0.22);
+}
+
+/* Subtle Islamic geometric star pattern — decorative background ornament. */
+@utility pattern-islami {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='88' height='88' viewBox='0 0 88 88'%3E%3Cpath d='M44 22l6.3 11.2 12.7-2.6-2.6 12.7L71 44l-10.6 6.3 2.6 12.7-12.7-2.6L44 71l-6.3-10.6-12.7 2.6 2.6-12.7L17 44l10.6-6.3-2.6-12.7 12.7 2.6z' fill='none' stroke='%231a5134' stroke-opacity='0.045' stroke-width='1'/%3E%3C/svg%3E");
+}
+
+/* Same ornament on dark backgrounds. */
+@utility pattern-islami-light {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='88' height='88' viewBox='0 0 88 88'%3E%3Cpath d='M44 22l6.3 11.2 12.7-2.6-2.6 12.7L71 44l-10.6 6.3 2.6 12.7-12.7-2.6L44 71l-6.3-10.6-12.7 2.6 2.6-12.7L17 44l10.6-6.3-2.6-12.7 12.7 2.6z' fill='none' stroke='%23ffffff' stroke-opacity='0.07' stroke-width='1'/%3E%3C/svg%3E");
+}
+
+/* Shared base rules kept intentionally light — each app owns its base styles. */
+@utility focus-ring {
+  outline: 2px solid var(--color-primary-600);
+  outline-offset: 2px;
+}

@@ -1,0 +1,594 @@
+// School platform — core schema (Phase 01)
+// Conventions: docs/development/conventions.md (snake_case tables/columns,
+// PascalCase models, uuid ids, created_at/updated_at everywhere).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Identity & access ----------
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DISABLED
+}
+
+model User {
+  id           String     @id @default(uuid()) @db.Uuid
+  email        String     @unique
+  passwordHash String     @map("password_hash")
+  name         String
+  status       UserStatus @default(ACTIVE)
+  lastLoginAt  DateTime?  @map("last_login_at")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  roles         UserRole[]
+  refreshTokens RefreshToken[]
+  documents     Document[]     @relation("OwnedDocuments")
+  uploads       Document[]     @relation("UploadedDocuments")
+  notifications Notification[]
+  auditLogs     AuditLog[]
+  candidates    Candidate[]
+  registrations Registration[]
+  passwordResetTokens PasswordResetToken[]
+  students      Student[]      @relation("StudentParent")
+  employee      Employee?
+
+  @@map("users")
+}
+
+model Role {
+  id          String   @id @default(uuid()) @db.Uuid
+  key         String   @unique
+  name        String
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  users       UserRole[]
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(uuid()) @db.Uuid
+  key         String   @unique
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  roles RolePermission[]
+
+  @@map("permissions")
+}
+
+model UserRole {
+  userId     String   @map("user_id") @db.Uuid
+  roleId     String   @map("role_id") @db.Uuid
+  assignedAt DateTime @default(now()) @map("assigned_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  roleId       String @map("role_id") @db.Uuid
+  permissionId String @map("permission_id") @db.Uuid
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  userAgent String?   @map("user_agent")
+  ip        String?
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+// ---------- School core ----------
+
+model School {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  code      String?  @unique
+  address   String?
+  phone     String?
+  email     String?
+  logoUrl   String?  @map("logo_url")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("schools")
+}
+
+model AcademicYear {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique // e.g. "2026/2027"
+  startDate DateTime @map("start_date") @db.Date
+  endDate   DateTime @map("end_date") @db.Date
+  isActive  Boolean  @default(false) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  registrations Registration[]
+  classes       Class[]
+  enrollments   Enrollment[]
+  assignments   TeachingAssignment[]
+  assessments   Assessment[]
+
+  @@map("academic_years")
+}
+
+// ---------- SPMB (admission) ----------
+
+enum Gender {
+  MALE
+  FEMALE
+}
+
+enum RegistrationStatus {
+  DRAFT
+  SUBMITTED
+  DOCUMENT_REVIEW
+  NEEDS_REVISION
+  VERIFIED
+  SELECTION
+  ACCEPTED
+  REJECTED
+  RE_REGISTRATION
+  COMPLETED
+}
+
+model Candidate {
+  id             String    @id @default(uuid()) @db.Uuid
+  parentId       String    @map("parent_id") @db.Uuid
+  name           String
+  gender         Gender?
+  birthPlace     String?   @map("birth_place")
+  birthDate      DateTime? @map("birth_date") @db.Date
+  nisn           String?
+  previousSchool String?   @map("previous_school")
+  address        String?
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  parent        User          @relation(fields: [parentId], references: [id], onDelete: Cascade)
+  registrations Registration[]
+  student       Student?
+
+  @@index([parentId])
+  @@map("candidates")
+}
+
+model Registration {
+  id             String             @id @default(uuid()) @db.Uuid
+  number         String             @unique // e.g. "SPMB-2026-000123"
+  candidateId    String             @map("candidate_id") @db.Uuid
+  parentId       String             @map("parent_id") @db.Uuid
+  academicYearId String             @map("academic_year_id") @db.Uuid
+  pathway        String
+  status         RegistrationStatus @default(DRAFT)
+  submittedAt    DateTime?          @map("submitted_at")
+  revisionNote   String?            @map("revision_note")
+  createdAt      DateTime           @default(now()) @map("created_at")
+  updatedAt      DateTime           @updatedAt @map("updated_at")
+
+  candidate    Candidate    @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  parent       User         @relation(fields: [parentId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
+  documents    Document[]
+  invoices     Invoice[]
+
+  // One registration per candidate per academic year.
+  @@unique([candidateId, academicYearId])
+  @@index([parentId, status])
+  @@map("registrations")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+// ---------- Payments (SPMB fees) ----------
+
+enum InvoiceStatus {
+  OPEN
+  PAID
+  EXPIRED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  SETTLED
+  FAILED
+  EXPIRED
+  REFUNDED
+}
+
+model Invoice {
+  id             String        @id @default(uuid()) @db.Uuid
+  number         String        @unique // e.g. "INV-2026-000123"
+  registrationId String        @map("registration_id") @db.Uuid
+  title          String // e.g. "Biaya Pendaftaran SPMB 2026/2027"
+  amount         Int // minor units (IDR sen→rupiah as integer)
+  status         InvoiceStatus @default(OPEN)
+  dueAt          DateTime?     @map("due_at")
+  issuedAt       DateTime      @default(now()) @map("issued_at")
+  paidAt         DateTime?     @map("paid_at")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  registration Registration @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  payments     Payment[]
+
+  @@index([registrationId])
+  @@map("invoices")
+}
+
+model Payment {
+  id          String        @id @default(uuid()) @db.Uuid
+  invoiceId   String        @map("invoice_id") @db.Uuid
+  provider    String // e.g. "mock", "midtrans" — adapter key
+  providerRef String?       @unique @map("provider_ref") // idempotency key
+  method      String? // e.g. "bank_transfer", "qris"
+  amount      Int
+  status      PaymentStatus @default(PENDING)
+  rawPayload  Json?         @map("raw_payload")
+  paidAt      DateTime?     @map("paid_at")
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@map("payments")
+}
+
+// ---------- Kesiswaan & Akademik ----------
+
+enum StudentStatus {
+  ACTIVE
+  GRADUATED
+  TRANSFERRED
+  DROPPED
+}
+
+enum EmployeeType {
+  TEACHER
+  STAFF
+}
+
+enum AttendanceStatus {
+  PRESENT
+  SICK
+  PERMITTED
+  ABSENT
+}
+
+enum AssessmentType {
+  FORMATIF
+  SUMATIF
+  PTS
+  PAS
+}
+
+model Student {
+  id           String        @id @default(uuid()) @db.Uuid
+  nis          String?       @unique
+  nisn         String?       @unique
+  name         String
+  gender       Gender?
+  birthPlace   String?       @map("birth_place")
+  birthDate    DateTime?     @map("birth_date") @db.Date
+  address      String?
+  status       StudentStatus @default(ACTIVE)
+  candidateId  String?       @unique @map("candidate_id") @db.Uuid // link ke pendaftaran SPMB
+  parentId     String?       @map("parent_id") @db.Uuid
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+  deletedAt    DateTime?     @map("deleted_at") // soft delete / arsip
+
+  candidate    Candidate?    @relation(fields: [candidateId], references: [id])
+  parent       User?         @relation("StudentParent", fields: [parentId], references: [id], onDelete: SetNull)
+  enrollments  Enrollment[]
+  attendances  AttendanceRecord[]
+  achievements Achievement[]
+  violations   Violation[]
+  grades       Grade[]
+  documents    Document[]
+
+  @@index([status, name])
+  @@map("students")
+}
+
+model Employee {
+  id        String       @id @default(uuid()) @db.Uuid
+  nip       String?      @unique
+  name      String
+  type      EmployeeType @default(TEACHER)
+  email     String?
+  phone     String?
+  isActive  Boolean      @default(true) @map("is_active")
+  userId    String?      @unique @map("user_id") @db.Uuid // optional login link
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  user        User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+  homeroomFor Class[]              @relation("Homeroom")
+  assignments TeachingAssignment[]
+
+  @@index([type, name])
+  @@map("employees")
+}
+
+model Curriculum {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique // e.g. "Kurikulum Merdeka"
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  subjects Subject[]
+
+  @@map("curricula")
+}
+
+model Subject {
+  id           String  @id @default(uuid()) @db.Uuid
+  code         String  @unique // e.g. "MTK"
+  name         String
+  curriculumId String? @map("curriculum_id") @db.Uuid
+  gradeLevel   Int?    @map("grade_level") // 7/8/9
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  curriculum  Curriculum?          @relation(fields: [curriculumId], references: [id], onDelete: SetNull)
+  assignments TeachingAssignment[]
+  assessments Assessment[]
+
+  @@map("subjects")
+}
+
+model Class {
+  id             String  @id @default(uuid()) @db.Uuid
+  name           String // e.g. "7A"
+  gradeLevel     Int     @map("grade_level")
+  academicYearId String  @map("academic_year_id") @db.Uuid
+  homeroomId     String? @map("homeroom_id") @db.Uuid
+  capacity       Int?    @default(32)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  academicYear AcademicYear        @relation(fields: [academicYearId], references: [id])
+  homeroom     Employee?           @relation("Homeroom", fields: [homeroomId], references: [id], onDelete: SetNull)
+  enrollments  Enrollment[]
+  assignments  TeachingAssignment[]
+  attendances  AttendanceRecord[]
+  assessments  Assessment[]
+
+  @@unique([name, academicYearId])
+  @@index([academicYearId])
+  @@map("classes")
+}
+
+model Enrollment {
+  id             String  @id @default(uuid()) @db.Uuid
+  studentId      String  @map("student_id") @db.Uuid
+  classId        String  @map("class_id") @db.Uuid
+  academicYearId String  @map("academic_year_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  student      Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  class        Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
+
+  @@unique([studentId, academicYearId])
+  @@map("enrollments")
+}
+
+model TeachingAssignment {
+  id             String  @id @default(uuid()) @db.Uuid
+  employeeId     String  @map("employee_id") @db.Uuid
+  subjectId      String  @map("subject_id") @db.Uuid
+  classId        String  @map("class_id") @db.Uuid
+  academicYearId String  @map("academic_year_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  employee     Employee       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  subject      Subject        @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  class        Class          @relation(fields: [classId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear   @relation(fields: [academicYearId], references: [id])
+  schedules    ScheduleEntry[]
+
+  @@unique([employeeId, subjectId, classId, academicYearId])
+  @@map("teaching_assignments")
+}
+
+model ScheduleEntry {
+  id           String  @id @default(uuid()) @db.Uuid
+  assignmentId String  @map("assignment_id") @db.Uuid
+  day          Int     @map("day_of_week") // 1=Senin … 6=Sabtu
+  startMinute  Int     @map("start_minute") // menit sejak 00:00
+  endMinute    Int     @map("end_minute")
+  room         String?
+
+  assignment TeachingAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+
+  @@index([assignmentId, day])
+  @@map("schedule_entries")
+}
+
+model AttendanceRecord {
+  id        String           @id @default(uuid()) @db.Uuid
+  studentId String           @map("student_id") @db.Uuid
+  classId   String           @map("class_id") @db.Uuid
+  date      DateTime         @db.Date
+  status    AttendanceStatus
+  note      String?
+  takenBy   String?          @map("taken_by") @db.Uuid
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  class   Class   @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, date])
+  @@index([classId, date])
+  @@map("attendance_records")
+}
+
+model Achievement {
+  id          String   @id @default(uuid()) @db.Uuid
+  studentId   String   @map("student_id") @db.Uuid
+  title       String
+  level       String? // e.g. "Kota", "Provinsi"
+  year        Int?
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@map("achievements")
+}
+
+model Violation {
+  id          String   @id @default(uuid()) @db.Uuid
+  studentId   String   @map("student_id") @db.Uuid
+  type        String
+  description String?
+  points      Int      @default(0)
+  date        DateTime @db.Date
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@map("violations")
+}
+
+model Assessment {
+  id             String         @id @default(uuid()) @db.Uuid
+  subjectId      String         @map("subject_id") @db.Uuid
+  classId        String?        @map("class_id") @db.Uuid
+  academicYearId String         @map("academic_year_id") @db.Uuid
+  name           String // e.g. "Sumatif Bab 1"
+  type           AssessmentType
+  maxScore       Int            @default(100) @map("max_score")
+  createdAt      DateTime       @default(now()) @map("created_at")
+
+  subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  class        Class?       @relation(fields: [classId], references: [id], onDelete: SetNull)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
+  grades       Grade[]
+
+  @@map("assessments")
+}
+
+model Grade {
+  id           String  @id @default(uuid()) @db.Uuid
+  assessmentId String  @map("assessment_id") @db.Uuid
+  studentId    String  @map("student_id") @db.Uuid
+  score        Int
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  student    Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([assessmentId, studentId])
+  @@map("grades")
+}
+
+// ---------- Files, notifications, audit ----------
+
+model Document {
+  id         String   @id @default(uuid()) @db.Uuid
+  ownerId    String?  @map("owner_id") @db.Uuid
+  type       String // e.g. "registration.form", "payment.proof" — values defined per module
+  storageKey String   @map("storage_key") // S3 object key
+  fileName   String   @map("file_name")
+  mimeType   String   @map("mime_type")
+  sizeBytes  Int      @map("size_bytes")
+  uploadedBy String?  @map("uploaded_by") @db.Uuid
+  registrationId String? @map("registration_id") @db.Uuid
+  studentId    String?  @map("student_id") @db.Uuid
+  verifiedBy String?  @map("verified_by") @db.Uuid
+  verifiedAt DateTime? @map("verified_at")
+  verificationNote String? @map("verification_note")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  owner    User?  @relation("OwnedDocuments", fields: [ownerId], references: [id], onDelete: SetNull)
+  uploader User?  @relation("UploadedDocuments", fields: [uploadedBy], references: [id], onDelete: SetNull)
+  registration Registration? @relation(fields: [registrationId], references: [id], onDelete: SetNull)
+  student      Student?      @relation(fields: [studentId], references: [id], onDelete: SetNull)
+
+  @@index([ownerId])
+  @@index([registrationId])
+  @@index([studentId])
+  @@map("documents")
+}
+
+model Notification {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  channel   String    @default("in_app")
+  title     String
+  body      String
+  data      Json?
+  readAt    DateTime? @map("read_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@map("notifications")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  actorId   String?  @map("actor_id") @db.Uuid
+  action    String // e.g. "auth.login", "academic-year.create"
+  entity    String
+  entityId  String?  @map("entity_id")
+  metadata  Json?
+  ip        String?
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entity, entityId])
+  @@index([actorId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

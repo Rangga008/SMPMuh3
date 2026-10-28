@@ -1,0 +1,138 @@
+name: smpmuh3-infra
+
+# Development infrastructure for the school platform.
+# All credentials come from ../.env (see ../.env.example).
+# This file is for LOCAL DEVELOPMENT only — not a production manifest.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: smpmuh3-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-smpmuh3}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-smpmuh3_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-smpmuh3}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-smpmuh3} -d ${POSTGRES_DB:-smpmuh3}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: smpmuh3-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: smpmuh3-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-smpmuh3}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-smpmuh3_dev}
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  s3:
+    # MinIO no longer publishes images to Docker Hub; S3Mock is the local
+    # S3-compatible stand-in for development. Production uses a real S3 service.
+    image: adobe/s3mock:5.2.3
+    container_name: smpmuh3-s3
+    restart: unless-stopped
+    environment:
+      initialBuckets: ${S3_BUCKET:-smpmuh3-dev}
+      root: /data
+    ports:
+      - "9000:9090"
+    volumes:
+      - s3-data:/data
+
+  # ---------- Applications ----------
+  # Build contexts point at the repo root (pnpm workspace).
+
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    container_name: smpmuh3-api
+    restart: unless-stopped
+    env_file: ../.env
+    environment:
+      NODE_ENV: production
+      # In-container hostnames override the localhost values in .env
+      DATABASE_URL: postgres://${POSTGRES_USER:-smpmuh3}:${POSTGRES_PASSWORD:-smpmuh3_dev}@postgres:5432/${POSTGRES_DB:-smpmuh3}
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-smpmuh3}:${RABBITMQ_PASSWORD:-smpmuh3_dev}@rabbitmq:5672
+      S3_ENDPOINT: http://s3:9090
+      CORS_ORIGINS: http://localhost:3001,http://localhost:3002
+    ports:
+      - "${API_PORT:-4000}:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      s3:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4000/api/v1/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  spmb:
+    build:
+      context: ..
+      dockerfile: apps/spmb/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:4000/api/v1
+    container_name: smpmuh3-spmb
+    restart: unless-stopped
+    ports:
+      - "${SPMB_PORT:-3001}:3001"
+    depends_on:
+      api:
+        condition: service_started
+
+  operational:
+    build:
+      context: ..
+      dockerfile: apps/operational/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:4000/api/v1
+    container_name: smpmuh3-operational
+    restart: unless-stopped
+    ports:
+      - "${OPERATIONAL_PORT:-3002}:3002"
+    depends_on:
+      api:
+        condition: service_started
+
+volumes:
+  postgres-data:
+  redis-data:
+  rabbitmq-data:
+  s3-data:

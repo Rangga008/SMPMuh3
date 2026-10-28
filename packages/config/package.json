@@ -1,0 +1,14 @@
+{
+  "name": "@smpmuh3/config",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared tooling configuration (eslint preset, tsconfig presets)",
+  "exports": {
+    "./eslint": "./eslint/base.js"
+  },
+  "files": [
+    "eslint",
+    "tsconfig"
+  ]
+}

@@ -1,0 +1,27 @@
+@import 'tailwindcss';
+@import '@smpmuh3/ui/styles.css';
+
+@layer base {
+  :root {
+    --font-plus-jakarta: 'Plus Jakarta Sans Variable', 'Plus Jakarta Sans',
+      ui-sans-serif, system-ui, sans-serif;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-sand-50 font-sans text-sand-900 antialiased;
+  }
+
+  ::selection {
+    @apply bg-primary-200 text-primary-950;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+  }
+}
