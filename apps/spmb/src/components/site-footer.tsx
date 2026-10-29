@@ -50,7 +50,7 @@ export function SiteFooter() {
       <div className="border-t border-white/10">
         <Container className="flex flex-col gap-1 py-5 text-xs text-primary-300 sm:flex-row sm:items-center sm:justify-between">
           <p>© {new Date().getFullYear()} {school.name}</p>
-          <p>SPMB — Penerimaan Peserta Didik Baru</p>
+          <p>SPMB — Sistem Penerimaan Murid Baru</p>
         </Container>
       </div>
     </footer>

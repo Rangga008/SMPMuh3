@@ -59,9 +59,9 @@ export function Hero() {
           {status.label} · Tahun Ajaran {academicYear}
         </Badge>
         <h1 className="max-w-3xl text-4xl font-extrabold tracking-tight text-balance text-sand-950 sm:text-5xl lg:text-6xl">
-          Penerimaan{' '}
+          Sistem Penerimaan{' '}
           <span className="relative whitespace-nowrap text-primary-800">
-            Peserta Didik
+            Murid Baru
             <svg
               aria-hidden="true"
               viewBox="0 0 220 12"

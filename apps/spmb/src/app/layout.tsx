@@ -12,7 +12,7 @@ export const metadata: Metadata = {
     default: `SPMB ${spmbConfig.school.name}`,
     template: `%s — SPMB ${spmbConfig.school.shortName}`,
   },
-  description: `Penerimaan Peserta Didik Baru ${spmbConfig.school.name} ` +
+  description: `Sistem Penerimaan Murid Baru ${spmbConfig.school.name} ` +
     `tahun ajaran ${spmbConfig.academicYear}. Informasi jalur pendaftaran, ` +
     'syarat, jadwal, dan cara mendaftar.',
   openGraph: {

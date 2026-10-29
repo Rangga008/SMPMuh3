@@ -49,12 +49,12 @@ export const spmbConfig: SpmbConfig = {
     description:
       'Sekolah menengah pertama di Kota Bandung dalam naungan Muhammadiyah.',
   },
-  // TODO: confirm with school — aligned with seeded AcademicYear for now.
-  academicYear: '2026/2027',
+  // Confirmed by school: SPMB year 2027/2028, Gelombang 1 (1 Nov – Des 2026).
+  academicYear: '2027/2028',
   registration: {
     status: 'open', // 'open' | 'soon' | 'closed'
-    periodLabel: 'Gelombang 1', // TODO: confirm wave naming/schedule
-    note: 'Pendaftaran dibuka. Jadwal dan kuota dapat berubah — pantau pengumuman resmi.',
+    periodLabel: 'Gelombang 1 · 1 Nov – Des 2026',
+    note: 'Pendaftaran Gelombang 1 dibuka 1 November – Desember 2026. Kuota dapat berubah — pantau pengumuman resmi.',
   },
   cta: {
     register: { href: '/daftar', label: 'Daftar Sekarang' },
@@ -89,9 +89,9 @@ export const spmbConfig: SpmbConfig = {
   // TODO: replace periods with the official schedule once published.
   timeline: [
     {
-      label: 'Pendaftaran',
+      label: 'Pendaftaran Gelombang 1',
       detail: 'Mengisi formulir pendaftaran dan melengkapi berkas.',
-      period: 'Jadwal menyusul',
+      period: '1 November – Desember 2026',
     },
     {
       label: 'Verifikasi Berkas',
@@ -123,7 +123,7 @@ export const spmbConfig: SpmbConfig = {
     {
       question: 'Kapan pendaftaran dibuka?',
       answer:
-        'Jadwal pendaftaran diumumkan melalui kanal resmi sekolah. Halaman ini akan diperbarui saat jadwal resmi tersedia.',
+        'Pendaftaran Gelombang 1 dibuka 1 November hingga Desember 2026. Pantau kanal resmi sekolah untuk gelombang berikutnya.',
     },
     {
       question: 'Berapa biaya pendaftarannya?',
