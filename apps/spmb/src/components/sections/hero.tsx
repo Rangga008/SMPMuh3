@@ -75,8 +75,7 @@ export function Hero() {
                 fill="none"
               />
             </svg>
-          </span>{' '}
-          Baru
+          </span>
         </h1>
         <p className="max-w-xl text-lg font-semibold text-primary-800">
           {school.name}
