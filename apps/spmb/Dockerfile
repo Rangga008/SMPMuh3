@@ -1,3 +1,4 @@
+# Rebuild trigger: deploy latest master to Railway
 # apps/spmb — Next.js SPMB site. Build context: repository root.
 FROM node:22-alpine AS deps
 WORKDIR /app
