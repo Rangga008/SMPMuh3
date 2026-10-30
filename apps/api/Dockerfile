@@ -8,7 +8,7 @@ COPY packages/types/package.json ./packages/types/package.json
 COPY packages/ui/package.json ./packages/ui/package.json
 COPY packages/config/package.json ./packages/config/package.json
 COPY packages/auth/package.json ./packages/auth/package.json
-RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
+RUN --mount=type=cache,id=s/9b9f3406-4abc-4e18-bc1a-d9b6a37e76af-/root/.local/share/pnpm/store,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile --filter @smpmuh3/api...
 
 FROM deps AS build
