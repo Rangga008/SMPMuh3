@@ -57,7 +57,7 @@ export function Modal({
         type="button"
         aria-label="Tutup dialog"
         onClick={onClose}
-        className="absolute inset-0 bg-sand-950/50 backdrop-blur-sm transition-opacity"
+        className="absolute inset-0 bg-black/55 backdrop-blur-sm transition-opacity"
       />
       <div
         className={cn(

@@ -18,6 +18,23 @@ export interface NavItem {
 export const NAV: NavItem[] = [
   { key: 'dashboard', label: 'Dashboard', icon: '⌂', href: '/', enabled: true },
   {
+    key: 'kurikulum',
+    label: 'Kurikulum',
+    icon: '📚',
+    permission: PERMISSIONS.ACADEMIC_READ,
+    enabled: true,
+    children: [
+      {
+        key: 'mapel-kelas',
+        label: 'Mapel & Kelas',
+        icon: '•',
+        href: '/kurikulum',
+        permission: PERMISSIONS.ACADEMIC_READ,
+        enabled: true,
+      },
+    ],
+  },
+  {
     key: 'kesiswaan',
     label: 'Kesiswaan',
     icon: '🎓',
@@ -30,23 +47,6 @@ export const NAV: NavItem[] = [
         icon: '•',
         href: '/kesiswaan',
         permission: PERMISSIONS.STUDENT_READ,
-        enabled: true,
-      },
-    ],
-  },
-  {
-    key: 'akademik',
-    label: 'Akademik',
-    icon: '📚',
-    permission: PERMISSIONS.ACADEMIC_READ,
-    enabled: true,
-    children: [
-      {
-        key: 'mapel-kelas',
-        label: 'Mapel & Kelas',
-        icon: '•',
-        href: '/akademik',
-        permission: PERMISSIONS.ACADEMIC_READ,
         enabled: true,
       },
     ],
@@ -109,6 +109,7 @@ export const NAV: NavItem[] = [
     ],
     enabled: true,
   },
+  { key: 'sarpras', label: 'Sarpras', icon: '🏫', enabled: false },
   { key: 'cbt', label: 'CBT', icon: '🖥', enabled: false },
   {
     key: 'keuangan',

@@ -39,7 +39,7 @@ export default function AcademicPage() {
         setYear(active);
         return refresh(active?.id);
       })
-      .catch(() => setError('Gagal memuat data akademik.'));
+      .catch(() => setError('Gagal memuat data kurikulum.'));
   }, [refresh]);
 
   async function run(fn: () => Promise<unknown>, ok: string, form?: HTMLFormElement) {
@@ -61,7 +61,7 @@ export default function AcademicPage() {
   return (
     <Shell>
       <PageTitle
-        title="Akademik"
+        title="Kurikulum"
         subtitle={`Mata pelajaran & rombel${year ? ` — TA ${year.name}` : ''}`}
       />
 

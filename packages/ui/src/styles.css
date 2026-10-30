@@ -11,44 +11,45 @@
    ========================================================================== */
 
 @theme {
-  /* Primary — green */
-  --color-primary-50: #f0faf3;
-  --color-primary-100: #dcf3e4;
-  --color-primary-200: #bce6cc;
-  --color-primary-300: #8dd3a9;
-  --color-primary-400: #56b87f;
-  --color-primary-500: #339c60;
-  --color-primary-600: #227e4c;
-  --color-primary-700: #1d653f;
-  --color-primary-800: #1a5134;
-  --color-primary-900: #16432c;
-  --color-primary-950: #0a2518;
+  /* Primary — navy biru logo SMPM3 */
+  --color-primary-50: #eef7fd;
+  --color-primary-100: #d9edfb;
+  --color-primary-200: #b0dbf6;
+  --color-primary-300: #7cc3ee;
+  --color-primary-400: #45a4e4;
+  --color-primary-500: #2389cf;
+  --color-primary-600: #1a6eb0;
+  --color-primary-700: #17598f;
+  --color-primary-800: #164a76;
+  --color-primary-900: #143c61;
+  --color-primary-950: #0d2742;
 
-  /* Accent — warm gold */
-  --color-accent-50: #fdf9ec;
-  --color-accent-100: #f9f0cb;
-  --color-accent-200: #f3e093;
-  --color-accent-300: #eccb5b;
-  --color-accent-400: #e6b835;
-  --color-accent-500: #d9a021;
-  --color-accent-600: #bd7e18;
-  --color-accent-700: #975b18;
-  --color-accent-800: #7d491a;
-  --color-accent-900: #6b3c1b;
-  --color-accent-950: #3e1f0a;
+  /* Accent — cyan cerah logo */
+  --color-accent-50: #edfaff;
+  --color-accent-100: #d5f2fe;
+  --color-accent-200: #b0e9fd;
+  --color-accent-300: #78d9fb;
+  --color-accent-400: #3cc4f3;
+  --color-accent-500: #14a9da;
+  --color-accent-600: #0788b8;
+  --color-accent-700: #096e96;
+  --color-accent-800: #0e5c7b;
+  --color-accent-900: #114c66;
+  --color-accent-950: #033043;
 
-  /* Warm neutrals (on top of tailwind's stone) used as "sand" */
-  --color-sand-50: #fafaf7;
-  --color-sand-100: #f4f3ec;
-  --color-sand-200: #e7e5d6;
-  --color-sand-300: #d4d1ba;
-  --color-sand-400: #b8b395;
-  --color-sand-500: #a1987a;
-  --color-sand-600: #857c63;
-  --color-sand-700: #6b6350;
-  --color-sand-800: #595244;
-  --color-sand-900: #4a453b;
-  --color-sand-950: #28251e;
+  /* Cool neutrals (slate) — nama token tetap "sand" supaya semua
+   * class yang ada tidak perlu diubah. */
+  --color-sand-50: #f8fafc;
+  --color-sand-100: #f0f4f8;
+  --color-sand-200: #e2e8f0;
+  --color-sand-300: #cbd5e1;
+  --color-sand-400: #94a3b8;
+  --color-sand-500: #64748b;
+  --color-sand-600: #475569;
+  --color-sand-700: #334155;
+  --color-sand-800: #1e293b;
+  --color-sand-900: #0f172a;
+  --color-sand-950: #020617;
 
   /* Typography */
   --font-sans: var(--font-plus-jakarta), ui-sans-serif, system-ui, sans-serif;
@@ -56,15 +57,71 @@
   /* Rhythm */
   --breakpoint-wide: 90rem;
 
-  /* Soft shadows */
-  --shadow-soft: 0 4px 24px -8px rgb(10 37 24 / 0.10);
-  --shadow-card: 0 1px 3px rgb(10 37 24 / 0.07), 0 12px 32px -16px rgb(10 37 24 / 0.16);
-  --shadow-lift: 0 2px 6px rgb(10 37 24 / 0.08), 0 20px 44px -20px rgb(10 37 24 / 0.22);
+  /* Soft shadows — navy */
+  --shadow-soft: 0 4px 24px -8px rgb(13 39 66 / 0.10);
+  --shadow-card: 0 1px 3px rgb(13 39 66 / 0.07), 0 12px 32px -16px rgb(13 39 66 / 0.16);
+  --shadow-lift: 0 2px 6px rgb(13 39 66 / 0.08), 0 20px 44px -20px rgb(13 39 66 / 0.22);
+}
+
+/* ==========================================================================
+   MODE GELAP — diaktifkan dengan class `.dark` pada <html>.
+   Token sand di-invert (50↔950) sehingga semua class latar/teks/border
+   beradaptasi otomatis; primary rendah jadi permukaan biru-gelap dan
+   primary 500-800 dicerahkan agar tombol/teks tetap kontras.
+   ========================================================================== */
+.dark {
+  color-scheme: dark;
+
+  --color-sand-50: #0b1526;
+  --color-sand-100: #101f36;
+  --color-sand-200: #1a2f4d;
+  --color-sand-300: #2a4060;
+  --color-sand-400: #48607f;
+  --color-sand-500: #6b83a3;
+  --color-sand-600: #8ba0bd;
+  --color-sand-700: #a9bcd4;
+  --color-sand-800: #c6d5e8;
+  --color-sand-900: #dde8f5;
+  --color-sand-950: #f0f6fc;
+
+  /* Permukaan biru-gelap untuk shade rendah */
+  --color-primary-50: #0d1d33;
+  --color-primary-100: #12294a;
+  --color-primary-200: #1a3a63;
+  --color-primary-300: #24548a;
+  /* Biru lebih cerah agar tombol/teks kontras di atas gelap */
+  --color-primary-400: #4fb2f0;
+  --color-primary-500: #3a9fe6;
+  --color-primary-600: #2f8fd4;
+  --color-primary-700: #2a7fc2;
+  --color-primary-800: #3d92d1;
+
+  --color-accent-400: #35b6ea;
+  --color-accent-500: #1aa6dc;
+
+  --color-white: #ffffff;
+
+  --shadow-soft: 0 4px 24px -8px rgb(0 0 0 / 0.45);
+  --shadow-card: 0 1px 3px rgb(0 0 0 / 0.4), 0 12px 32px -16px rgb(0 0 0 / 0.55);
+  --shadow-lift: 0 2px 6px rgb(0 0 0 / 0.4), 0 20px 44px -20px rgb(0 0 0 / 0.6);
+}
+
+/* Kartu/permukaan yang memakai bg-white tetap ikut gelap — teks
+ * `text-white` (di tombol/sidebar) sengaja tidak disentuh. */
+.dark .bg-white,
+.dark .bg-white\/80 {
+  background-color: #13233d;
+}
+.dark .bg-white\/90 {
+  background-color: rgb(19 35 61 / 0.9);
+}
+.dark .divide-sand-100 > :not([hidden]) ~ :not([hidden]) {
+  border-color: #1a2f4d;
 }
 
 /* Subtle Islamic geometric star pattern — decorative background ornament. */
 @utility pattern-islami {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='88' height='88' viewBox='0 0 88 88'%3E%3Cpath d='M44 22l6.3 11.2 12.7-2.6-2.6 12.7L71 44l-10.6 6.3 2.6 12.7-12.7-2.6L44 71l-6.3-10.6-12.7 2.6 2.6-12.7L17 44l10.6-6.3-2.6-12.7 12.7 2.6z' fill='none' stroke='%231a5134' stroke-opacity='0.045' stroke-width='1'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='88' height='88' viewBox='0 0 88 88'%3E%3Cpath d='M44 22l6.3 11.2 12.7-2.6-2.6 12.7L71 44l-10.6 6.3 2.6 12.7-12.7-2.6L44 71l-6.3-10.6-12.7 2.6 2.6-12.7L17 44l10.6-6.3-2.6-12.7 12.7 2.6z' fill='none' stroke='%23164a76' stroke-opacity='0.05' stroke-width='1'/%3E%3C/svg%3E");
 }
 
 /* Same ornament on dark backgrounds. */

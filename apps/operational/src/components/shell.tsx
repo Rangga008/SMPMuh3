@@ -108,6 +108,26 @@ export function Shell({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(cachedUser);
   const [school, setSchool] = useState<School | null>(cachedSchool ?? null);
   const [open, setOpen] = useState(false);
+  const [dark, setDark] = useState(false);
+
+  // Tema gelap/terang — disimpan di localStorage, diterapkan via class
+  // `.dark` di <html> (token warna di styles.css otomatis beradaptasi).
+  useEffect(() => {
+    const saved = localStorage.getItem('theme');
+    const prefers = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const initial = saved ? saved === 'dark' : prefers;
+    setDark(initial);
+    document.documentElement.classList.toggle('dark', initial);
+  }, []);
+
+  const toggleTheme = () => {
+    setDark((d) => {
+      const next = !d;
+      localStorage.setItem('theme', next ? 'dark' : 'light');
+      document.documentElement.classList.toggle('dark', next);
+      return next;
+    });
+  };
 
   useEffect(() => {
     if (!getTokens()) {
@@ -230,12 +250,23 @@ export function Shell({ children }: { children: ReactNode }) {
         </div>
         <button
           type="button"
+          onClick={toggleTheme}
+          aria-label={dark ? 'Beralih ke tema terang' : 'Beralih ke tema gelap'}
+          className="mt-2 flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-primary-200 transition-colors hover:bg-white/10 hover:text-white focus-visible:focus-ring"
+        >
+          <span aria-hidden="true" className="w-5 text-center">
+            {dark ? '☀' : '☾'}
+          </span>
+          {dark ? 'Tema Terang' : 'Tema Gelap'}
+        </button>
+        <button
+          type="button"
           onClick={() => {
             cachedUser = null;
             logout();
             router.push('/masuk');
           }}
-          className="mt-2 w-full rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-red-300 transition-colors hover:bg-red-500/10 hover:text-red-200 focus-visible:focus-ring"
+          className="mt-1 w-full rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-red-300 transition-colors hover:bg-red-500/10 hover:text-red-200 focus-visible:focus-ring"
         >
           Keluar
         </button>
@@ -279,7 +310,7 @@ export function Shell({ children }: { children: ReactNode }) {
         {open ? (
           <div className="fixed inset-0 z-50 lg:hidden">
             <div
-              className="absolute inset-0 bg-sand-950/50"
+              className="absolute inset-0 bg-black/55"
               onClick={() => setOpen(false)}
             />
             <aside className="absolute inset-y-0 left-0 w-72 shadow-2xl">
