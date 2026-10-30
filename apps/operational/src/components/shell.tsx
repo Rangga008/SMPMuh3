@@ -16,7 +16,7 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
       </span>
       <span className="truncate">{item.label}</span>
       {!item.enabled ? (
-        <span className="ml-auto rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-primary-300">
+        <span className="ml-auto rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-sky-300">
           segera
         </span>
       ) : null}
@@ -27,8 +27,8 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
     active
       ? 'bg-white/15 font-bold text-white shadow-sm'
       : item.enabled
-        ? 'text-primary-200 hover:bg-white/10 hover:text-white'
-        : 'cursor-default text-primary-300/50',
+        ? 'text-sky-200 hover:bg-white/10 hover:text-white'
+        : 'cursor-default text-sky-300/40',
   );
   return item.enabled && item.href ? (
     <Link href={item.href} className={cls}>
@@ -60,8 +60,8 @@ function NavGroup({ item, pathname }: { item: NavItem; pathname: string }) {
           childActive
             ? 'bg-white/10 font-bold text-white'
             : item.enabled
-              ? 'text-primary-200 hover:bg-white/10 hover:text-white'
-              : 'cursor-default text-primary-300/50',
+              ? 'text-sky-200 hover:bg-white/10 hover:text-white'
+              : 'cursor-default text-sky-300/40',
         )}
       >
         <span aria-hidden="true" className="w-5 text-center opacity-80">
@@ -69,7 +69,7 @@ function NavGroup({ item, pathname }: { item: NavItem; pathname: string }) {
         </span>
         <span className="truncate">{item.label}</span>
         {!item.enabled ? (
-          <span className="ml-auto rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-primary-300">
+          <span className="ml-auto rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-sky-300">
             segera
           </span>
         ) : (
@@ -190,7 +190,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const sidebar = (
     <nav
       aria-label="Navigasi modul"
-      className="pattern-islami-light flex h-full flex-col bg-primary-950 text-primary-100"
+      className="pattern-islami-light flex h-full flex-col bg-primary-950 text-sky-100"
     >
       <Link
         href="/"
@@ -200,7 +200,7 @@ export function Shell({ children }: { children: ReactNode }) {
           <img
             src="/logo.png"
             alt=""
-            className="size-9 shrink-0 rounded-xl bg-white object-contain p-0.5"
+            className="size-9 shrink-0 rounded-xl bg-[#ffffff] object-contain p-0.5"
           />
         ) : (
           <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-accent-400 text-sm font-extrabold text-primary-950">
@@ -232,33 +232,38 @@ export function Shell({ children }: { children: ReactNode }) {
       </ul>
 
       <div className="border-t border-white/10 p-3">
-        <div className="flex items-center gap-3 rounded-xl bg-white/5 px-3 py-2.5">
+        <Link
+          href="/profil"
+          title="Lihat profil saya"
+          className="flex items-center gap-3 rounded-xl bg-white/5 px-3 py-2.5 transition-colors hover:bg-white/10 focus-visible:focus-ring"
+        >
           <span
             aria-hidden="true"
             className="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent-400 text-xs font-extrabold text-primary-950"
           >
             {(user.name || user.email || '?').slice(0, 1).toUpperCase()}
           </span>
-          <span className="min-w-0">
+          <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-semibold text-white">
               {user.name}
             </span>
-            <span className="block truncate text-xs text-primary-300">
+            <span className="block truncate text-xs text-sky-300">
               {user.email}
             </span>
           </span>
-        </div>
-        <button
-          type="button"
-          onClick={toggleTheme}
-          aria-label={dark ? 'Beralih ke tema terang' : 'Beralih ke tema gelap'}
-          className="mt-2 flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-primary-200 transition-colors hover:bg-white/10 hover:text-white focus-visible:focus-ring"
+          <span aria-hidden="true" className="text-sky-300/70">
+            ›
+          </span>
+        </Link>
+        <Link
+          href="/pengaturan/profil"
+          className="mt-2 flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-sky-200 transition-colors hover:bg-white/10 hover:text-white focus-visible:focus-ring"
         >
           <span aria-hidden="true" className="w-5 text-center">
-            {dark ? '☀' : '☾'}
+            ⚙
           </span>
-          {dark ? 'Tema Terang' : 'Tema Gelap'}
-        </button>
+          Pengaturan
+        </Link>
         <button
           type="button"
           onClick={() => {
@@ -266,12 +271,30 @@ export function Shell({ children }: { children: ReactNode }) {
             logout();
             router.push('/masuk');
           }}
-          className="mt-1 w-full rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-red-300 transition-colors hover:bg-red-500/10 hover:text-red-200 focus-visible:focus-ring"
+          className="mt-1 flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-red-300 transition-colors hover:bg-red-500/10 hover:text-red-200 focus-visible:focus-ring"
         >
+          <span aria-hidden="true" className="w-5 text-center">
+            ⎋
+          </span>
           Keluar
         </button>
       </div>
     </nav>
+  );
+
+  /** Tombol ikon tema — dipasang di topbar atas (mobile & desktop). */
+  const themeButton = (
+    <button
+      type="button"
+      onClick={toggleTheme}
+      aria-label={dark ? 'Beralih ke tema terang' : 'Beralih ke tema gelap'}
+      title={dark ? 'Tema Terang' : 'Tema Gelap'}
+      className="flex size-10 items-center justify-center rounded-xl border border-sand-200 bg-white text-sand-600 shadow-sm transition-colors hover:bg-sand-50 hover:text-primary-700 focus-visible:focus-ring"
+    >
+      <span aria-hidden="true" className="text-base leading-none">
+        {dark ? '☀' : '☾'}
+      </span>
+    </button>
   );
 
   return (
@@ -294,10 +317,31 @@ export function Shell({ children }: { children: ReactNode }) {
           </svg>
         </button>
         {school?.logoUrl ? (
-          <img src="/logo.png" alt="" className="size-8 rounded-lg bg-white object-contain p-0.5" />
+          <img src="/logo.png" alt="" className="size-8 rounded-lg bg-[#ffffff] object-contain p-0.5" />
         ) : null}
         <span className="truncate font-extrabold tracking-tight text-white">
           {school?.name ?? 'Admin Sekolah'}
+        </span>
+        <span className="ml-auto flex items-center gap-2">
+          <Link
+            href="/profil"
+            aria-label="Profil saya"
+            title="Profil saya"
+            className="flex size-10 items-center justify-center rounded-xl border border-white/20 bg-white/10 text-sm font-extrabold text-white transition-colors hover:bg-white/20 focus-visible:focus-ring"
+          >
+            {(user.name || user.email || '?').slice(0, 1).toUpperCase()}
+          </Link>
+          <button
+            type="button"
+            onClick={toggleTheme}
+            aria-label={dark ? 'Beralih ke tema terang' : 'Beralih ke tema gelap'}
+            title={dark ? 'Tema Terang' : 'Tema Gelap'}
+            className="flex size-10 items-center justify-center rounded-xl border border-white/20 bg-white/10 text-white transition-colors hover:bg-white/20 focus-visible:focus-ring"
+          >
+            <span aria-hidden="true" className="text-base leading-none">
+              {dark ? '☀' : '☾'}
+            </span>
+          </button>
         </span>
       </header>
 
@@ -320,6 +364,25 @@ export function Shell({ children }: { children: ReactNode }) {
         ) : null}
 
         <main id="konten" className="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
+          {/* Pill aksi atas — desktop: profil + toggle tema */}
+          <div className="pointer-events-none sticky top-4 z-30 -mt-1 mb-4 hidden justify-end lg:flex">
+            <div className="pointer-events-auto flex items-center gap-2 rounded-2xl border border-sand-200 bg-white/80 p-1.5 shadow-soft backdrop-blur">
+              <Link
+                href="/profil"
+                title="Profil saya"
+                className="flex items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-sm font-semibold text-sand-700 transition-colors hover:bg-sand-100 focus-visible:focus-ring"
+              >
+                <span
+                  aria-hidden="true"
+                  className="flex size-7 items-center justify-center rounded-full bg-primary-700 text-[11px] font-extrabold text-white"
+                >
+                  {(user.name || user.email || '?').slice(0, 1).toUpperCase()}
+                </span>
+                <span className="max-w-40 truncate">{user.name}</span>
+              </Link>
+              {themeButton}
+            </div>
+          </div>
           <div key={pathname} className="page-fade mx-auto max-w-6xl">
             {children}
           </div>

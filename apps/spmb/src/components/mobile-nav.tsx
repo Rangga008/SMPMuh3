@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { NAV_LINKS } from './site-header';
 import { HeaderAuth } from './header-auth';
+import { ThemeToggle } from './theme-toggle';
 
 export function MobileNav() {
   const [open, setOpen] = useState(false);
@@ -41,6 +42,7 @@ export function MobileNav() {
               {l.label}
             </Link>
           ))}
+          <ThemeToggle mobile />
           <HeaderAuth mobile />
         </nav>
       ) : null}

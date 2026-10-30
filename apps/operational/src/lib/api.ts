@@ -103,6 +103,23 @@ async function req<T>(
 export const login = (identifier: string, password: string) =>
   req<AuthTokens>('/auth/login', { method: 'POST', json: { identifier, password } });
 export const me = () => req<AuthUser>('/auth/me');
+export const updateMe = (dto: { name?: string; phone?: string; email?: string }) =>
+  req<AuthUser>('/auth/me', { method: 'PATCH', json: dto });
+export const changeMyPassword = (currentPassword: string, newPassword: string) =>
+  req<void>('/auth/me/password', {
+    method: 'POST',
+    json: { currentPassword, newPassword },
+  });
+export interface MyEmployee {
+  id: string;
+  nip: string | null;
+  name: string;
+  type: string;
+  email: string | null;
+  phone: string | null;
+  isActive: boolean;
+}
+export const myEmployee = () => req<MyEmployee | null>('/auth/me/employee');
 export async function logout() {
   const t = getTokens();
   if (t) {

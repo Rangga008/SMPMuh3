@@ -3,6 +3,7 @@ import { spmbConfig } from '@/config/spmb.config';
 import { getSchoolPublic, schoolLogoUrl } from '@/lib/school';
 import { HeaderAuth } from './header-auth';
 import { MobileNav } from './mobile-nav';
+import { ThemeToggle } from './theme-toggle';
 
 export const NAV_LINKS = [
   { href: '/', label: 'Beranda' },
@@ -58,7 +59,10 @@ export async function SiteHeader() {
           ))}
         </nav>
 
-        <div className="ml-auto sm:ml-auto lg:ml-0">
+        <div className="ml-auto flex items-center gap-2 sm:ml-auto lg:ml-0">
+          <span className="hidden sm:block">
+            <ThemeToggle />
+          </span>
           <HeaderAuth />
         </div>
 

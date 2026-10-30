@@ -215,6 +215,74 @@ export class AuthService {
     return this.users.toAuthUser(user);
   }
 
+  /** Profil mandiri: ubah nama/kontak akun sendiri. */
+  async updateMe(
+    userId: string,
+    data: { name?: string; phone?: string; email?: string },
+  ): Promise<AuthUser> {
+    if (data.phone !== undefined) data.phone = normalizePhone(data.phone);
+    const email = data.email === '' ? null : data.email;
+    const updated = await this.users.updateUser(userId, {
+      ...(data.name !== undefined ? { name: data.name } : {}),
+      ...(data.phone !== undefined ? { phone: data.phone } : {}),
+      ...(data.email !== undefined ? { email } : {}),
+    });
+    await this.audit.log({
+      actorId: userId,
+      action: 'auth.update_profile',
+      entity: 'user',
+      entityId: userId,
+    });
+    return this.users.toAuthUser(updated);
+  }
+
+  /** Ganti sandi sendiri — wajib konfirmasi sandi lama; sesi lain dicabut. */
+  async changeMyPassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
+    const user = await this.users.findById(userId);
+    const ok =
+      user !== null &&
+      (await argon2.verify(user.passwordHash, currentPassword).catch(() => false));
+    if (!ok) {
+      throw new UnauthorizedException('Sandi saat ini salah');
+    }
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: userId },
+        data: { passwordHash: await argon2.hash(newPassword) },
+      }),
+      this.prisma.refreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
+    ]);
+    await this.audit.log({
+      actorId: userId,
+      action: 'auth.change_password',
+      entity: 'user',
+      entityId: userId,
+    });
+  }
+
+  /** Data pegawai yang terhubung ke akun (untuk halaman profil). */
+  myEmployee(userId: string) {
+    return this.prisma.employee.findFirst({
+      where: { userId },
+      select: {
+        id: true,
+        nip: true,
+        name: true,
+        type: true,
+        email: true,
+        phone: true,
+        isActive: true,
+      },
+    });
+  }
+
   private async issueTokens(
     user: AuthUser,
     meta: RequestMeta,

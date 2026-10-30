@@ -4,6 +4,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Patch,
   Post,
   Req,
 } from '@nestjs/common';
@@ -13,9 +14,11 @@ import { CurrentUser } from '../decorators/current-user.decorator';
 import { Public } from '../decorators/public.decorator';
 import { AuthService } from './auth.service';
 import {
+  ChangeMyPasswordDto,
   ForgotPasswordDto,
   RegisterDto,
   ResetPasswordDto,
+  UpdateMeDto,
 } from './dto/account.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
@@ -83,5 +86,31 @@ export class AuthController {
   @Get('me')
   me(@CurrentUser() user: AuthUser): AuthUser {
     return user;
+  }
+
+  @Patch('me')
+  updateMe(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: UpdateMeDto,
+  ): Promise<AuthUser> {
+    return this.auth.updateMe(user.id, dto);
+  }
+
+  @Post('me/password')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  changeMyPassword(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: ChangeMyPasswordDto,
+  ): Promise<void> {
+    return this.auth.changeMyPassword(
+      user.id,
+      dto.currentPassword,
+      dto.newPassword,
+    );
+  }
+
+  @Get('me/employee')
+  myEmployee(@CurrentUser() user: AuthUser) {
+    return this.auth.myEmployee(user.id);
   }
 }

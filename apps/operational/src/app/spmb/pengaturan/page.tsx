@@ -190,7 +190,6 @@ export default function SpmbSettingsPage() {
               return (
                 <li key={st} className="rounded-xl border border-sand-200 bg-sand-50 px-4 py-3">
                   <form
-                    className="flex flex-wrap items-end gap-3"
                     onSubmit={(e) => {
                       e.preventDefault();
                       const f = new FormData(e.currentTarget);
@@ -207,25 +206,32 @@ export default function SpmbSettingsPage() {
                       );
                     }}
                   >
-                    <div className="w-full min-w-0 flex-1">
-                      <p className="text-sm font-bold text-sand-900">{SUBTYPE_LABELS[st]}</p>
-                      <p className="text-xs text-sand-500">
-                        {rule?.isActive ? `Aktif — ${rule.percent}%` : 'Nonaktif'}
-                        {rule?.minScore ? ` · nilai rapor ≥ ${rule.minScore}` : ''}
-                      </p>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-sand-900">{SUBTYPE_LABELS[st]}</p>
+                        <p className="mt-0.5 text-xs text-sand-500">
+                          {rule?.isActive ? `Aktif — ${rule.percent}%` : 'Nonaktif'}
+                          {rule?.minScore ? ` · nilai rapor ≥ ${rule.minScore}` : ''}
+                        </p>
+                      </div>
+                      <Button size="sm" type="submit" variant="outline" disabled={busy} className="shrink-0">
+                        Simpan
+                      </Button>
                     </div>
-                    <Field label="Diskon %" className="w-24">
-                      <Input name="percent" type="number" min={0} max={100} required defaultValue={rule?.percent ?? 0} />
-                    </Field>
-                    {st === 'akademik' ? (
-                      <Field label="Min. nilai rapor" className="w-28">
-                        <Input name="minScore" type="number" min={0} max={100} defaultValue={rule?.minScore ?? ''} placeholder="80" />
+                    <div className="mt-3 flex flex-wrap items-end gap-3 border-t border-sand-200/70 pt-3">
+                      <Field label="Diskon %" className="w-24 shrink-0">
+                        <Input name="percent" type="number" min={0} max={100} required defaultValue={rule?.percent ?? 0} />
                       </Field>
-                    ) : null}
-                    <Field label="Aktif" className="w-16">
-                      <input name="isActive" type="checkbox" defaultChecked={rule?.isActive ?? true} className="size-5 accent-primary-700" />
-                    </Field>
-                    <Button size="sm" type="submit" variant="outline" disabled={busy}>Simpan</Button>
+                      {st === 'akademik' ? (
+                        <Field label="Min. nilai rapor" className="w-28 shrink-0">
+                          <Input name="minScore" type="number" min={0} max={100} defaultValue={rule?.minScore ?? ''} placeholder="80" />
+                        </Field>
+                      ) : null}
+                      <label className="flex h-10 items-center gap-2 text-sm font-medium text-sand-700">
+                        <input name="isActive" type="checkbox" defaultChecked={rule?.isActive ?? true} className="size-4 accent-primary-700" />
+                        Aktif
+                      </label>
+                    </div>
                   </form>
                 </li>
               );

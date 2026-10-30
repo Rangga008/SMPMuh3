@@ -44,3 +44,32 @@ export class ResetPasswordDto {
   @MinLength(8)
   password!: string;
 }
+
+/** Profil mandiri — pengguna mengubah data akunnya sendiri. */
+export class UpdateMeDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(3)
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^\+?\d[\d\s-]{7,18}\d$/, {
+    message: 'phone must be a valid phone number',
+  })
+  phone?: string;
+
+  @IsOptional()
+  @IsEmail()
+  email?: string;
+}
+
+export class ChangeMyPasswordDto {
+  @IsString()
+  @MinLength(1)
+  currentPassword!: string;
+
+  @IsString()
+  @MinLength(8)
+  newPassword!: string;
+}
