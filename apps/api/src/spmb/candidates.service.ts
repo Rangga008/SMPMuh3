@@ -17,6 +17,7 @@ const select = {
   nisn: true,
   previousSchool: true,
   address: true,
+  tkaScore: true,
 } satisfies Prisma.CandidateSelect;
 
 @Injectable()
@@ -70,13 +71,14 @@ export class CandidatesService {
   private toData(parentId: string, dto: CreateCandidateDto) {
     return {
       parentId,
-      name: dto.name.trim(),
-      gender: dto.gender ?? null,
+      name: dto.name.trim().toUpperCase(),
+      gender: dto.gender,
       birthPlace: dto.birthPlace ?? null,
-      birthDate: dto.birthDate ? new Date(dto.birthDate) : null,
+      birthDate: new Date(dto.birthDate),
       nisn: dto.nisn ?? null,
-      previousSchool: dto.previousSchool ?? null,
+      previousSchool: dto.previousSchool.trim(),
       address: dto.address ?? null,
+      tkaScore: dto.tkaScore ?? null,
     };
   }
 }

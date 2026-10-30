@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Get,
   Headers,
@@ -12,9 +13,19 @@ import {
 import type { AuthUser } from '@smpmuh3/types';
 import type { RawBodyRequest } from '@nestjs/common';
 import type { Request } from 'express';
+import { IsIn, IsOptional, IsUUID } from 'class-validator';
 import { CurrentUser } from '../identity/decorators/current-user.decorator';
 import { Public } from '../identity/decorators/public.decorator';
 import { PaymentsService } from './payments.service';
+
+class PayInvoiceDto {
+  @IsIn(['transfer', 'cash'])
+  method!: 'transfer' | 'cash';
+
+  @IsOptional()
+  @IsUUID()
+  proofDocumentId?: string;
+}
 
 @Controller({ version: '1' })
 export class PaymentsController {
@@ -29,7 +40,17 @@ export class PaymentsController {
     return this.payments.listForParent(id, user.id);
   }
 
-  /** Parent: initiate payment for own invoice. */
+  /** Parent: bayar manual — transfer (bukti) atau tunai di sekolah. */
+  @Post('invoices/:id/pay')
+  pay(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: PayInvoiceDto,
+  ) {
+    return this.payments.pay(id, user.id, dto);
+  }
+
+  /** Parent: initiate payment via mock provider (demo). */
   @Post('invoices/:id/checkout')
   checkout(
     @CurrentUser() user: AuthUser,

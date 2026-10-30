@@ -1,85 +1,47 @@
 'use client';
 
-import Link from 'next/link';
 import { useState } from 'react';
-import { buttonClasses } from '@smpmuh3/ui';
+import Link from 'next/link';
+import { NAV_LINKS } from './site-header';
+import { HeaderAuth } from './header-auth';
 
-interface NavLink {
-  href: string;
-  label: string;
-}
-
-interface MobileNavProps {
-  links: NavLink[];
-  registerHref: string;
-  registerLabel: string;
-}
-
-export function MobileNav({ links, registerHref, registerLabel }: MobileNavProps) {
+export function MobileNav() {
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="md:hidden">
+    <div className="ml-auto lg:hidden">
       <button
         type="button"
         aria-expanded={open}
-        aria-controls="mobile-nav"
         aria-label={open ? 'Tutup menu' : 'Buka menu'}
         onClick={() => setOpen((v) => !v)}
-        className="focus-ring inline-flex size-10 items-center justify-center rounded-lg text-sand-900"
+        className="flex size-10 items-center justify-center rounded-xl border border-sand-300 bg-white text-sand-800 shadow-xs transition-colors hover:bg-sand-100 focus-visible:focus-ring"
       >
-        <svg
-          aria-hidden="true"
-          viewBox="0 0 24 24"
-          fill="none"
-          className="size-6"
-        >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="size-5">
           {open ? (
-            <path
-              d="m6 6 12 12M18 6 6 18"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-            />
+            <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
           ) : (
-            <path
-              d="M4 7h16M4 12h16M4 17h16"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-            />
+            <path d="M4 7h16M4 12h16M4 17h16" strokeLinecap="round" />
           )}
         </svg>
       </button>
 
       {open ? (
         <nav
-          id="mobile-nav"
-          aria-label="Menu utama"
-          className="absolute inset-x-0 top-full border-b border-sand-200 bg-white shadow-lg"
+          aria-label="Navigasi seluler"
+          className="absolute inset-x-0 top-16 border-b border-sand-200 bg-white px-4 pb-4 pt-2 shadow-soft sm:px-6"
         >
-          <ul className="flex flex-col px-5 py-4">
-            {links.map((link) => (
-              <li key={link.href}>
-                <Link
-                  href={link.href}
-                  onClick={() => setOpen(false)}
-                  className="block rounded-lg px-3 py-3 font-medium text-sand-800 hover:bg-primary-50 focus-visible:focus-ring"
-                >
-                  {link.label}
-                </Link>
-              </li>
-            ))}
-            <li className="mt-2 border-t border-sand-100 pt-4 pb-2">
-              <Link
-                href={registerHref}
-                onClick={() => setOpen(false)}
-                className={buttonClasses({ variant: 'primary', className: 'w-full' })}
-              >
-                {registerLabel}
-              </Link>
-            </li>
-          </ul>
+          {NAV_LINKS.map((l) => (
+            <Link
+              key={l.href}
+              href={l.href}
+              onClick={() => setOpen(false)}
+              className="block rounded-xl px-3 py-2.5 text-sm font-medium text-sand-800 transition-colors hover:bg-primary-50 hover:text-primary-800 focus-visible:focus-ring"
+            >
+              {l.label}
+            </Link>
+          ))}
+          <HeaderAuth mobile />
         </nav>
       ) : null}
     </div>

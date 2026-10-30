@@ -11,7 +11,7 @@ export function PageTitle({
   actions?: ReactNode;
 }) {
   return (
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+    <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
       <div>
         <h1 className="text-2xl font-extrabold tracking-tight text-sand-950">
           {title}
@@ -29,31 +29,63 @@ export function Widget({
   title,
   children,
   className,
+  action,
 }: {
   title: string;
   children: ReactNode;
   className?: string;
+  action?: ReactNode;
 }) {
   return (
     <section
       aria-label={title}
       className={cn(
-        'rounded-2xl border border-sand-200 bg-white p-5',
+        'rounded-3xl border border-sand-200 bg-white p-5 shadow-card sm:p-6',
         className,
       )}
     >
-      <h2 className="mb-3 text-sm font-bold tracking-wide text-sand-600 uppercase">
-        {title}
-      </h2>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h2 className="text-xs font-bold uppercase tracking-wider text-sand-500">
+          {title}
+        </h2>
+        {action}
+      </div>
       {children}
     </section>
+  );
+}
+
+/** Big stat card used on the dashboard. */
+export function StatCard({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: ReactNode;
+  accent?: 'primary' | 'accent' | undefined;
+}) {
+  return (
+    <div className="rounded-3xl border border-sand-200 bg-white p-5 shadow-card">
+      <p className="text-xs font-bold uppercase tracking-wider text-sand-500">
+        {label}
+      </p>
+      <p
+        className={cn(
+          'mt-2 text-2xl font-extrabold tracking-tight',
+          accent === 'accent' ? 'text-accent-700' : 'text-primary-800',
+        )}
+      >
+        {value}
+      </p>
+    </div>
   );
 }
 
 /** Placeholder widget for modules not yet built — no invented numbers. */
 export function PendingWidget({ module }: { module: string }) {
   return (
-    <div className="flex h-24 items-center justify-center rounded-xl border border-dashed border-sand-300 text-sm text-sand-400">
+    <div className="flex h-24 items-center justify-center rounded-2xl border border-dashed border-sand-300 bg-sand-50 text-sm text-sand-400">
       Modul {module} belum tersedia
     </div>
   );

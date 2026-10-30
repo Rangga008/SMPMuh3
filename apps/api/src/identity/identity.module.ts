@@ -5,6 +5,8 @@ import { EnvService, ttlToMs } from '../core/config/env.service';
 import { AuthController } from './auth/auth.controller';
 import { AuthService } from './auth/auth.service';
 import { JwtStrategy } from './auth/strategies/jwt.strategy';
+import { RolesController } from './roles.controller';
+import { AdminUsersController } from './admin-users.controller';
 import { UsersService } from './users/users.service';
 
 @Module({
@@ -18,7 +20,7 @@ import { UsersService } from './users/users.service';
       inject: [EnvService],
     }),
   ],
-  controllers: [AuthController],
+  controllers: [AuthController, RolesController, AdminUsersController],
   providers: [AuthService, UsersService, JwtStrategy],
   exports: [UsersService],
 })

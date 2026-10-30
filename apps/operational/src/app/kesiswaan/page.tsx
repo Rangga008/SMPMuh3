@@ -1,67 +1,67 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
-  STUDENT_STATUSES,
   STUDENT_STATUS_LABELS,
   type StudentDto,
-  type StudentStatus,
 } from '@smpmuh3/types';
-import { Badge, Button, Card } from '@smpmuh3/ui';
-import { DataTable } from '@/components/data-table';
+import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
+import { DataTable } from '@/components/data-table';
 import { PageTitle } from '@/components/widgets';
 import { createStudent, listStudents } from '@/lib/api';
 
-const inputCls =
-  'h-10 w-full rounded-lg border border-sand-300 px-3 text-sm focus-visible:focus-ring';
+const tone = (s: string) => (s === 'ACTIVE' ? 'primary' : 'neutral');
 
-export default function KesiswaanPage() {
+export default function StudentsPage() {
   const [rows, setRows] = useState<StudentDto[]>([]);
-  const [status, setStatus] = useState('');
   const [search, setSearch] = useState('');
+  const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback((q: { search?: string; status?: string }) => {
     setLoading(true);
-    try {
-      setRows(await listStudents({ status, search: search || undefined }));
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Gagal memuat');
-    } finally {
-      setLoading(false);
-    }
-  }, [status, search]);
+    listStudents(q)
+      .then(setRows)
+      .catch(() => setError('Gagal memuat data siswa.'))
+      .finally(() => setLoading(false));
+  }, []);
 
   useEffect(() => {
-    listStudents({ status }).then(setRows).catch(() => undefined).finally(() => setLoading(false));
-  }, [status]);
+    load({});
+  }, [load]);
 
-  async function onCreate(e: FormEvent<HTMLFormElement>) {
+  function onSearch(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setBusy(true);
     setError(null);
-    const fd = new FormData(e.currentTarget);
+    load({ search, status });
+  }
+
+  async function onCreate(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    const val = (k: string) => String(f.get(k) ?? '').trim() || undefined;
+    setError(null);
+    setBusy(true);
     try {
       await createStudent({
-        name: fd.get('name'),
-        nis: fd.get('nis') || undefined,
-        nisn: fd.get('nisn') || undefined,
-        gender: fd.get('gender') || undefined,
-        birthPlace: fd.get('birthPlace') || undefined,
-        birthDate: fd.get('birthDate') || undefined,
-        force: true,
+        name: val('name'),
+        nis: val('nis'),
+        nisn: val('nisn'),
+        gender: val('gender'),
+        birthPlace: val('birthPlace'),
+        birthDate: val('birthDate'),
+        address: val('address'),
       });
+      e.currentTarget.reset();
       setShowForm(false);
-      (e.target as HTMLFormElement).reset();
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Gagal menyimpan');
+      load({ search, status });
+    } catch {
+      setError('Gagal menambah siswa — NIS/NISN mungkin sudah dipakai.');
     } finally {
       setBusy(false);
     }
@@ -71,117 +71,99 @@ export default function KesiswaanPage() {
     <Shell>
       <PageTitle
         title="Data Siswa"
-        subtitle="Manajemen data induk siswa"
+        subtitle="Kelola data kesiswaan"
         actions={
-          <Button onClick={() => setShowForm((v) => !v)} size="sm">
+          <Button size="sm" variant={showForm ? 'ghost' : 'primary'} onClick={() => setShowForm((v) => !v)}>
             {showForm ? 'Tutup' : '+ Tambah Siswa'}
           </Button>
         }
       />
+
       {error ? (
-        <p className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
-        </p>
+        <p role="alert" className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</p>
       ) : null}
 
       {showForm ? (
-        <Card className="mb-4">
-          <h2 className="mb-4 font-bold text-sand-950">Siswa Baru</h2>
-          <form onSubmit={onCreate} className="grid gap-3 sm:grid-cols-2">
-            <label className="text-sm font-semibold text-sand-900 sm:col-span-2">
-              Nama lengkap *
-              <input required name="name" minLength={3} className={inputCls} />
-            </label>
-            <label className="text-sm font-semibold text-sand-900">
-              NIS
-              <input name="nis" className={inputCls} />
-            </label>
-            <label className="text-sm font-semibold text-sand-900">
-              NISN (10 digit)
-              <input name="nisn" pattern="\d{10}" className={inputCls} />
-            </label>
-            <label className="text-sm font-semibold text-sand-900">
-              Jenis kelamin
-              <select name="gender" className={inputCls}>
-                <option value="">—</option>
+        <Modal
+          open
+          onClose={() => setShowForm(false)}
+          title="Tambah Siswa"
+          size="xl"
+        >
+          <form onSubmit={onCreate} className="grid gap-4 sm:grid-cols-2">
+            <Field label="Nama Lengkap" className="sm:col-span-2">
+              <Input name="name" required />
+            </Field>
+            <Field label="NIS">
+              <Input name="nis" />
+            </Field>
+            <Field label="NISN">
+              <Input name="nisn" />
+            </Field>
+            <Field label="Jenis Kelamin">
+              <Select name="gender" defaultValue="">
+                <option value="">Pilih…</option>
                 <option value="MALE">Laki-laki</option>
                 <option value="FEMALE">Perempuan</option>
-              </select>
-            </label>
-            <label className="text-sm font-semibold text-sand-900">
-              Tanggal lahir
-              <input type="date" name="birthDate" className={inputCls} />
-            </label>
-            <label className="text-sm font-semibold text-sand-900">
-              Tempat lahir
-              <input name="birthPlace" className={inputCls} />
-            </label>
+              </Select>
+            </Field>
+            <Field label="Tempat Lahir">
+              <Input name="birthPlace" />
+            </Field>
+            <Field label="Tanggal Lahir">
+              <Input name="birthDate" type="date" />
+            </Field>
+            <Field label="Alamat">
+              <Input name="address" />
+            </Field>
             <div className="sm:col-span-2">
               <Button type="submit" disabled={busy}>
                 {busy ? 'Menyimpan…' : 'Simpan'}
               </Button>
             </div>
           </form>
-        </Card>
+        </Modal>
       ) : null}
 
       <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          load();
-        }}
-        className="mb-4 flex flex-wrap gap-2"
+        onSubmit={onSearch}
+        className="mb-5 flex flex-wrap items-end gap-3 rounded-2xl border border-sand-200 bg-white p-4 shadow-card"
       >
-        <select
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
-          className="h-10 rounded-lg border border-sand-300 px-3 text-sm"
-          aria-label="Filter status"
-        >
-          <option value="">Semua status</option>
-          {STUDENT_STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {STUDENT_STATUS_LABELS[s]}
-            </option>
-          ))}
-        </select>
-        <input
-          type="search"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Cari nama / NIS / NISN…"
-          className="h-10 w-64 rounded-lg border border-sand-300 px-3 text-sm"
-        />
-        <Button type="submit" size="sm" variant="outline">
-          Cari
-        </Button>
+        <label className="flex min-w-40 flex-[2] flex-col gap-1.5">
+          <span className="text-xs font-bold uppercase tracking-wider text-sand-500">Pencarian</span>
+          <Input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Nama / NIS / NISN…" />
+        </label>
+        <label className="flex min-w-40 flex-1 flex-col gap-1.5">
+          <span className="text-xs font-bold uppercase tracking-wider text-sand-500">Status</span>
+          <Select value={status} onChange={(e) => setStatus(e.target.value)}>
+            <option value="">Semua</option>
+            {Object.entries(STUDENT_STATUS_LABELS).map(([v, l]) => (
+              <option key={v} value={v}>{l}</option>
+            ))}
+          </Select>
+        </label>
+        <Button type="submit">Terapkan</Button>
       </form>
 
       <DataTable
-        head={['NIS/NISN', 'Nama', 'JK', 'Status', '']}
+        head={['Nama', 'NIS', 'NISN', 'L/P', 'Status', '']}
         loading={loading}
         error={error}
         empty={rows.length === 0 ? 'Belum ada siswa.' : undefined}
       >
         {rows.map((s) => (
-          <tr key={s.id} className="hover:bg-sand-50">
-            <td className="px-4 py-3 font-mono text-xs text-sand-700">
-              {s.nis ?? '—'} / {s.nisn ?? '—'}
-            </td>
-            <td className="px-4 py-3 font-medium text-sand-900">{s.name}</td>
-            <td className="px-4 py-3 text-sand-600">
+          <tr key={s.id}>
+            <td className="px-5 py-3.5 font-semibold text-sand-900">{s.name}</td>
+            <td className="px-5 py-3.5 text-sand-600">{s.nis ?? '—'}</td>
+            <td className="px-5 py-3.5 text-sand-600">{s.nisn ?? '—'}</td>
+            <td className="px-5 py-3.5 text-sand-600">
               {s.gender === 'MALE' ? 'L' : s.gender === 'FEMALE' ? 'P' : '—'}
             </td>
-            <td className="px-4 py-3">
-              <Badge tone={s.status === 'ACTIVE' ? 'primary' : 'neutral'}>
-                {STUDENT_STATUS_LABELS[s.status as StudentStatus] ?? s.status}
-              </Badge>
+            <td className="px-5 py-3.5">
+              <Badge tone={tone(s.status)}>{STUDENT_STATUS_LABELS[s.status]}</Badge>
             </td>
-            <td className="px-4 py-3 text-right">
-              <Link
-                href={`/kesiswaan/${s.id}`}
-                className="font-semibold text-primary-800 hover:underline"
-              >
+            <td className="px-5 py-3.5 text-right">
+              <Link href={`/kesiswaan/${s.id}`} className="text-sm font-semibold text-primary-700 hover:text-primary-800">
                 Detail →
               </Link>
             </td>

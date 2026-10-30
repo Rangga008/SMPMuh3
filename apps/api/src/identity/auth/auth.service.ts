@@ -11,7 +11,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { AuditService } from '../../audit/audit.service';
 import { EnvService } from '../../core/config/env.service';
 import { PrismaService } from '../../core/prisma/prisma.service';
-import { UsersService } from '../users/users.service';
+import { normalizePhone, UsersService } from '../users/users.service';
 
 interface RequestMeta {
   ip?: string | undefined;
@@ -31,11 +31,11 @@ export class AuthService {
   ) {}
 
   async login(
-    email: string,
+    identifier: string,
     password: string,
     meta: RequestMeta,
   ): Promise<AuthTokens> {
-    const user = await this.users.findByEmail(email.toLowerCase());
+    const user = await this.users.findByIdentifier(identifier.trim());
     const valid =
       user !== null &&
       user.status === 'ACTIVE' &&
@@ -45,7 +45,7 @@ export class AuthService {
       await this.audit.log({
         action: 'auth.login_failed',
         entity: 'user',
-        metadata: { email },
+        metadata: { identifier },
         ...meta,
       });
       throw new UnauthorizedException('Invalid credentials');
@@ -104,21 +104,33 @@ export class AuthService {
     return this.issueTokens(this.users.toAuthUser(stored.user), meta);
   }
 
-  /** Parent self-registration → account with the spmb_parent role. */
+  /**
+   * Parent self-registration → account with the spmb_parent role.
+   * Nomor HP wajib (login + kwitansi); email opsional.
+   */
   async register(
     name: string,
-    email: string,
+    phone: string,
+    email: string | undefined,
     password: string,
     meta: RequestMeta,
   ): Promise<AuthTokens> {
-    const normalized = email.toLowerCase();
-    const exists = await this.users.findByEmail(normalized);
-    if (exists) {
-      throw new ConflictException('Email is already registered');
+    const normalizedPhone = normalizePhone(phone);
+    const phoneTaken = await this.users.findByPhone(normalizedPhone);
+    if (phoneTaken) {
+      throw new ConflictException('Nomor HP sudah terdaftar');
+    }
+    const normalizedEmail = email?.toLowerCase().trim() || undefined;
+    if (normalizedEmail) {
+      const emailTaken = await this.users.findByEmail(normalizedEmail);
+      if (emailTaken) {
+        throw new ConflictException('Email sudah terdaftar');
+      }
     }
     const user = await this.users.createWithRole({
       name: name.trim(),
-      email: normalized,
+      phone: normalizedPhone,
+      email: normalizedEmail,
       passwordHash: await argon2.hash(password),
       roleKey: 'spmb_parent',
     });
@@ -138,8 +150,11 @@ export class AuthService {
    * the email exists. Delivery lands with notifications (Phase 10); in
    * development the token is logged by the audit trail / console below.
    */
-  async forgotPassword(email: string, meta: RequestMeta): Promise<void> {
-    const user = await this.users.findByEmail(email.toLowerCase());
+  async forgotPassword(
+    identifier: string,
+    meta: RequestMeta,
+  ): Promise<void> {
+    const user = await this.users.findByIdentifier(identifier.trim());
     if (user) {
       const raw = randomBytes(32).toString('hex');
       await this.prisma.passwordResetToken.create({
@@ -150,7 +165,7 @@ export class AuthService {
         },
       });
       this.logger.warn(
-        `Password reset token for ${email} (dev only, email delivery pending): ${raw}`,
+        `Password reset token for ${identifier} (dev only, delivery pending): ${raw}`,
       );
       await this.audit.log({
         actorId: user.id,

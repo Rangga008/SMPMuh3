@@ -1,0 +1,1 @@
+ALTER TABLE "schools" ADD COLUMN "tagline" TEXT, ADD COLUMN "whatsapp" TEXT;

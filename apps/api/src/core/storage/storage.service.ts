@@ -1,5 +1,6 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import {
+  DeleteObjectCommand,
   GetObjectCommand,
   PutObjectCommand,
   S3Client,
@@ -42,6 +43,20 @@ export class StorageService implements OnModuleDestroy {
       new GetObjectCommand({ Bucket: this.bucket, Key: key }),
     );
     return res.Body as Readable;
+  }
+
+  /** Read the whole object into memory — safe for small files (docs ≤ 5 MB). */
+  async getObjectBuffer(key: string): Promise<Buffer> {
+    const res = await this.client.send(
+      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+    );
+    return Buffer.from(await res.Body!.transformToByteArray());
+  }
+
+  async deleteObject(key: string) {
+    await this.client.send(
+      new DeleteObjectCommand({ Bucket: this.bucket, Key: key }),
+    );
   }
 
   onModuleDestroy() {

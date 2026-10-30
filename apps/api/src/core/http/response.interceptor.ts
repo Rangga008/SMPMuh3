@@ -3,6 +3,7 @@ import {
   ExecutionContext,
   Injectable,
   NestInterceptor,
+  StreamableFile,
 } from '@nestjs/common';
 import { map, Observable } from 'rxjs';
 
@@ -16,6 +17,10 @@ export class ResponseInterceptor implements NestInterceptor {
   intercept(_ctx: ExecutionContext, next: CallHandler): Observable<unknown> {
     return next.handle().pipe(
       map((data) => {
+        // Binary/file responses must pass through untouched.
+        if (data instanceof StreamableFile || Buffer.isBuffer(data)) {
+          return data;
+        }
         if (
           typeof data === 'object' &&
           data !== null &&

@@ -1,46 +1,49 @@
+import Link from 'next/link';
 import type { ReactNode } from 'react';
-import { Card, Container } from '@smpmuh3/ui';
-import { SiteFooter } from '@/components/site-footer';
-import { SiteHeader } from '@/components/site-header';
+import { spmbConfig } from '@/config/spmb.config';
 
-interface AuthShellProps {
+export function AuthShell({
+  title,
+  subtitle,
+  children,
+  footer,
+}: {
   title: string;
-  subtitle?: string | undefined;
+  subtitle?: string;
   children: ReactNode;
-}
-
-/** Shared branded shell for the single-card auth/status pages. */
-export function AuthShell({ title, subtitle, children }: AuthShellProps) {
+  footer?: ReactNode;
+}) {
   return (
-    <>
-      <SiteHeader />
-      <main
-        id="konten"
-        className="pattern-islami bg-gradient-to-b from-primary-100/60 via-sand-50 to-sand-50"
-      >
-        <Container className="flex flex-col items-center py-16 sm:py-24">
-          <Card className="w-full max-w-md p-7 sm:p-8">
-            <div className="mb-6 flex items-center gap-3.5">
-              <span
-                aria-hidden="true"
-                className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-primary-700 text-sm font-extrabold text-white"
-              >
-                M3
-              </span>
-              <div className="flex flex-col gap-0.5">
-                <h1 className="text-xl font-extrabold text-sand-950 sm:text-2xl">
-                  {title}
-                </h1>
-                {subtitle ? (
-                  <p className="text-sm text-sand-600">{subtitle}</p>
-                ) : null}
-              </div>
-            </div>
-            {children}
-          </Card>
-        </Container>
-      </main>
-      <SiteFooter />
-    </>
+    <main className="relative flex min-h-[calc(100dvh-4rem)] items-center justify-center overflow-hidden bg-gradient-to-b from-primary-50 via-sand-50 to-sand-100 px-4 py-10 sm:px-6">
+      <div aria-hidden="true" className="pattern-islami pointer-events-none absolute inset-0" />
+      <div className="relative w-full max-w-md">
+        <div className="text-center">
+          <Link
+            href="/"
+            className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-primary-700 text-base font-extrabold text-white shadow-card focus-visible:focus-ring"
+          >
+            M3
+          </Link>
+          <h1 className="mt-5 text-2xl font-extrabold tracking-tight text-sand-950">
+            {title}
+          </h1>
+          {subtitle ? (
+            <p className="mt-1.5 text-sm text-sand-600">{subtitle}</p>
+          ) : null}
+        </div>
+
+        <div className="mt-6 rounded-3xl border border-sand-200 bg-white p-6 shadow-card sm:p-8">
+          {children}
+        </div>
+
+        {footer ? (
+          <p className="mt-5 text-center text-sm text-sand-600">{footer}</p>
+        ) : null}
+
+        <p className="mt-6 text-center text-xs text-sand-500">
+          {spmbConfig.school.name} · TA {spmbConfig.academicYear}
+        </p>
+      </div>
+    </main>
   );
 }

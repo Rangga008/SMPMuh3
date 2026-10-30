@@ -21,7 +21,8 @@ enum UserStatus {
 
 model User {
   id           String     @id @default(uuid()) @db.Uuid
-  email        String     @unique
+  email        String?    @unique
+  phone        String?    @unique
   passwordHash String     @map("password_hash")
   name         String
   status       UserStatus @default(ACTIVE)
@@ -40,6 +41,7 @@ model User {
   passwordResetTokens PasswordResetToken[]
   students      Student[]      @relation("StudentParent")
   employee      Employee?
+  financeTx     FinanceTransaction[]
 
   @@map("users")
 }
@@ -114,8 +116,10 @@ model School {
   id        String   @id @default(uuid()) @db.Uuid
   name      String
   code      String?  @unique
+  tagline   String?
   address   String?
   phone     String?
+  whatsapp  String?
   email     String?
   logoUrl   String?  @map("logo_url")
   createdAt DateTime @default(now()) @map("created_at")
@@ -138,6 +142,10 @@ model AcademicYear {
   enrollments   Enrollment[]
   assignments   TeachingAssignment[]
   assessments   Assessment[]
+  waves         RegistrationWave[]
+  formQuestions FormQuestion[]
+  financeTx     FinanceTransaction[]
+  financeBudgets FinanceBudget[]
 
   @@map("academic_years")
 }
@@ -151,10 +159,15 @@ enum Gender {
 
 enum RegistrationStatus {
   DRAFT
+  AWAITING_PAYMENT
+  PAYMENT_REVIEW
+  FORM_FILLING
   SUBMITTED
   DOCUMENT_REVIEW
   NEEDS_REVISION
   VERIFIED
+  AWAITING_FINAL_PAYMENT
+  FINAL_PAYMENT_REVIEW
   SELECTION
   ACCEPTED
   REJECTED
@@ -172,6 +185,7 @@ model Candidate {
   nisn           String?
   previousSchool String?   @map("previous_school")
   address        String?
+  tkaScore       Int?      @map("tka_score")
   createdAt      DateTime  @default(now()) @map("created_at")
   updatedAt      DateTime  @updatedAt @map("updated_at")
 
@@ -183,28 +197,123 @@ model Candidate {
   @@map("candidates")
 }
 
-model Registration {
-  id             String             @id @default(uuid()) @db.Uuid
-  number         String             @unique // e.g. "SPMB-2026-000123"
-  candidateId    String             @map("candidate_id") @db.Uuid
-  parentId       String             @map("parent_id") @db.Uuid
-  academicYearId String             @map("academic_year_id") @db.Uuid
-  pathway        String
-  status         RegistrationStatus @default(DRAFT)
-  submittedAt    DateTime?          @map("submitted_at")
-  revisionNote   String?            @map("revision_note")
-  createdAt      DateTime           @default(now()) @map("created_at")
-  updatedAt      DateTime           @updatedAt @map("updated_at")
+model RegistrationWave {
+  id             String   @id @default(uuid()) @db.Uuid
+  academicYearId String   @map("academic_year_id") @db.Uuid
+  name           String // e.g. "Gelombang 1"
+  startDate      DateTime @map("start_date") @db.Date
+  endDate        DateTime @map("end_date") @db.Date
+  order          Int      @default(1)
+  isActive       Boolean  @default(true) @map("is_active")
+  psikotesAt     DateTime? @map("psikotes_at")
+  psikotesNote   String?   @map("psikotes_note")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
 
-  candidate    Candidate    @relation(fields: [candidateId], references: [id], onDelete: Cascade)
-  parent       User         @relation(fields: [parentId], references: [id], onDelete: Cascade)
-  academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
+  academicYear  AcademicYear  @relation(fields: [academicYearId], references: [id])
+  registrations Registration[]
+  fees          WaveFee[]
+
+  @@unique([academicYearId, name])
+  @@index([academicYearId, isActive])
+  @@map("registration_waves")
+}
+
+/** Biaya SPMB yang di-set admin (pendaftaran, DSP, SPP, seragam). */
+model SpmbFee {
+  id        String   @id @default(uuid()) @db.Uuid
+  key       String   @unique // registration | dsp | spp | seragam
+  label     String
+  amount    Int
+  isActive  Boolean  @default(true) @map("is_active")
+  updatedBy String?  @map("updated_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("spmb_fees")
+}
+
+/** Override biaya per gelombang — key sama dengan SpmbFee.key; tanpa baris = pakai fee global. */
+model WaveFee {
+  waveId    String   @map("wave_id") @db.Uuid
+  key       String // registration | dsp | dsp_dp | spp | seragam
+  amount    Int
+  updatedBy String?  @map("updated_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  wave RegistrationWave @relation(fields: [waveId], references: [id], onDelete: Cascade)
+
+  @@id([waveId, key])
+  @@map("wave_fees")
+}
+
+/** Aturan diskon DSP untuk jalur prestasi — di-set admin. */
+model DiscountRule {
+  id        String   @id @default(uuid()) @db.Uuid
+  subType   String   @unique // akademik | tahfidz_2 | tahfidz_3plus | non_akademik | alumni_sdm
+  label     String
+  percent   Int      @default(0)
+  minScore  Int?     @map("min_score") // syarat nilai rapor untuk akademik
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("discount_rules")
+}
+
+/** Pertanyaan formulir dinamis — di-set admin, diisi ortu. */
+model FormQuestion {
+  id             String   @id @default(uuid()) @db.Uuid
+  academicYearId String?  @map("academic_year_id") @db.Uuid // null = berlaku semua tahun
+  label          String
+  helpText       String?  @map("help_text")
+  fieldType      String   @default("text") @map("field_type") // text|textarea|date|number|select
+  options        Json?    // string[] untuk fieldType=select
+  required       Boolean  @default(false)
+  order          Int      @default(0)
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  academicYear AcademicYear? @relation(fields: [academicYearId], references: [id])
+
+  @@index([isActive, order])
+  @@map("form_questions")
+}
+
+model Registration {
+  id              String             @id @default(uuid()) @db.Uuid
+  number          String             @unique // e.g. "SPMB-2027-000123"
+  candidateId     String             @map("candidate_id") @db.Uuid
+  parentId        String             @map("parent_id") @db.Uuid
+  academicYearId  String             @map("academic_year_id") @db.Uuid
+  waveId          String?            @map("wave_id") @db.Uuid
+  pathway         String
+  pathwayDetail   String?            @map("pathway_detail") // sub-jalur prestasi
+  status          RegistrationStatus @default(DRAFT)
+  formAnswers     Json?              @map("form_answers") // {questionId: value}
+  discountPercent Int                @default(0) @map("discount_percent")
+  submittedAt     DateTime?          @map("submitted_at")
+  revisionNote    String?            @map("revision_note")
+  decisionNote    String?            @map("decision_note") // alasan diterima/ditolak
+  psikotesAt      DateTime?          @map("psikotes_at")
+  psikotesNote    String?            @map("psikotes_note")
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
+
+  candidate    Candidate         @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  parent       User              @relation(fields: [parentId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear      @relation(fields: [academicYearId], references: [id])
+  wave         RegistrationWave? @relation(fields: [waveId], references: [id])
   documents    Document[]
   invoices     Invoice[]
+  installmentPlans InstallmentPlan[]
 
   // One registration per candidate per academic year.
   @@unique([candidateId, academicYearId])
   @@index([parentId, status])
+  @@index([waveId])
   @@map("registrations")
 }
 
@@ -239,20 +348,44 @@ enum PaymentStatus {
   REFUNDED
 }
 
-model Invoice {
-  id             String        @id @default(uuid()) @db.Uuid
-  number         String        @unique // e.g. "INV-2026-000123"
-  registrationId String        @map("registration_id") @db.Uuid
-  title          String // e.g. "Biaya Pendaftaran SPMB 2026/2027"
-  amount         Int // minor units (IDR sen→rupiah as integer)
-  status         InvoiceStatus @default(OPEN)
-  dueAt          DateTime?     @map("due_at")
-  issuedAt       DateTime      @default(now()) @map("issued_at")
-  paidAt         DateTime?     @map("paid_at")
-  createdAt      DateTime      @default(now()) @map("created_at")
-  updatedAt      DateTime      @updatedAt @map("updated_at")
+/** Rencana angsuran — admin membuat N tagihan sekaligus. */
+model InstallmentPlan {
+  id             String   @id @default(uuid()) @db.Uuid
+  registrationId String   @map("registration_id") @db.Uuid
+  title          String
+  totalAmount    Int      @map("total_amount")
+  count          Int
+  createdBy      String?  @map("created_by") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at")
 
   registration Registration @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  invoices     Invoice[]
+
+  @@index([registrationId])
+  @@map("installment_plans")
+}
+
+model Invoice {
+  id              String        @id @default(uuid()) @db.Uuid
+  number          String        @unique // e.g. "INV-2027-000123"
+  registrationId  String        @map("registration_id") @db.Uuid
+  planId          String?       @map("plan_id") @db.Uuid
+  kind            String        @default("other") // registration_fee | dsp_dp | dsp | spp | seragam | installment | other
+  title           String
+  amount          Int
+  baseAmount      Int?          @map("base_amount") // sebelum diskon
+  discountPercent Int           @default(0) @map("discount_percent")
+  status          InvoiceStatus @default(OPEN)
+  installmentNo   Int?          @map("installment_no")
+  dueAt           DateTime?     @map("due_at")
+  issuedAt        DateTime      @default(now()) @map("issued_at")
+  paidAt          DateTime?     @map("paid_at")
+  note            String?
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  registration Registration     @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  plan         InstallmentPlan? @relation(fields: [planId], references: [id], onDelete: SetNull)
   payments     Payment[]
 
   @@index([registrationId])
@@ -260,22 +393,114 @@ model Invoice {
 }
 
 model Payment {
-  id          String        @id @default(uuid()) @db.Uuid
-  invoiceId   String        @map("invoice_id") @db.Uuid
-  provider    String // e.g. "mock", "midtrans" — adapter key
-  providerRef String?       @unique @map("provider_ref") // idempotency key
-  method      String? // e.g. "bank_transfer", "qris"
-  amount      Int
-  status      PaymentStatus @default(PENDING)
-  rawPayload  Json?         @map("raw_payload")
-  paidAt      DateTime?     @map("paid_at")
-  createdAt   DateTime      @default(now()) @map("created_at")
-  updatedAt   DateTime      @updatedAt @map("updated_at")
+  id              String        @id @default(uuid()) @db.Uuid
+  invoiceId       String        @map("invoice_id") @db.Uuid
+  provider        String // "mock" | "manual" — adapter key
+  providerRef     String?       @unique @map("provider_ref") // idempotency key
+  method          String? // "transfer" | "cash" | "mock_transfer"
+  amount          Int
+  status          PaymentStatus @default(PENDING)
+  proofDocumentId String?       @map("proof_document_id") @db.Uuid
+  verifiedBy      String?       @map("verified_by") @db.Uuid
+  verifiedAt      DateTime?     @map("verified_at")
+  verifyNote      String?       @map("verify_note")
+  rawPayload      Json?         @map("raw_payload")
+  paidAt          DateTime?     @map("paid_at")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
 
-  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoice        Invoice   @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  proofDocument  Document? @relation("PaymentProof", fields: [proofDocumentId], references: [id], onDelete: SetNull)
+  receipts       Receipt[]
+  financeTx      FinanceTransaction?
 
   @@index([invoiceId])
   @@map("payments")
+}
+
+/** Kwitansi pembayaran — dikirim ke nomor HP ortu (adapter WA menyusul). */
+model Receipt {
+  id         String   @id @default(uuid()) @db.Uuid
+  number     String   @unique // e.g. "KWT-2027-000123"
+  paymentId  String   @map("payment_id") @db.Uuid
+  channel    String   @default("whatsapp") // whatsapp | sms
+  recipient  String // nomor HP tujuan
+  body       String // isi kwitansi (teks)
+  status     String   @default("QUEUED") // QUEUED | SENT | FAILED
+  sentAt     DateTime? @map("sent_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId])
+  @@map("receipts")
+}
+
+// ---------- Keuangan (internal — lepas dari ARKAS) ----------
+
+enum FinanceTxType {
+  INCOME
+  EXPENSE
+}
+
+/** Kategori transaksi — pemasukan (DSP/SPP/seragam/dst) & pengeluaran. */
+model FinanceCategory {
+  id        String         @id @default(uuid()) @db.Uuid
+  key       String         @unique // e.g. "spmb_dsp"
+  name      String
+  type      FinanceTxType
+  createdAt DateTime       @default(now()) @map("created_at")
+
+  transactions FinanceTransaction[]
+  budgets      FinanceBudget[]
+
+  @@map("finance_categories")
+}
+
+/**
+ * Transaksi keuangan. `source` = "manual" untuk catatan bendahara,
+ * "spmb" untuk pemasukan otomatis dari pembayaran SPMB yang diverifikasi.
+ * `paymentId` menjaga idempotensi (1 pembayaran → 1 transaksi).
+ */
+model FinanceTransaction {
+  id             String         @id @default(uuid()) @db.Uuid
+  type           FinanceTxType
+  categoryId     String         @map("category_id") @db.Uuid
+  amount         Int
+  occurredAt     DateTime       @map("occurred_at")
+  description    String?
+  source         String         @default("manual")
+  paymentId      String?        @unique @map("payment_id") @db.Uuid
+  academicYearId String?        @map("academic_year_id") @db.Uuid
+  recordedById   String?        @map("recorded_by_id") @db.Uuid
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  category     FinanceCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  payment      Payment?        @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  academicYear AcademicYear?   @relation(fields: [academicYearId], references: [id], onDelete: SetNull)
+  recordedBy   User?           @relation(fields: [recordedById], references: [id], onDelete: SetNull)
+
+  @@index([type, occurredAt])
+  @@index([academicYearId])
+  @@map("finance_transactions")
+}
+
+/** Anggaran per kategori per tahun ajaran — dibandingkan realisasi. */
+model FinanceBudget {
+  id             String   @id @default(uuid()) @db.Uuid
+  academicYearId String   @map("academic_year_id") @db.Uuid
+  categoryId     String   @map("category_id") @db.Uuid
+  amount         Int
+  note           String?
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  academicYear AcademicYear    @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  category     FinanceCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([academicYearId, categoryId])
+  @@map("finance_budgets")
 }
 
 // ---------- Kesiswaan & Akademik ----------
@@ -551,6 +776,7 @@ model Document {
   uploader User?  @relation("UploadedDocuments", fields: [uploadedBy], references: [id], onDelete: SetNull)
   registration Registration? @relation(fields: [registrationId], references: [id], onDelete: SetNull)
   student      Student?      @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  paymentProofs  Payment[]   @relation("PaymentProof")
 
   @@index([ownerId])
   @@index([registrationId])

@@ -42,6 +42,19 @@ export class EmployeeDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  /** Opsional — sekaligus buat akun login untuk pegawai ini. */
+  @IsOptional()
+  @IsString()
+  @MinLength(8)
+  @MaxLength(100)
+  password?: string;
+
+  /** Opsional — role kerja akun (menentukan akses bidang: spmb, cbt, keuangan, dst). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  roleKey?: string;
 }
 
 export class CurriculumDto {

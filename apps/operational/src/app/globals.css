@@ -1,2 +1,73 @@
 @import 'tailwindcss';
 @import '@smpmuh3/ui/styles.css';
+
+/*
+ * IMPORTANT: Tailwind only scans this app's src/ by default. Classes that
+ * live in packages/ui (button.tsx, field.tsx, card, badge…) would silently
+ * be missing from the generated CSS without this @source — buttons lose
+ * their colors/heights. Keep this line; removing it breaks shared styles.
+ */
+@source '../../../../packages/ui/src';
+
+@layer base {
+  :root {
+    --font-plus-jakarta: 'Plus Jakarta Sans Variable', 'Plus Jakarta Sans',
+      ui-sans-serif, system-ui, sans-serif;
+  }
+
+  body {
+    @apply bg-sand-100 font-sans text-sand-900 antialiased;
+  }
+
+  ::selection {
+    @apply bg-primary-200 text-primary-950;
+  }
+}
+
+/* Custom thin scrollbars — replaces the default chunky browser scrollbar. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-sand-300) transparent;
+}
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-sand-300);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-sand-400);
+}
+
+/* Variant for the dark-green sidebar — light thumb on dark track. */
+.dark-scroll {
+  scrollbar-color: rgb(255 255 255 / 0.16) transparent;
+}
+.dark-scroll::-webkit-scrollbar-thumb {
+  background: rgb(255 255 255 / 0.16);
+}
+.dark-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgb(255 255 255 / 0.28);
+}
+
+/* Subtle fade for page content — removes the hard white flash on navigation. */
+@keyframes page-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .page-fade {
+    animation: page-fade-in 160ms ease-out;
+  }
+}

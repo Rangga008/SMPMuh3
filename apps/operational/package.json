@@ -9,6 +9,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@fontsource-variable/plus-jakarta-sans": "^5.3.0",
     "@smpmuh3/types": "workspace:*",
     "@smpmuh3/ui": "workspace:*",
     "next": "15.5.28",

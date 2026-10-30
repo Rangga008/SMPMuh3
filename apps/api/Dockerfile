@@ -8,7 +8,8 @@ COPY packages/types/package.json ./packages/types/package.json
 COPY packages/ui/package.json ./packages/ui/package.json
 COPY packages/config/package.json ./packages/config/package.json
 COPY packages/auth/package.json ./packages/auth/package.json
-RUN pnpm install --frozen-lockfile --filter @smpmuh3/api...
+RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile --filter @smpmuh3/api...
 
 FROM deps AS build
 COPY tsconfig.base.json ./

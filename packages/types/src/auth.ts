@@ -3,7 +3,9 @@ import type { PermissionKey } from './permissions';
 /** Authenticated principal attached to the request after JWT validation. */
 export interface AuthUser {
   id: string;
-  email: string;
+  /** Optional — parents may register with phone only. */
+  email?: string | undefined;
+  phone?: string | undefined;
   name: string;
   roles: string[];
   permissions: PermissionKey[];
@@ -12,7 +14,7 @@ export interface AuthUser {
 /** Claims carried inside the access token. */
 export interface AccessTokenClaims {
   sub: string;
-  email: string;
+  email?: string;
   name?: string;
   roles: string[];
   permissions: PermissionKey[];

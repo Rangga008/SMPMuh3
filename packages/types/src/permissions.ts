@@ -27,6 +27,8 @@ export const PERMISSIONS = {
   ACADEMIC_MANAGE: 'academic.manage',
   ATTENDANCE_READ: 'attendance.read',
   ATTENDANCE_MANAGE: 'attendance.manage',
+  FINANCE_READ: 'finance.read',
+  FINANCE_MANAGE: 'finance.manage',
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];

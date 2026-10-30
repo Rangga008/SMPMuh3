@@ -1,25 +1,23 @@
 import type { Metadata } from 'next';
-import { Plus_Jakarta_Sans } from 'next/font/google';
 import type { ReactNode } from 'react';
+import '@fontsource-variable/plus-jakarta-sans';
 import './globals.css';
 
-const jakarta = Plus_Jakarta_Sans({
-  subsets: ['latin'],
-  variable: '--font-plus-jakarta',
-  display: 'swap',
-});
-
+// Favicon mengikuti logo sekolah dari API — /logo.png me-proxy ke
+// /school/logo; saat belum ada logo diunggah, route balas 404 dan
+// browser memakai default.
 export const metadata: Metadata = {
   title: {
     default: 'Admin — SMP Muhammadiyah 3 Kota Bandung',
     template: '%s — Admin Sekolah',
   },
   robots: { index: false, follow: false },
+  icons: { icon: '/logo.png' },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="id" className={jakarta.variable}>
+    <html lang="id">
       <body>
         <a
           href="#konten"

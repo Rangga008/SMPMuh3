@@ -14,29 +14,27 @@ import {
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
+import { StreamableFile } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { PERMISSIONS } from '@smpmuh3/types';
 import type { AuthUser } from '@smpmuh3/types';
 import type { Response } from 'express';
 import { CurrentUser } from '../identity/decorators/current-user.decorator';
 import { Public } from '../identity/decorators/public.decorator';
+import { PaymentsService } from '../payments/payments.service';
 import { CandidatesService } from './candidates.service';
 import { DocumentsService } from './documents.service';
 import { RegistrationsService } from './registrations.service';
+import { SpmbSettingsService } from './settings.service';
 import {
   CreateCandidateDto,
+  CreateRegistrationDto,
   StatusLookupDto,
   UpdateCandidateDto,
   UpdateRegistrationDto,
   UploadDocumentDto,
   type RegistrationDocType,
 } from './dto/spmb.dto';
-import { IsUUID } from 'class-validator';
-
-class CreateRegistrationDto {
-  @IsUUID()
-  candidateId!: string;
-}
 
 @Controller({ version: '1' })
 export class SpmbController {
@@ -44,7 +42,35 @@ export class SpmbController {
     private readonly candidates: CandidatesService,
     private readonly registrations: RegistrationsService,
     private readonly documents: DocumentsService,
+    private readonly settings: SpmbSettingsService,
+    private readonly payments: PaymentsService,
   ) {}
+
+  // ---------- Info publik/ortu ----------
+  /** Gelombang aktif untuk tahun ajaran aktif. */
+  @Get('waves')
+  activeWaves() {
+    return this.settings.activeWaves();
+  }
+
+  /** Pertanyaan formulir aktif — diisi ortu pada tahap FORM_FILLING. */
+  @Get('form-questions')
+  formQuestions() {
+    return this.settings.listQuestions(true);
+  }
+
+  /** Aturan diskon aktif — ditampilkan saat memilih jalur prestasi. */
+  @Get('discounts')
+  discounts() {
+    return this.settings.listDiscounts();
+  }
+
+  /** Daftar biaya (publik) — transparansi biaya di landing page. */
+  @Public()
+  @Get('fees')
+  fees() {
+    return this.settings.listFees();
+  }
 
   // ---------- Candidates (own) ----------
   @Get('candidates')
@@ -80,13 +106,17 @@ export class SpmbController {
     @CurrentUser() user: AuthUser,
     @Body() dto: CreateRegistrationDto,
   ) {
-    return this.registrations.createDraft(user.id, dto.candidateId);
+    return this.registrations.createDraft(
+      user.id,
+      dto.candidateId,
+      dto.waveId,
+    );
   }
 
   @Get('registrations/lookup')
   @Public()
   lookup(@Query() q: StatusLookupDto) {
-    return this.registrations.lookup(q.number, q.email);
+    return this.registrations.lookup(q.number);
   }
 
   @Get('registrations/:id')
@@ -103,7 +133,7 @@ export class SpmbController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateRegistrationDto,
   ) {
-    return this.registrations.updateDraft(user.id, id, dto.pathway);
+    return this.registrations.updateDraft(user.id, id, dto);
   }
 
   @Post('registrations/:id/submit')
@@ -145,13 +175,24 @@ export class SpmbController {
     return this.documents.listForRegistration(user.id, id);
   }
 
+  @Public()
+  @Get('surat-pernyataan-template')
+  async suratTemplate(@Res({ passthrough: true }) res: Response) {
+    const { doc, buffer } = await this.documents.openTemplate();
+    res.set({
+      'Content-Type': doc.mimeType,
+      'Content-Disposition': `attachment; filename="${doc.fileName}"`,
+    });
+    return new StreamableFile(buffer);
+  }
+
   @Get('documents/:id/download')
   async download(
     @CurrentUser() user: AuthUser,
     @Param('id', ParseUUIDPipe) id: string,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const { doc, stream } = await this.documents.open(
+    const { doc, buffer } = await this.documents.open(
       user.id,
       id,
       user.permissions.includes(PERMISSIONS.SPMB_REGISTRATION_MANAGE),
@@ -160,7 +201,7 @@ export class SpmbController {
       'Content-Type': doc.mimeType,
       'Content-Disposition': `attachment; filename="${doc.fileName}"`,
     });
-    return stream;
+    return new StreamableFile(buffer);
   }
 
 }

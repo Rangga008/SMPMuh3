@@ -1,11 +1,14 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import * as argon2 from 'argon2';
 import type { Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../core/prisma/prisma.service';
+import { normalizePhone } from '../identity/users/users.service';
 import type {
   AssessmentDto,
   ClassDto,
@@ -40,6 +43,40 @@ export class AcademicService {
       });
       if (clash) throw new ConflictException(`NIP ${dto.nip} sudah terdaftar`);
     }
+
+    // Opsional: buat akun login sekaligus (butuh email/telepon + password + role).
+    let userId: string | null = null;
+    if (dto.password || dto.roleKey) {
+      if (!dto.password || !dto.roleKey) {
+        throw new BadRequestException(
+          'Password dan role wajib diisi untuk membuat akun pegawai.',
+        );
+      }
+      if (!dto.email && !dto.phone) {
+        throw new BadRequestException(
+          'Email atau telepon pegawai wajib diisi untuk membuat akun.',
+        );
+      }
+      const role = await this.prisma.role.findUnique({
+        where: { key: dto.roleKey },
+      });
+      if (!role) throw new BadRequestException(`Role ${dto.roleKey} tidak ada.`);
+      if (role.key === 'spmb_parent') {
+        throw new BadRequestException('Role orang tua tidak untuk pegawai.');
+      }
+      const passwordHash = await argon2.hash(dto.password);
+      const user = await this.prisma.user.create({
+        data: {
+          name: dto.name.trim(),
+          email: dto.email?.toLowerCase() ?? null,
+          phone: dto.phone ? normalizePhone(dto.phone) : null,
+          passwordHash,
+          roles: { create: { roleId: role.id } },
+        },
+      });
+      userId = user.id;
+    }
+
     const emp = await this.prisma.employee.create({
       data: {
         name: dto.name.trim(),
@@ -48,6 +85,7 @@ export class AcademicService {
         email: dto.email ?? null,
         phone: dto.phone ?? null,
         isActive: dto.isActive ?? true,
+        userId,
       },
     });
     await this.audit.log({ actorId, action: 'employee.create', entity: 'employee', entityId: emp.id });

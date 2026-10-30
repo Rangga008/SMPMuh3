@@ -9,7 +9,7 @@ import {
 } from '@smpmuh3/types';
 import { Badge, buttonClasses } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
-import { PageTitle, PendingWidget, Widget } from '@/components/widgets';
+import { PageTitle, PendingWidget, StatCard, Widget } from '@/components/widgets';
 import {
   listAcademicYears,
   listNotifications,
@@ -50,33 +50,18 @@ export default function DashboardPage() {
     <Shell>
       <PageTitle title="Dashboard" subtitle="Ringkasan operasional sekolah" />
       {errors.length ? (
-        <p className="mb-4 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-700">
+        <p className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
           {errors.join(' · ')}
         </p>
       ) : null}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Widget title="Tahun Ajaran">
-          {year ? (
-            <p className="text-2xl font-extrabold text-sand-950">{year.name}</p>
-          ) : (
-            <p className="text-sm text-sand-500">Memuat…</p>
-          )}
-        </Widget>
-
-        <Widget title="Pendaftar SPMB">
-          {summary ? (
-            <>
-              <p className="text-2xl font-extrabold text-sand-950">
-                {summary.total}
-              </p>
-              <p className="text-xs text-sand-500">total pendaftaran</p>
-            </>
-          ) : (
-            <p className="text-sm text-sand-500">Memuat…</p>
-          )}
-        </Widget>
-
+        <StatCard label="Tahun Ajaran" value={year?.name ?? '…'} />
+        <StatCard
+          label="Pendaftar SPMB"
+          value={summary ? String(summary.total) : '…'}
+          accent="accent"
+        />
         <Widget title="Siswa">
           <PendingWidget module="kesiswaan" />
         </Widget>
@@ -85,7 +70,7 @@ export default function DashboardPage() {
         </Widget>
       </div>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-3">
+      <div className="mt-5 grid gap-5 lg:grid-cols-3">
         <Widget title="Status SPMB" className="lg:col-span-2">
           {summary ? (
             <ul className="flex flex-wrap gap-2">
@@ -100,11 +85,8 @@ export default function DashboardPage() {
           ) : (
             <p className="text-sm text-sand-500">Memuat…</p>
           )}
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Link
-              href="/spmb"
-              className={buttonClasses({ variant: 'primary', size: 'sm' })}
-            >
+          <div className="mt-5 flex flex-wrap gap-2">
+            <Link href="/spmb" className={buttonClasses({ size: 'sm' })}>
               Tinjau Pendaftar →
             </Link>
             <Link
@@ -120,11 +102,11 @@ export default function DashboardPage() {
           {notes.length === 0 ? (
             <p className="text-sm text-sand-500">Belum ada notifikasi.</p>
           ) : (
-            <ul className="flex flex-col gap-3 text-sm">
+            <ul className="space-y-3 text-sm">
               {notes.map((n) => (
-                <li key={n.id} className="border-b border-sand-100 pb-2 last:border-0">
+                <li key={n.id} className="border-b border-sand-100 pb-3 last:border-0 last:pb-0">
                   <p className="font-semibold text-sand-900">{n.title}</p>
-                  <p className="line-clamp-2 text-sand-600">{n.body}</p>
+                  <p className="mt-0.5 line-clamp-2 text-sand-600">{n.body}</p>
                 </li>
               ))}
             </ul>

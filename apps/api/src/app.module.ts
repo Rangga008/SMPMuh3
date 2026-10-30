@@ -14,6 +14,7 @@ import { SpmbModule } from './spmb/spmb.module';
 import { PaymentsModule } from './payments/payments.module';
 import { StudentsModule } from './students/students.module';
 import { AcademicModule } from './academic/academic.module';
+import { FinanceModule } from './finance/finance.module';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { AcademicModule } from './academic/academic.module';
     PaymentsModule,
     StudentsModule,
     AcademicModule,
+    FinanceModule,
     NotificationsModule,
     AuditModule,
   ],

@@ -22,23 +22,23 @@ export function DataTable({
   children,
 }: DataTableProps) {
   return (
-    <div className="overflow-x-auto rounded-2xl border border-sand-200 bg-white">
+    <div className="overflow-x-auto rounded-3xl border border-sand-200 bg-white shadow-card">
       <table className="w-full min-w-[36rem] text-left text-sm">
         <thead>
-          <tr className="border-b border-sand-200 bg-sand-100/60 text-xs font-bold tracking-wide text-sand-600 uppercase">
+          <tr className="border-b border-sand-200 bg-sand-50 text-xs font-bold uppercase tracking-wider text-sand-500">
             {head.map((h, i) => (
-              <th key={i} scope="col" className="px-4 py-3">
+              <th key={i} scope="col" className="px-5 py-3.5">
                 {h}
               </th>
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-sand-100">
+        <tbody className="divide-y divide-sand-100 [&>tr]:transition-colors [&>tr:hover]:bg-primary-50/50">
           {loading ? (
             <tr>
               <td
                 colSpan={colSpan ?? head.length}
-                className="px-4 py-10 text-center text-sand-500"
+                className="px-5 py-12 text-center text-sm text-sand-500"
               >
                 Memuat data…
               </td>
@@ -47,7 +47,7 @@ export function DataTable({
             <tr>
               <td
                 colSpan={colSpan ?? head.length}
-                className="px-4 py-10 text-center text-red-700"
+                className="px-5 py-12 text-center text-sm font-medium text-red-700"
               >
                 {error}
               </td>
@@ -59,7 +59,7 @@ export function DataTable({
             <tr>
               <td
                 colSpan={colSpan ?? head.length}
-                className="px-4 py-10 text-center text-sand-500"
+                className="px-5 py-12 text-center text-sm text-sand-500"
               >
                 {empty}
               </td>

@@ -27,7 +27,7 @@ export class AuthController {
   @Public()
   @Post('register')
   register(@Body() dto: RegisterDto, @Req() req: Request): Promise<AuthTokens> {
-    return this.auth.register(dto.name, dto.email, dto.password, {
+    return this.auth.register(dto.name, dto.phone, dto.email, dto.password, {
       ip: req.ip,
       userAgent: req.headers['user-agent'],
     });
@@ -40,7 +40,7 @@ export class AuthController {
     @Body() dto: ForgotPasswordDto,
     @Req() req: Request,
   ): Promise<void> {
-    return this.auth.forgotPassword(dto.email, {
+    return this.auth.forgotPassword(dto.identifier, {
       ip: req.ip,
       userAgent: req.headers['user-agent'],
     });
@@ -57,7 +57,7 @@ export class AuthController {
   @Post('login')
   @HttpCode(HttpStatus.OK)
   login(@Body() dto: LoginDto, @Req() req: Request): Promise<AuthTokens> {
-    return this.auth.login(dto.email, dto.password, {
+    return this.auth.login(dto.identifier, dto.password, {
       ip: req.ip,
       userAgent: req.headers['user-agent'],
     });
