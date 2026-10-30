@@ -8,7 +8,7 @@ COPY packages/types/package.json ./packages/types/package.json
 COPY packages/ui/package.json ./packages/ui/package.json
 COPY packages/config/package.json ./packages/config/package.json
 COPY packages/auth/package.json ./packages/auth/package.json
-RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
+RUN --mount=type=cache,id=s/508ee5c6-3958-4c4c-8b49-0fdac2851451-/root/.local/share/pnpm/store,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile --filter @smpmuh3/spmb...
 
 FROM deps AS build
@@ -18,7 +18,7 @@ ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
 COPY tsconfig.base.json ./
 COPY packages ./packages
 COPY apps/spmb ./apps/spmb
-RUN --mount=type=cache,id=next-cache-spmb,target=/app/apps/spmb/.next/cache \
+RUN --mount=type=cache,id=s/508ee5c6-3958-4c4c-8b49-0fdac2851451-/app/apps/spmb/.next/cache,target=/app/apps/spmb/.next/cache \
     pnpm --filter @smpmuh3/types build && pnpm --filter @smpmuh3/spmb build
 
 # Runner hanya membawa output standalone — tanpa node_modules penuh.
