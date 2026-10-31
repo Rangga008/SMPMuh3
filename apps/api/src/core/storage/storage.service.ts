@@ -1,15 +1,23 @@
-import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
+import {
+  CreateBucketCommand,
   DeleteObjectCommand,
   GetObjectCommand,
   PutObjectCommand,
   S3Client,
+  S3ServiceException,
 } from '@aws-sdk/client-s3';
 import type { Readable } from 'node:stream';
 import { EnvService } from '../config/env.service';
 
 @Injectable()
-export class StorageService implements OnModuleDestroy {
+export class StorageService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(StorageService.name);
   private readonly client: S3Client;
   readonly bucket: string;
 
@@ -25,6 +33,34 @@ export class StorageService implements OnModuleDestroy {
       },
       forcePathStyle: s3.forcePathStyle,
     });
+  }
+
+  /**
+   * Pastikan bucket ada — self-healing untuk S3Mock lokal (data store bisa
+   * di-reset) dan instalasi baru; no-op pada S3 produksi yang sudah ada.
+   */
+  async onModuleInit() {
+    try {
+      await this.client.send(
+        new CreateBucketCommand({ Bucket: this.bucket }),
+      );
+      this.logger.log(`Bucket "${this.bucket}" dibuat`);
+    } catch (e) {
+      const code = e instanceof S3ServiceException ? e.name : '';
+      if (
+        code === 'BucketAlreadyOwnedByYou' ||
+        code === 'BucketAlreadyExists' ||
+        code === 'BucketNotEmpty'
+      ) {
+        return;
+      }
+      if (e instanceof Error && 'name' in e && (e.name === 'NoSuchBucket')) {
+        return;
+      }
+      this.logger.warn(
+        `Bucket "${this.bucket}" tidak dapat dipastikan: ${e instanceof Error ? e.message : e}`,
+      );
+    }
   }
 
   async putObject(key: string, body: Buffer, contentType: string) {

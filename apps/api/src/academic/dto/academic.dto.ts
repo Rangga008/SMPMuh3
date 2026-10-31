@@ -10,6 +10,7 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateIf,
 } from 'class-validator';
 import { EMPLOYEE_TYPES } from '@smpmuh3/types';
 import type { EmployeeType } from '@smpmuh3/types';
@@ -112,6 +113,32 @@ export class ClassDto {
   @IsOptional()
   @IsUUID()
   homeroomId?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(60)
+  capacity?: number;
+}
+
+export class UpdateClassDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(20)
+  name?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(7)
+  @Max(9)
+  gradeLevel?: number;
+
+  /** Kosongkan wali kelas dengan mengirim null. */
+  @IsOptional()
+  @ValidateIf((o: UpdateClassDto) => o.homeroomId !== null)
+  @IsUUID()
+  homeroomId?: string | null;
 
   @IsOptional()
   @IsInt()

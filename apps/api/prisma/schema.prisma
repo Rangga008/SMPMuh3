@@ -146,6 +146,7 @@ model AcademicYear {
   formQuestions FormQuestion[]
   financeTx     FinanceTransaction[]
   financeBudgets FinanceBudget[]
+  examRecords   SchoolExamRecord[]
 
   @@map("academic_years")
 }
@@ -752,6 +753,95 @@ model Grade {
 
   @@unique([assessmentId, studentId])
   @@map("grades")
+}
+
+// ---------- Tata Usaha (surat menyurat, mutasi, ujian sekolah) ----------
+
+enum LetterDirection {
+  IN
+  OUT
+}
+
+enum MutationDirection {
+  IN
+  OUT
+}
+
+enum MutationStatus {
+  PROCESS
+  DONE
+  CANCELLED
+}
+
+enum ExamPeriod {
+  US1
+  US2
+}
+
+enum ExamResult {
+  PENDING
+  PASSED
+  FAILED
+}
+
+/** Agenda surat masuk/keluar — registrasi TU dengan lampiran opsional. */
+model Letter {
+  id          String          @id @default(uuid()) @db.Uuid
+  direction   LetterDirection
+  number      String // nomor surat (agenda)
+  date        DateTime        @db.Date
+  subject     String // perihal
+  party       String? // pengirim (masuk) / tujuan (keluar)
+  description String?
+  storageKey  String?         @map("storage_key")
+  fileName    String?         @map("file_name")
+  mimeType    String?         @map("mime_type")
+  createdBy   String?         @map("created_by") @db.Uuid
+  createdAt   DateTime        @default(now()) @map("created_at")
+  updatedAt   DateTime        @updatedAt @map("updated_at")
+
+  @@unique([direction, number])
+  @@index([direction, date])
+  @@map("letters")
+}
+
+/** Mutasi siswa masuk/keluar — register perpindahan antar sekolah. */
+model StudentMutation {
+  id           String            @id @default(uuid()) @db.Uuid
+  direction    MutationDirection
+  studentName  String            @map("student_name")
+  nisn         String?
+  date         DateTime          @db.Date
+  school       String? // asal (mutasi masuk) / tujuan (mutasi keluar)
+  letterNumber String?           @map("letter_number") // no. surat mutasi
+  status       MutationStatus    @default(PROCESS)
+  notes        String?
+  createdBy    String?           @map("created_by") @db.Uuid
+  createdAt    DateTime          @default(now()) @map("created_at")
+  updatedAt    DateTime          @updatedAt @map("updated_at")
+
+  @@index([direction, date])
+  @@map("student_mutations")
+}
+
+/** Catatan hasil Ujian Sekolah 1 & 2 per siswa per tahun ajaran. */
+model SchoolExamRecord {
+  id             String        @id @default(uuid()) @db.Uuid
+  period         ExamPeriod
+  academicYearId String        @map("academic_year_id") @db.Uuid
+  studentName    String        @map("student_name")
+  nisn           String?
+  score          Int?
+  result         ExamResult    @default(PENDING)
+  notes          String?
+  createdBy      String?       @map("created_by") @db.Uuid
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
+
+  @@index([period, academicYearId])
+  @@map("school_exam_records")
 }
 
 // ---------- Files, notifications, audit ----------

@@ -29,6 +29,8 @@ export const PERMISSIONS = {
   ATTENDANCE_MANAGE: 'attendance.manage',
   FINANCE_READ: 'finance.read',
   FINANCE_MANAGE: 'finance.manage',
+  TATAUSAHA_READ: 'tatausaha.read',
+  TATAUSAHA_MANAGE: 'tatausaha.manage',
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];

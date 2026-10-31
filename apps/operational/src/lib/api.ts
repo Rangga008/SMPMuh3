@@ -678,3 +678,186 @@ export async function uploadSchoolLogo(file: File): Promise<School> {
   const data = (await res.json()) as { data?: School } | School;
   return ('data' in data && data.data ? data.data : data) as School;
 }
+
+// ---------- Akademik lanjutan (fase 6) ----------
+export const updateClass = (id: string, dto: Record<string, unknown>) =>
+  req<ClassView>(`/classes/${id}`, { method: 'PATCH', json: dto });
+export const createAcademicYear = (dto: {
+  name: string; startDate: string; endDate: string; isActive?: boolean;
+}) => req<AcademicYear>('/academic-years', { method: 'POST', json: dto });
+export const activateAcademicYear = (id: string) =>
+  req<AcademicYear>(`/academic-years/${id}/activate`, { method: 'PATCH' });
+
+export interface AssignmentView {
+  id: string;
+  employee: { id: string; name: string };
+  subject: { code: string; name: string };
+  class: { id: string; name: string };
+  schedules?: ScheduleView[];
+}
+export const listAssignments = (academicYearId?: string) =>
+  req<AssignmentView[]>(`/assignments${academicYearId ? `?academicYearId=${academicYearId}` : ''}`);
+export const createAssignment = (dto: Record<string, unknown>) =>
+  req<AssignmentView>('/assignments', { method: 'POST', json: dto });
+
+export interface ScheduleView {
+  id: string;
+  day: number;
+  startMinute: number;
+  endMinute: number;
+  room?: string | null;
+  assignment: {
+    id: string;
+    employee: { name: string };
+    subject: { code: string; name: string };
+    class: { id: string; name: string };
+  };
+}
+export const listSchedules = (classId?: string, academicYearId?: string) => {
+  const p = new URLSearchParams();
+  if (classId) p.set('classId', classId);
+  if (academicYearId) p.set('academicYearId', academicYearId);
+  const s = p.toString();
+  return req<ScheduleView[]>(`/schedules${s ? `?${s}` : ''}`);
+};
+export const createSchedule = (dto: Record<string, unknown>) =>
+  req<ScheduleView>('/schedules', { method: 'POST', json: dto });
+export const deleteSchedule = (id: string) =>
+  req(`/schedules/${id}`, { method: 'DELETE' });
+
+export interface AssessmentView {
+  id: string;
+  name: string;
+  type: 'FORMATIF' | 'SUMATIF' | 'PTS' | 'PAS';
+  maxScore: number;
+  subject: { code: string; name: string };
+  class?: { name: string } | null;
+  _count?: { grades: number };
+}
+export const listAssessments = (academicYearId?: string, classId?: string) => {
+  const p = new URLSearchParams();
+  if (academicYearId) p.set('academicYearId', academicYearId);
+  if (classId) p.set('classId', classId);
+  const s = p.toString();
+  return req<AssessmentView[]>(`/assessments${s ? `?${s}` : ''}`);
+};
+export const createAssessment = (dto: Record<string, unknown>) =>
+  req<AssessmentView>('/assessments', { method: 'POST', json: dto });
+export const listGrades = (assessmentId: string) =>
+  req<{ id: string; score: number; student: { id: string; name: string; nis?: string | null } }[]>(
+    `/assessments/${assessmentId}/grades`,
+  );
+export const setGrades = (assessmentId: string, grades: { studentId: string; score: number }[]) =>
+  req<{ saved: number }>(`/assessments/${assessmentId}/grades`, {
+    method: 'POST', json: { grades },
+  });
+
+// ---------- Absensi ----------
+export const markAttendance = (dto: {
+  classId: string;
+  date: string;
+  records: { studentId: string; status: string; note?: string }[];
+}) => req('/attendance', { method: 'POST', json: dto });
+export const listAttendance = (classId: string, date: string) =>
+  req<{ id: string; studentId: string; status: string; note?: string | null }[]>(
+    `/attendance?classId=${classId}&date=${date}`,
+  );
+
+// ---------- Tata Usaha ----------
+export interface Letter {
+  id: string;
+  direction: 'IN' | 'OUT';
+  number: string;
+  date: string;
+  subject: string;
+  party?: string | null;
+  description?: string | null;
+  fileName?: string | null;
+  mimeType?: string | null;
+  createdAt: string;
+}
+export const listLetters = (direction?: string, search?: string) => {
+  const p = new URLSearchParams();
+  if (direction) p.set('direction', direction);
+  if (search) p.set('search', search);
+  const s = p.toString();
+  return req<Letter[]>(`/tu/letters${s ? `?${s}` : ''}`);
+};
+export const createLetter = (dto: Record<string, unknown>) =>
+  req<Letter>('/tu/letters', { method: 'POST', json: dto });
+export const updateLetter = (id: string, dto: Record<string, unknown>) =>
+  req<Letter>(`/tu/letters/${id}`, { method: 'PATCH', json: dto });
+export const deleteLetter = (id: string) =>
+  req(`/tu/letters/${id}`, { method: 'DELETE' });
+export async function uploadLetterFile(id: string, file: File): Promise<Letter> {
+  const t = getTokens();
+  const fd = new FormData();
+  fd.append('file', file);
+  const res = await fetch(`${API}/tu/letters/${id}/file`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${t?.accessToken ?? ''}` },
+    body: fd,
+  });
+  if (!res.ok) throw new Error('Unggah lampiran gagal');
+  const data = (await res.json()) as { data?: Letter } | Letter;
+  return ('data' in data && data.data ? data.data : data) as Letter;
+}
+export async function downloadLetterFile(id: string) {
+  const t = getTokens();
+  const res = await fetch(`${API}/tu/letters/${id}/file`, {
+    headers: { Authorization: `Bearer ${t?.accessToken ?? ''}` },
+  });
+  if (!res.ok) throw new Error('Gagal mengunduh lampiran');
+  return res.blob();
+}
+
+export interface StudentMutation {
+  id: string;
+  direction: 'IN' | 'OUT';
+  studentName: string;
+  nisn?: string | null;
+  date: string;
+  school?: string | null;
+  letterNumber?: string | null;
+  status: 'PROCESS' | 'DONE' | 'CANCELLED';
+  notes?: string | null;
+  createdAt: string;
+}
+export const listMutations = (direction?: string, search?: string) => {
+  const p = new URLSearchParams();
+  if (direction) p.set('direction', direction);
+  if (search) p.set('search', search);
+  const s = p.toString();
+  return req<StudentMutation[]>(`/tu/mutations${s ? `?${s}` : ''}`);
+};
+export const createMutation = (dto: Record<string, unknown>) =>
+  req<StudentMutation>('/tu/mutations', { method: 'POST', json: dto });
+export const updateMutation = (id: string, dto: Record<string, unknown>) =>
+  req<StudentMutation>(`/tu/mutations/${id}`, { method: 'PATCH', json: dto });
+export const deleteMutation = (id: string) =>
+  req(`/tu/mutations/${id}`, { method: 'DELETE' });
+
+export interface ExamRecord {
+  id: string;
+  period: 'US1' | 'US2';
+  studentName: string;
+  nisn?: string | null;
+  score?: number | null;
+  result: 'PENDING' | 'PASSED' | 'FAILED';
+  notes?: string | null;
+  academicYear: { name: string };
+}
+export const listExamRecords = (period?: string, academicYearId?: string, search?: string) => {
+  const p = new URLSearchParams();
+  if (period) p.set('period', period);
+  if (academicYearId) p.set('academicYearId', academicYearId);
+  if (search) p.set('search', search);
+  const s = p.toString();
+  return req<ExamRecord[]>(`/tu/exam-records${s ? `?${s}` : ''}`);
+};
+export const createExamRecord = (dto: Record<string, unknown>) =>
+  req<ExamRecord>('/tu/exam-records', { method: 'POST', json: dto });
+export const updateExamRecord = (id: string, dto: Record<string, unknown>) =>
+  req<ExamRecord>(`/tu/exam-records/${id}`, { method: 'PATCH', json: dto });
+export const deleteExamRecord = (id: string) =>
+  req(`/tu/exam-records/${id}`, { method: 'DELETE' });

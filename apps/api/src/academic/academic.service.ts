@@ -19,6 +19,7 @@ import type {
   ScheduleEntryDto,
   SubjectDto,
   TeachingAssignmentDto,
+  UpdateClassDto,
 } from './dto/academic.dto';
 
 @Injectable()
@@ -191,6 +192,33 @@ export class AcademicService {
     return c;
   }
 
+  async updateClass(id: string, dto: UpdateClassDto, actorId: string) {
+    const existing = await this.prisma.class.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Rombel tidak ditemukan.');
+    if (dto.name && dto.name !== existing.name) {
+      const clash = await this.prisma.class.findUnique({
+        where: {
+          name_academicYearId: {
+            name: dto.name,
+            academicYearId: existing.academicYearId,
+          },
+        },
+      });
+      if (clash) throw new ConflictException(`Kelas ${dto.name} sudah ada.`);
+    }
+    const c = await this.prisma.class.update({
+      where: { id },
+      data: {
+        ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
+        ...(dto.gradeLevel !== undefined ? { gradeLevel: dto.gradeLevel } : {}),
+        ...(dto.homeroomId !== undefined ? { homeroomId: dto.homeroomId } : {}),
+        ...(dto.capacity !== undefined ? { capacity: dto.capacity } : {}),
+      },
+    });
+    await this.audit.log({ actorId, action: 'class.update', entity: 'class', entityId: id });
+    return c;
+  }
+
   async enroll(dto: EnrollmentDto, actorId: string) {
     const clash = await this.prisma.enrollment.findUnique({
       where: {
@@ -243,7 +271,7 @@ export class AcademicService {
       include: {
         employee: { select: { id: true, name: true } },
         subject: { select: { code: true, name: true } },
-        class: { select: { name: true } },
+        class: { select: { id: true, name: true } },
         schedules: true,
       },
       orderBy: { createdAt: 'desc' },
@@ -255,6 +283,36 @@ export class AcademicService {
       throw new ConflictException('Jam selesai harus setelah jam mulai');
     }
     return this.prisma.scheduleEntry.create({ data: { ...dto, room: dto.room ?? null } });
+  }
+
+  /** Jadwal per rombel (via penugasan) — untuk tampilan grid mingguan. */
+  listSchedules(classId?: string, academicYearId?: string) {
+    return this.prisma.scheduleEntry.findMany({
+      where: {
+        assignment: {
+          ...(classId ? { classId } : {}),
+          ...(academicYearId ? { academicYearId } : {}),
+        },
+      },
+      include: {
+        assignment: {
+          select: {
+            id: true,
+            employee: { select: { name: true } },
+            subject: { select: { code: true, name: true } },
+            class: { select: { id: true, name: true } },
+          },
+        },
+      },
+      orderBy: [{ day: 'asc' }, { startMinute: 'asc' }],
+    });
+  }
+
+  async deleteScheduleEntry(id: string, actorId: string) {
+    const existing = await this.prisma.scheduleEntry.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Entri jadwal tidak ditemukan.');
+    await this.prisma.scheduleEntry.delete({ where: { id } });
+    await this.audit.log({ actorId, action: 'schedule.delete', entity: 'schedule_entry', entityId: id });
   }
 
   // ---------- Assessments & grades ----------

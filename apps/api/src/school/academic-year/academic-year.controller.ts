@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
 import type { AuthUser } from '@smpmuh3/types';
 import { PERMISSIONS } from '@smpmuh3/types';
 import { CurrentUser } from '../../identity/decorators/current-user.decorator';
@@ -20,5 +20,11 @@ export class AcademicYearController {
   @RequirePermission(PERMISSIONS.ACADEMIC_YEAR_MANAGE)
   create(@Body() dto: CreateAcademicYearDto, @CurrentUser() user: AuthUser) {
     return this.academicYears.create(dto, user.id);
+  }
+
+  @Patch(':id/activate')
+  @RequirePermission(PERMISSIONS.ACADEMIC_YEAR_MANAGE)
+  activate(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
+    return this.academicYears.activate(id, user.id);
   }
 }

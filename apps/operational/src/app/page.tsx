@@ -9,10 +9,12 @@ import {
 } from '@smpmuh3/types';
 import { Badge, buttonClasses } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
-import { PageTitle, PendingWidget, StatCard, Widget } from '@/components/widgets';
+import { PageTitle, StatCard, Widget } from '@/components/widgets';
 import {
   listAcademicYears,
+  listEmployees,
   listNotifications,
+  listStudents,
   spmbSummary,
   type AcademicYear,
   type SpmbSummary,
@@ -30,6 +32,8 @@ export default function DashboardPage() {
   const [year, setYear] = useState<AcademicYear | null>(null);
   const [summary, setSummary] = useState<SpmbSummary | null>(null);
   const [notes, setNotes] = useState<NotificationDto[]>([]);
+  const [studentCount, setStudentCount] = useState<number | null>(null);
+  const [employeeCount, setEmployeeCount] = useState<number | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
 
   useEffect(() => {
@@ -40,6 +44,12 @@ export default function DashboardPage() {
     spmbSummary()
       .then(setSummary)
       .catch(() => errs.push('Ringkasan SPMB tidak dapat dimuat'));
+    listStudents({ status: 'ACTIVE' })
+      .then((s) => setStudentCount(s.length))
+      .catch(() => setStudentCount(null));
+    listEmployees()
+      .then((e) => setEmployeeCount(e.filter((x) => x.isActive).length))
+      .catch(() => setEmployeeCount(null));
     listNotifications()
       .then((n) => setNotes(n.slice(0, 4)))
       .catch(() => undefined);
@@ -62,12 +72,15 @@ export default function DashboardPage() {
           value={summary ? String(summary.total) : '…'}
           accent="accent"
         />
-        <Widget title="Siswa">
-          <PendingWidget module="kesiswaan" />
-        </Widget>
-        <Widget title="Pegawai">
-          <PendingWidget module="kepegawaian" />
-        </Widget>
+        <StatCard
+          label="Siswa Aktif"
+          value={studentCount === null ? '…' : String(studentCount)}
+        />
+        <StatCard
+          label="Pegawai Aktif"
+          value={employeeCount === null ? '…' : String(employeeCount)}
+          accent="accent"
+        />
       </div>
 
       <div className="mt-5 grid gap-5 lg:grid-cols-3">
@@ -98,7 +111,33 @@ export default function DashboardPage() {
           </div>
         </Widget>
 
-        <Widget title="Notifikasi Terbaru">
+        <div className="space-y-5">
+          <Widget title="Aksi Cepat">
+          <ul className="grid gap-2 text-sm font-semibold">
+            <li>
+              <Link href="/kesiswaan" className="flex items-center justify-between rounded-xl bg-sand-50 px-3.5 py-2.5 text-sand-800 transition-colors hover:bg-primary-50 hover:text-primary-800">
+                🎓 Tambah / kelola siswa <span aria-hidden>→</span>
+              </Link>
+            </li>
+            <li>
+              <Link href="/kesiswaan/absensi" className="flex items-center justify-between rounded-xl bg-sand-50 px-3.5 py-2.5 text-sand-800 transition-colors hover:bg-primary-50 hover:text-primary-800">
+                ✅ Catat absensi hari ini <span aria-hidden>→</span>
+              </Link>
+            </li>
+            <li>
+              <Link href="/tata-usaha/surat" className="flex items-center justify-between rounded-xl bg-sand-50 px-3.5 py-2.5 text-sand-800 transition-colors hover:bg-primary-50 hover:text-primary-800">
+                📁 Agenda surat TU <span aria-hidden>→</span>
+              </Link>
+            </li>
+            <li>
+              <Link href="/keuangan" className="flex items-center justify-between rounded-xl bg-sand-50 px-3.5 py-2.5 text-sand-800 transition-colors hover:bg-primary-50 hover:text-primary-800">
+                💰 Catat transaksi <span aria-hidden>→</span>
+              </Link>
+            </li>
+          </ul>
+          </Widget>
+
+          <Widget title="Notifikasi Terbaru">
           {notes.length === 0 ? (
             <p className="text-sm text-sand-500">Belum ada notifikasi.</p>
           ) : (
@@ -111,7 +150,8 @@ export default function DashboardPage() {
               ))}
             </ul>
           )}
-        </Widget>
+          </Widget>
+        </div>
       </div>
     </Shell>
   );

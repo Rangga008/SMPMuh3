@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -22,6 +23,7 @@ import {
   ScheduleEntryDto,
   SubjectDto,
   TeachingAssignmentDto,
+  UpdateClassDto,
 } from './dto/academic.dto';
 import { ArrayNotEmpty, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -103,6 +105,16 @@ export class AcademicController {
     return this.academic.createClass(dto, u.id);
   }
 
+  @Patch('classes/:id')
+  @RequirePermission(M)
+  updateClass(
+    @CurrentUser() u: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateClassDto,
+  ) {
+    return this.academic.updateClass(id, dto, u.id);
+  }
+
   @Get('classes/:id/students')
   @RequirePermission(R)
   classStudents(@Param('id', ParseUUIDPipe) id: string) {
@@ -135,6 +147,21 @@ export class AcademicController {
   @RequirePermission(M)
   createSchedule(@CurrentUser() u: AuthUser, @Body() dto: ScheduleEntryDto) {
     return this.academic.createScheduleEntry(dto, u.id);
+  }
+
+  @Get('schedules')
+  @RequirePermission(R)
+  schedules(
+    @Query('classId') classId?: string,
+    @Query('academicYearId') academicYearId?: string,
+  ) {
+    return this.academic.listSchedules(classId, academicYearId);
+  }
+
+  @Delete('schedules/:id')
+  @RequirePermission(M)
+  deleteSchedule(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.academic.deleteScheduleEntry(id, u.id);
   }
 
   // ---------- Assessments & grades ----------

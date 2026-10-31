@@ -15,6 +15,7 @@ import { PaymentsModule } from './payments/payments.module';
 import { StudentsModule } from './students/students.module';
 import { AcademicModule } from './academic/academic.module';
 import { FinanceModule } from './finance/finance.module';
+import { TatausahaModule } from './tatausaha/tatausaha.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { FinanceModule } from './finance/finance.module';
     StudentsModule,
     AcademicModule,
     FinanceModule,
+    TatausahaModule,
     NotificationsModule,
     AuditModule,
   ],

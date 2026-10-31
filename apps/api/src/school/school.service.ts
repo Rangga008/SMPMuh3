@@ -78,7 +78,13 @@ export class SchoolService {
     if (!school.logoUrl) throw new NotFoundException('Logo belum diunggah');
     const ext = school.logoUrl.split('.').pop() ?? 'png';
     const mime = ext === 'jpg' ? 'image/jpeg' : `image/${ext}`;
-    const buf = await this.storage.getObjectBuffer(school.logoUrl);
-    return { buf, mime };
+    // Object storage bisa hilang/reset di lingkungan dev — 404, bukan 500,
+    // supaya proxy /logo.png di frontend jatuh ke fallback dengan rapi.
+    try {
+      const buf = await this.storage.getObjectBuffer(school.logoUrl);
+      return { buf, mime };
+    } catch {
+      throw new NotFoundException('Berkas logo tidak ditemukan di storage');
+    }
   }
 }

@@ -32,6 +32,8 @@ const PERMISSION_DESCRIPTIONS: Record<string, string> = {
   [PERMISSIONS.ATTENDANCE_MANAGE]: 'Manage attendance',
   [PERMISSIONS.FINANCE_READ]: 'View finance data',
   [PERMISSIONS.FINANCE_MANAGE]: 'Manage finance records',
+  [PERMISSIONS.TATAUSAHA_READ]: 'View tata usaha records (letters, mutations, exams)',
+  [PERMISSIONS.TATAUSAHA_MANAGE]: 'Manage tata usaha records',
 };
 
 const ROLES: Record<string, { name: string; description: string; permissionKeys: string[] | 'all' }> = {
@@ -67,12 +69,14 @@ const ROLES: Record<string, { name: string; description: string; permissionKeys:
   },
   staff_tu: {
     name: 'Staf TU',
-    description: 'Administration staff — also assists SPMB work',
+    description: 'Administration staff — surat, mutasi, US; also assists SPMB work',
     permissionKeys: [
       PERMISSIONS.SPMB_REGISTRATION_READ,
       PERMISSIONS.SPMB_REGISTRATION_MANAGE,
       PERMISSIONS.STUDENT_READ,
       PERMISSIONS.EMPLOYEE_READ,
+      PERMISSIONS.TATAUSAHA_READ,
+      PERMISSIONS.TATAUSAHA_MANAGE,
       PERMISSIONS.ACADEMIC_YEAR_READ,
       PERMISSIONS.NOTIFICATION_READ,
     ],
@@ -100,6 +104,8 @@ const ROLES: Record<string, { name: string; description: string; permissionKeys:
       PERMISSIONS.ACADEMIC_MANAGE,
       PERMISSIONS.ATTENDANCE_READ,
       PERMISSIONS.ATTENDANCE_MANAGE,
+      PERMISSIONS.TATAUSAHA_READ,
+      PERMISSIONS.TATAUSAHA_MANAGE,
       PERMISSIONS.ACADEMIC_YEAR_READ,
       PERMISSIONS.NOTIFICATION_READ,
       PERMISSIONS.SPMB_REGISTRATION_READ,
