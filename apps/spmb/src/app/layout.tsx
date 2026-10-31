@@ -20,7 +20,11 @@ export async function generateMetadata(): Promise<Metadata> {
       template: `%s — SPMB ${shortName}`,
     },
     // Favicon mengikuti logo yang diunggah admin (/logo.png = proxy API).
-    ...(school?.hasLogo ? { icons: { icon: '/logo.png' } } : {}),
+    // ?v=logoVersion memaksa browser fetch ulang saat logo diganti —
+    // favicon di-cache sangat agresif per-URL oleh browser.
+    ...(school?.hasLogo
+      ? { icons: { icon: `/logo.png?v=${school.logoVersion ?? 1}` } }
+      : {}),
     description: `Sistem Penerimaan Murid Baru ${schoolName} ` +
       `tahun ajaran ${spmbConfig.academicYear}. Informasi jalur pendaftaran, ` +
       'syarat, jadwal, dan cara mendaftar.',

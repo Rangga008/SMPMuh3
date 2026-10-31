@@ -19,6 +19,7 @@ export interface SchoolPublic {
   whatsapp: string | null;
   email: string | null;
   hasLogo: boolean;
+  logoVersion?: number;
 }
 
 export async function getSchoolPublic(): Promise<SchoolPublic | null> {

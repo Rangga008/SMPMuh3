@@ -41,6 +41,10 @@ export class SchoolService {
       whatsapp: s.whatsapp,
       email: s.email,
       hasLogo: !!s.logoUrl,
+      // Versi untuk cache-busting favicon/proxy — berubah tiap update
+      // profil (termasuk unggah logo baru), sehingga <link rel="icon">
+      // berubah URL-nya dan browser memaksa fetch ulang.
+      logoVersion: s.updatedAt.getTime(),
     };
   }
 

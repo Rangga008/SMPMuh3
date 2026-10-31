@@ -5,15 +5,40 @@ import './globals.css';
 
 // Favicon mengikuti logo sekolah dari API — /logo.png me-proxy ke
 // /school/logo; saat belum ada logo diunggah, route balas 404 dan
-// browser memakai default.
-export const metadata: Metadata = {
-  title: {
-    default: 'Admin — SMP Muhammadiyah 3 Kota Bandung',
-    template: '%s — Admin Sekolah',
-  },
-  robots: { index: false, follow: false },
-  icons: { icon: '/logo.png' },
-};
+// browser memakai default. ?v=logoVersion memaksa fetch ulang saat
+// logo diganti (browser men-cache favicon secara agresif per-URL).
+const API =
+  process.env.API_INTERNAL_URL ??
+  process.env.NEXT_PUBLIC_API_URL ??
+  'http://localhost:4000/api/v1';
+
+async function iconUrl(): Promise<string> {
+  try {
+    const res = await fetch(`${API}/school/public`, {
+      next: { revalidate: 60 },
+    });
+    if (!res.ok) return '/logo.png';
+    const json = (await res.json()) as {
+      data?: { logoVersion?: number };
+      logoVersion?: number;
+    };
+    const v = ('data' in json ? json.data?.logoVersion : undefined) ?? json.logoVersion;
+    return v ? `/logo.png?v=${v}` : '/logo.png';
+  } catch {
+    return '/logo.png';
+  }
+}
+
+export async function generateMetadata(): Promise<Metadata> {
+  return {
+    title: {
+      default: 'Admin — SMP Muhammadiyah 3 Kota Bandung',
+      template: '%s — Admin Sekolah',
+    },
+    robots: { index: false, follow: false },
+    icons: { icon: await iconUrl() },
+  };
+}
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
