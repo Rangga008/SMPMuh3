@@ -22,7 +22,9 @@ export default function SchoolProfilePage() {
 
   const load = useCallback(async () => {
     try {
-      setSchool(await getSchool());
+      const s = await getSchool();
+      setSchool(s);
+      setLogoVer(new Date(s.updatedAt).getTime());
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Gagal memuat profil.');
@@ -40,7 +42,6 @@ export default function SchoolProfilePage() {
     try {
       await fn();
       await load();
-      setLogoVer((v) => v + 1);
       setNotice(msg);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Gagal menyimpan.');

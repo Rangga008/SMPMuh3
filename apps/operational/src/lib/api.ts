@@ -647,6 +647,7 @@ export interface School {
   whatsapp: string | null;
   email: string | null;
   logoUrl: string | null;
+  updatedAt: string;
 }
 
 export const listStaffUsers = () => req<StaffUser[]>('/admin/users');

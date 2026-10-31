@@ -187,6 +187,11 @@ export function Shell({ children }: { children: ReactNode }) {
     );
   }
 
+  // Versi pada URL memaksa img/favicon fetch ulang setiap logo diganti.
+  const logoSrc = school?.logoUrl
+    ? `/logo.png?v=${new Date(school.updatedAt).getTime()}`
+    : null;
+
   const sidebar = (
     <nav
       aria-label="Navigasi modul"
@@ -196,9 +201,9 @@ export function Shell({ children }: { children: ReactNode }) {
         href="/"
         className="flex items-center gap-3 border-b border-white/10 px-4 py-5 focus-visible:focus-ring"
       >
-        {school?.logoUrl ? (
+        {logoSrc ? (
           <img
-            src="/logo.png"
+            src={logoSrc}
             alt=""
             className="size-9 shrink-0 rounded-xl bg-[#ffffff] object-contain p-0.5"
           />
@@ -316,8 +321,8 @@ export function Shell({ children }: { children: ReactNode }) {
             )}
           </svg>
         </button>
-        {school?.logoUrl ? (
-          <img src="/logo.png" alt="" className="size-8 rounded-lg bg-[#ffffff] object-contain p-0.5" />
+        {logoSrc ? (
+          <img src={logoSrc} alt="" className="size-8 rounded-lg bg-[#ffffff] object-contain p-0.5" />
         ) : null}
         <span className="truncate font-extrabold tracking-tight text-white">
           {school?.name ?? 'Admin Sekolah'}

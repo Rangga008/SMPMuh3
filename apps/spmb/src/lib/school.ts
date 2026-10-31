@@ -37,7 +37,6 @@ export async function getSchoolPublic(): Promise<SchoolPublic | null> {
   }
 }
 
-// <img src> jalan di browser → selalu pakai URL publik (localhost:4000).
-const PUBLIC_API =
-  process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
-export const schoolLogoUrl = `${PUBLIC_API}/school/logo`;
+// Catatan: <img> logo selalu pakai route same-origin /logo.png (proxy ke
+// /school/logo). Mengakses API lintas-origin langsung diblokir header
+// Cross-Origin-Resource-Policy: same-origin yang dipasang Helmet.

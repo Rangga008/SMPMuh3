@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { spmbConfig } from '@/config/spmb.config';
-import { getSchoolPublic, schoolLogoUrl } from '@/lib/school';
+import { getSchoolPublic } from '@/lib/school';
 import { HeaderAuth } from './header-auth';
 import { MobileNav } from './mobile-nav';
 import { ThemeToggle } from './theme-toggle';
@@ -25,7 +25,7 @@ export async function SiteHeader() {
         <Link href="/" className="flex items-center gap-2.5 focus-visible:focus-ring">
           {school?.hasLogo ? (
             <img
-              src={schoolLogoUrl}
+              src={`/logo.png?v=${school.logoVersion ?? 1}`}
               alt={schoolName}
               className="size-9 shrink-0 rounded-xl object-contain"
             />
