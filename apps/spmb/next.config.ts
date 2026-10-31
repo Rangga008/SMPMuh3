@@ -13,6 +13,10 @@ const nextConfig: NextConfig = {
       }
     : {}),
   transpilePackages: ['@smpmuh3/ui', '@smpmuh3/types'],
+  // Chrome tetap request /favicon.ico utk tab/history — proxy ke logo.
+  async rewrites() {
+    return [{ source: '/favicon.ico', destination: '/logo.png' }];
+  },
 };
 
 export default nextConfig;
