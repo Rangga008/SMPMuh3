@@ -63,4 +63,4 @@ Packages are consumed via pnpm workspace dependencies (`workspace:*`).
 | PostgreSQL 16 | 5432 | `smpmuh3` database |
 | Redis 7 | 6379 | cache, sessions, rate limits, CBT autosave |
 | RabbitMQ 3.13 | 5672 / 15672 | events & async jobs; management UI |
-| S3Mock (adobe/s3mock) | 9000 | S3 API; `smpmuh3-dev` bucket auto-created |
+| MinIO | 9000 (API), 9001 (console) | S3 API; bucket `smpmuh3-dev` dibuat otomatis (`MINIO_DEFAULT_BUCKETS` + `ensureBucket` API) |

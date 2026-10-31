@@ -10,7 +10,7 @@ production deployment (Nginx, TLS, Cloudflare) is handled in later phases.
 | `postgres` | Primary database (all modules share one logical database, separated by Prisma schema) | 5432 |
 | `redis` | Sessions/cache, rate limiting, future queues | 6379 |
 | `rabbitmq` | Async jobs/events (notifications, integrations) | 5672, management UI on 15672 |
-| `s3` | S3-compatible object storage for documents/uploads (S3Mock in dev) | API on 9000 |
+| `s3` | S3-compatible object storage for documents/uploads (MinIO) | API on 9000, console on 9001 |
 
 ## Usage
 

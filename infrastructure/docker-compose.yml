@@ -56,19 +56,32 @@ services:
       retries: 5
 
   s3:
-    # MinIO no longer publishes images to Docker Hub; S3Mock is the local
-    # S3-compatible stand-in for development. Production uses a real S3 service.
-    image: adobe/s3mock:5.2.3
+    # MinIO — S3-compatible object storage. `minio/minio` resmi sudah
+    # tidak dipublikasikan (source-only sejak Okt 2025) — pakai image
+    # Bitnami terakhir yang masih tersedia di Docker Hub. Produksi bisa
+    # memakai MinIO self-hosted (build dari source) atau managed S3.
+    image: bitnamilegacy/minio:latest
     container_name: smpmuh3-s3
     restart: unless-stopped
     environment:
-      COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS: ${S3_BUCKET:-smpmuh3-dev}
-      COM_ADOBE_TESTING_S3MOCK_STORE_ROOT: /s3mockroot
-      COM_ADOBE_TESTING_S3MOCK_STORE_RETAIN_FILES_ON_EXIT: "true"
+      # Default sinkron dengan .env root — jika S3_* di .env diubah,
+      # jalankan compose dengan `docker compose --env-file ../.env ...`
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-change_me_in_.env}
+      MINIO_DEFAULT_BUCKETS: ${S3_BUCKET:-smpmuh3-dev}
+      MINIO_BROWSER_REDIRECT_URL: http://localhost:${S3_CONSOLE_PORT:-9001}
+    command: server /bitnami/minio/data --console-address ":9001"
     ports:
-      - "9000:9090"
+      - "9000:9000"                                 # S3 API
+      - "${S3_CONSOLE_PORT:-9001}:9001"             # MinIO console
     volumes:
-      - s3-data:/s3mockroot
+      - s3-data:/bitnami/minio/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
 
   # ---------- Applications ----------
   # Build contexts point at the repo root (pnpm workspace).
@@ -86,7 +99,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-smpmuh3}:${POSTGRES_PASSWORD:-smpmuh3_dev}@postgres:5432/${POSTGRES_DB:-smpmuh3}
       REDIS_URL: redis://redis:6379
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-smpmuh3}:${RABBITMQ_PASSWORD:-smpmuh3_dev}@rabbitmq:5672
-      S3_ENDPOINT: http://s3:9090
+      S3_ENDPOINT: http://s3:9000
       CORS_ORIGINS: http://localhost:3001,http://localhost:3002
     ports:
       - "${API_PORT:-4000}:4000"
@@ -96,7 +109,7 @@ services:
       redis:
         condition: service_healthy
       s3:
-        condition: service_started
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:4000/api/v1/health || exit 1"]
       interval: 15s

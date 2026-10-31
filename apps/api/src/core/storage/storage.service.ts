@@ -36,8 +36,8 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Pastikan bucket ada — self-healing untuk S3Mock lokal (data store bisa
-   * di-reset) dan instalasi baru; no-op pada S3 produksi yang sudah ada.
+   * Pastikan bucket ada — self-healing untuk MinIO lokal/instalasi baru;
+   * no-op pada S3 produksi yang sudah ada.
    */
   async onModuleInit() {
     try {

@@ -33,7 +33,7 @@ Legend: ⬜ not started · 🚧 in progress · ✅ complete · ⚠️ complete w
 - `.env.example` covering app URLs/ports, Postgres, Redis, RabbitMQ,
   S3/MinIO, JWT placeholders, CORS, deferred integration placeholders.
 - Dev infrastructure: `infrastructure/docker-compose.yml`
-  (PostgreSQL 16, Redis 7, RabbitMQ 3.13, adobe/s3mock for S3).
+  (PostgreSQL 16, Redis 7, RabbitMQ 3.13, MinIO for S3).
 - Docs: architecture overview, applications map, ADRs 0001–0008,
   getting started, conventions, this roadmap, root README.
 
@@ -53,7 +53,9 @@ Legend: ⬜ not started · 🚧 in progress · ✅ complete · ⚠️ complete w
 
 **Completed**
 - Dev infrastructure running: PostgreSQL 16, Redis 7, RabbitMQ 3.13,
-  adobe/s3mock (MinIO is no longer published to Docker Hub — dev uses S3Mock).
+  MinIO via `bitnamilegacy/minio` (image terakhir yang tersedia di Docker
+  Hub — `minio/minio` resmi kini source-only; produksi dapat pakai managed
+  S3 atau build image dari source).
 - `apps/api` — NestJS 11 modular monolith: `core` (env config via zod,
   PrismaService, health, response/error envelopes, request-id, pino logging),
   `identity` (User/Role/Permission, JWT access + rotating refresh tokens,
@@ -149,9 +151,10 @@ Legend: ⬜ not started · 🚧 in progress · ✅ complete · ⚠️ complete w
 **Deferred**: payment gateway (Phase 04), staff review UI (Phase 04),
 email delivery (Phase 10), CBT autosave.
 
-**Known issues**: S3Mock `initialBuckets` env tidak membuat bucket — dibuat
-manual via `PUT /smpmuh3-dev` (periksa nama env di versi S3Mock saat setup
-ulang). `tsconfig.build.json` ditambahkan agar `dist/main.js` benar.
+**Resolved**: object storage kini MinIO sungguhan (`bitnamilegacy/minio`);
+bucket dibuat otomatis oleh `MINIO_DEFAULT_BUCKETS` + dipastikan lagi oleh
+`StorageService.onModuleInit`.
+`tsconfig.build.json` ditambahkan agar `dist/main.js` benar.
 
 **Next phase:** Phase 04 — SPMB admin, verification & payment.
 

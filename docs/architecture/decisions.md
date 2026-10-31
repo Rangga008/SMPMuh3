@@ -63,8 +63,13 @@ coupled to domain entities directly.
 PostgreSQL, Redis, RabbitMQ, and an S3-compatible store run via
 `infrastructure/docker-compose.yml`. Node apps run on the host (via pnpm/turbo)
 for fast iteration; app containerization comes with production hardening.
-(MinIO is unavailable on Docker Hub, so development uses `adobe/s3mock`;
-production will use a managed/self-hosted S3 service.)
+Development uses `bitnamilegacy/minio` (image MinIO terakhir yang masih
+tersedia di Docker Hub — `minio/minio` resmi kini source-only dan tidak
+lagi dipublikasikan; produksi dapat memakai MinIO self-hosted dari source
+atau managed S3 service apa pun).
+Produksi bisa memakai MinIO self-hosted atau managed S3 service apa pun —
+API hanya bergantung pada protokol S3 (endpoint, region, creds, bucket,
+path-style) via `S3_*` env.
 
 ## ADR-0008: TypeScript strict everywhere
 

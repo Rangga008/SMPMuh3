@@ -35,8 +35,7 @@ boundaries. Microservices are deferred until a demonstrated need exists.
                     └───────────┘    └───────────┘    └───────────┘
                           ┌───────────┐
                           │S3-compat. │  documents, uploads
-                          │ (S3Mock   │
-                          │  in dev)  │
+                          │  (MinIO)  │
                           └───────────┘
 ```
 
