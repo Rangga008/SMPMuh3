@@ -61,8 +61,8 @@ export class StudentsService {
     });
   }
 
-  detail(id: string) {
-    return this.prisma.student.findUniqueOrThrow({
+  async detail(id: string) {
+    const s = await this.prisma.student.findUniqueOrThrow({
       where: { id },
       include: {
         enrollments: {
@@ -72,9 +72,16 @@ export class StudentsService {
         achievements: { orderBy: { createdAt: 'desc' } },
         violations: { orderBy: { date: 'desc' } },
         documents: { orderBy: { createdAt: 'desc' } },
-        parent: { select: { id: true, name: true, email: true } },
+        parent: { select: { id: true, name: true, email: true, phone: true } },
       },
     });
+    // Nomor registrasi SPMB asal — siswa baru hasil konversi SPMB punya
+    // invoice ber-registrationId; dipakai untuk menampilkan asal pendaftaran.
+    const spmbInvoice = await this.prisma.invoice.findFirst({
+      where: { studentId: id, registrationId: { not: null } },
+      select: { registration: { select: { number: true } } },
+    });
+    return { ...s, spmbNumber: spmbInvoice?.registration?.number ?? null };
   }
 
   async create(dto: CreateStudentDto, actorId: string) {

@@ -41,6 +41,8 @@ import { SpmbSettingsService } from './settings.service';
 import { SpmbImportService } from './import.service';
 import { UsersService, normalizePhone } from '../identity/users/users.service';
 import {
+  AdminTitipanNoteDto,
+  WaSettingsUpdateDto,
   CreateInvoiceDto,
   DiscountDto,
   InstallmentPlanDto,
@@ -51,6 +53,9 @@ import {
   UpdateFeeDto,
   VerifyPaymentDto,
 } from './dto/spmb.dto';
+import { TitipanService } from './titipan.service';
+import { WhatsappService } from './whatsapp.service';
+import type { TitipanStatus } from '@prisma/client';
 import { REGISTRATION_STATUSES } from '@smpmuh3/types';
 
 class TransitionDto {
@@ -154,6 +159,8 @@ export class AdminSpmbController {
     private readonly settings: SpmbSettingsService,
     private readonly importer: SpmbImportService,
     private readonly users: UsersService,
+    private readonly titipan: TitipanService,
+    private readonly whatsapp: WhatsappService,
   ) {}
 
   // ---------- Akun Orang Tua ----------
@@ -546,5 +553,111 @@ export class AdminSpmbController {
   @RequirePermission(PERMISSIONS.SPMB_REGISTRATION_MANAGE)
   deleteQuestion(@Param('id', ParseUUIDPipe) id: string) {
     return this.settings.deleteQuestion(id);
+  }
+
+  // ---------- Daftar titipan / waiting list ----------
+
+  @Get('titipan/summary')
+  @RequirePermission(PERMISSIONS.SPMB_TITIPAN_READ)
+  titipanSummary() {
+    return this.titipan.adminSummary();
+  }
+
+  @Get('titipan')
+  @RequirePermission(PERMISSIONS.SPMB_TITIPAN_READ)
+  listTitipan(
+    @Query('academicYearId') academicYearId?: string,
+    @Query('status') status?: TitipanStatus,
+    @Query('q') search?: string,
+  ) {
+    return this.titipan.listForAdmin({
+      academicYearId: academicYearId || undefined,
+      status,
+      search: search || undefined,
+    });
+  }
+
+  /** Verifikasi entri (guest/pending) → masuk antrean resmi. */
+  @Post('titipan/:id/approve')
+  @RequirePermission(PERMISSIONS.SPMB_TITIPAN_MANAGE)
+  approveTitipan(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.titipan.approve(id, user.id);
+  }
+
+  /** Terbitkan/kirim ulang kode formulir ke WA ortu (otomatis bila gateway aktif). */
+  @Post('titipan/:id/send-code')
+  @RequirePermission(PERMISSIONS.SPMB_TITIPAN_MANAGE)
+  sendTitipanCode(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.titipan.sendCode(id, user.id);
+  }
+
+  @Post('titipan/:id/cancel')
+  @RequirePermission(PERMISSIONS.SPMB_TITIPAN_MANAGE)
+  cancelTitipan(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AdminTitipanNoteDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.titipan.cancel(id, user.id, dto.note);
+  }
+
+  @Patch('titipan/:id')
+  @RequirePermission(PERMISSIONS.SPMB_TITIPAN_MANAGE)
+  noteTitipan(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AdminTitipanNoteDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.titipan.updateNote(id, dto, user.id);
+  }
+
+  // ---------- WhatsApp gateway & antrean ----------
+
+  @Get('wa/settings')
+  @RequirePermission(PERMISSIONS.SCHOOL_MANAGE)
+  waSettings() {
+    return this.whatsapp.getConfig();
+  }
+
+  @Patch('wa/settings')
+  @RequirePermission(PERMISSIONS.SCHOOL_MANAGE)
+  updateWaSettings(
+    @Body() dto: WaSettingsUpdateDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.whatsapp.updateConfig(dto, user.id);
+  }
+
+  /** Antrean pesan WA — filter per tipe (titipan_code, dst) & status. */
+  @Get('wa/messages')
+  @RequirePermission(PERMISSIONS.SCHOOL_MANAGE)
+  waMessages(
+    @Query('type') type?: string,
+    @Query('status') status?: 'QUEUED' | 'SENDING' | 'SENT' | 'FAILED' | 'CANCELLED',
+    @Query('take') take?: string,
+  ) {
+    return this.whatsapp.listMessages({
+      type: type || undefined,
+      status,
+      take: take ? Number(take) : undefined,
+    });
+  }
+
+  @Post('wa/messages/:id/retry')
+  @RequirePermission(PERMISSIONS.SCHOOL_MANAGE)
+  retryWaMessage(@Param('id', ParseUUIDPipe) id: string) {
+    return this.whatsapp.retryMessage(id);
+  }
+
+  @Post('wa/messages/:id/cancel')
+  @RequirePermission(PERMISSIONS.SCHOOL_MANAGE)
+  cancelWaMessage(@Param('id', ParseUUIDPipe) id: string) {
+    return this.whatsapp.cancelMessage(id);
   }
 }

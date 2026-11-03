@@ -21,9 +21,13 @@ import {
   EnrollmentDto,
   GradeDto,
   ScheduleEntryDto,
+  SemesterDto,
   SubjectDto,
   TeachingAssignmentDto,
   UpdateClassDto,
+  UpdateCurriculumDto,
+  UpdateSemesterDto,
+  UpdateSubjectDto,
 } from './dto/academic.dto';
 import { ArrayNotEmpty, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -80,6 +84,22 @@ export class AcademicController {
     return this.academic.createCurriculum(dto, u.id);
   }
 
+  @Patch('curricula/:id')
+  @RequirePermission(M)
+  updateCurriculum(
+    @CurrentUser() u: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateCurriculumDto,
+  ) {
+    return this.academic.updateCurriculum(id, dto, u.id);
+  }
+
+  @Delete('curricula/:id')
+  @RequirePermission(M)
+  removeCurriculum(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.academic.removeCurriculum(id, u.id);
+  }
+
   @Get('subjects')
   @RequirePermission(R)
   subjects(@Query('curriculumId') curriculumId?: string) {
@@ -90,6 +110,50 @@ export class AcademicController {
   @RequirePermission(M)
   createSubject(@CurrentUser() u: AuthUser, @Body() dto: SubjectDto) {
     return this.academic.createSubject(dto, u.id);
+  }
+
+  @Patch('subjects/:id')
+  @RequirePermission(M)
+  updateSubject(
+    @CurrentUser() u: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateSubjectDto,
+  ) {
+    return this.academic.updateSubject(id, dto, u.id);
+  }
+
+  @Delete('subjects/:id')
+  @RequirePermission(M)
+  removeSubject(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.academic.removeSubject(id, u.id);
+  }
+
+  @Get('semesters')
+  @RequirePermission(R)
+  semesters(@Query('academicYearId') academicYearId?: string) {
+    return this.academic.listSemesters(academicYearId);
+  }
+
+  @Post('semesters')
+  @RequirePermission(M)
+  createSemester(@CurrentUser() u: AuthUser, @Body() dto: SemesterDto) {
+    return this.academic.createSemester(dto, u.id);
+  }
+
+  @Patch('semesters/:id')
+  @RequirePermission(M)
+  updateSemester(
+    @CurrentUser() u: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateSemesterDto,
+  ) {
+    return this.academic.updateSemester(id, dto, u.id);
+  }
+
+  @Delete('semesters/:id')
+  @RequirePermission(M)
+  removeSemester(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.academic.removeSemester(id, u.id);
   }
 
   // ---------- Classes & enrollment ----------

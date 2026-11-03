@@ -25,6 +25,9 @@ const envSchema = z.object({
   S3_SECRET_KEY: z.string().default('dev-secret-key'),
   S3_BUCKET: z.string().default('smpmuh3-dev'),
   S3_FORCE_PATH_STYLE: z.coerce.boolean().default(true),
+  SPMB_URL: z.string().url().default('http://localhost:3001'),
+  WA_GATEWAY_URL: z.string().url().default('https://api.fonnte.com/send'),
+  WA_GATEWAY_TOKEN: z.string().default(''),
 });
 
 type Env = z.infer<typeof envSchema>;
@@ -98,6 +101,16 @@ export class EnvService {
       secretAccessKey: this.env.S3_SECRET_KEY,
       bucket: this.env.S3_BUCKET,
       forcePathStyle: this.env.S3_FORCE_PATH_STYLE,
+    };
+  }
+  get spmbUrl() {
+    return this.env.SPMB_URL;
+  }
+  get waGateway() {
+    return {
+      url: this.env.WA_GATEWAY_URL,
+      token: this.env.WA_GATEWAY_TOKEN,
+      configured: this.env.WA_GATEWAY_TOKEN.length > 0,
     };
   }
 }

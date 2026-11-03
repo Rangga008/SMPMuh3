@@ -1,25 +1,35 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
 import {
+  INFO_SOURCES,
+  INFO_SOURCE_LABELS,
   REGISTRATION_STATUS_LABELS,
+  TITIPAN_STATUS_LABELS,
   type CandidateDto,
+  type InfoSource,
   type RegistrationDto,
+  type TitipanEntryDto,
+  type TitipanYearSummaryDto,
   type WaveDto,
 } from '@smpmuh3/types';
 import {
   ApiError,
   createCandidate,
   createRegistration,
+  createTitipan,
   getTokens,
   listCandidates,
+  listMyTitipan,
   listRegistrations,
-  listWaves,
+  listTitipanYears,
+  listWavesFor,
   logout,
   me,
+  titipanCodeInfo,
 } from '@/lib/api';
 
 function Card({ title, children, action }: { title: string; children: React.ReactNode; action?: React.ReactNode }) {
@@ -45,28 +55,51 @@ const STATUS_TONE: Record<string, 'primary' | 'accent' | 'neutral' | 'danger'> =
   FINAL_PAYMENT_REVIEW: 'accent',
 };
 
+const TITIPAN_TONE: Record<string, 'primary' | 'accent' | 'neutral' | 'danger'> = {
+  PENDING: 'neutral',
+  WAITING: 'accent',
+  CODE_SENT: 'accent',
+  REGISTERED: 'primary',
+  CANCELLED: 'danger',
+};
+
 export default function AccountPage() {
   const router = useRouter();
   const [name, setName] = useState('');
   const [candidates, setCandidates] = useState<CandidateDto[]>([]);
   const [regs, setRegs] = useState<RegistrationDto[]>([]);
-  const [waves, setWaves] = useState<WaveDto[]>([]);
+  const [entries, setEntries] = useState<TitipanEntryDto[]>([]);
+  const [years, setYears] = useState<TitipanYearSummaryDto[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [showForm, setShowForm] = useState(false);
-  const [registering, setRegistering] = useState<string | null>(null);
-  const [waveFor, setWaveFor] = useState<string | null>(null); // candidateId memilih gelombang
+  const [titipanFor, setTitipanFor] = useState<CandidateDto | null>(null);
+
+  // ---- redeem kode ----
+  const [redeemOpen, setRedeemOpen] = useState(false);
+  const [redeemCode, setRedeemCode] = useState('');
+  const [redeemInfo, setRedeemInfo] = useState<{
+    academicYearName: string;
+    candidateName: string;
+    waves: WaveDto[];
+  } | null>(null);
+  const [redeemCandidate, setRedeemCandidate] = useState('');
+  const [redeemWave, setRedeemWave] = useState('');
+  const [redeemError, setRedeemError] = useState<string | null>(null);
+  const [checkingCode, setCheckingCode] = useState(false);
 
   const refresh = useCallback(async () => {
-    const [c, r, w] = await Promise.all([
+    const [c, r, t, y] = await Promise.all([
       listCandidates(),
       listRegistrations(),
-      listWaves().catch(() => [] as WaveDto[]),
+      listMyTitipan().catch(() => [] as TitipanEntryDto[]),
+      listTitipanYears().catch(() => [] as TitipanYearSummaryDto[]),
     ]);
     setCandidates(c);
     setRegs(r);
-    setWaves(w);
+    setEntries(t);
+    setYears(y);
   }, []);
 
   useEffect(() => {
@@ -111,19 +144,115 @@ export default function AccountPage() {
     }
   }
 
-  async function onRegister(candidateId: string, waveId: string) {
+  async function onTitipan(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!titipanFor) return;
     setError(null);
-    setRegistering(candidateId);
+    setBusy(true);
+    const f = new FormData(e.currentTarget);
+    const val = (k: string) => String(f.get(k) ?? '').trim() || undefined;
     try {
-      const reg = await createRegistration(candidateId, waveId);
-      router.push(`/akun/pendaftaran/${reg.id}`);
-    } catch {
-      setError('Gagal membuat pendaftaran — calon murid ini mungkin sudah terdaftar pada tahun ajaran aktif.');
+      await createTitipan({
+        candidateId: titipanFor.id,
+        academicYearId: String(f.get('academicYearId')),
+        guardianPhone: val('guardianPhone'),
+        infoSource: val('infoSource'),
+      });
+      setTitipanFor(null);
+      await refresh();
+    } catch (err) {
+      setError(
+        err instanceof ApiError ? err.message : 'Gagal membuat daftar titipan.',
+      );
     } finally {
-      setRegistering(null);
-      setWaveFor(null);
+      setBusy(false);
     }
   }
+
+  // ---- redeem kode ----
+  function openRedeem(prefillCode?: string, lockedCandidateId?: string) {
+    setRedeemCode(prefillCode ?? '');
+    setRedeemCandidate(lockedCandidateId ?? '');
+    setRedeemWave('');
+    setRedeemInfo(null);
+    setRedeemError(null);
+    setRedeemOpen(true);
+    if (prefillCode) void checkCode(prefillCode);
+  }
+
+  async function checkCode(code: string) {
+    const cleaned = code.trim().toUpperCase();
+    if (cleaned.length < 4) {
+      setRedeemInfo(null);
+      return;
+    }
+    setCheckingCode(true);
+    setRedeemError(null);
+    try {
+      const info = await titipanCodeInfo(cleaned);
+      if (info.status !== 'CODE_SENT') {
+        setRedeemError(
+          info.status === 'REGISTERED'
+            ? 'Kode ini sudah dipakai.'
+            : 'Kode ini belum aktif atau sudah tidak berlaku.',
+        );
+        setRedeemInfo(null);
+        return;
+      }
+      setRedeemInfo({
+        academicYearName: info.academicYearName,
+        candidateName: info.candidateName,
+        waves: info.waves,
+      });
+      if (info.waves.length === 1) setRedeemWave(info.waves[0]!.id);
+    } catch {
+      setRedeemError('Kode formulir tidak ditemukan.');
+      setRedeemInfo(null);
+    } finally {
+      setCheckingCode(false);
+    }
+  }
+
+  async function onRedeem(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!redeemCandidate) {
+      setRedeemError('Pilih calon murid untuk kode ini.');
+      return;
+    }
+    if (redeemInfo && redeemInfo.waves.length > 1 && !redeemWave) {
+      setRedeemError('Pilih gelombang pendaftaran.');
+      return;
+    }
+    setRedeemError(null);
+    setBusy(true);
+    try {
+      const reg = await createRegistration(
+        redeemCandidate,
+        redeemCode.trim().toUpperCase(),
+        redeemWave || undefined,
+      );
+      router.push(`/akun/pendaftaran/${reg.id}`);
+    } catch (err) {
+      setRedeemError(
+        err instanceof ApiError ? err.message : 'Gagal menggunakan kode.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const regByCandidate = useMemo(
+    () => new Map(regs.map((r) => [r.candidate.id, r])),
+    [regs],
+  );
+  const entriesByCandidate = useMemo(() => {
+    const m = new Map<string, TitipanEntryDto[]>();
+    for (const e of entries) {
+      if (!e.candidateId) continue;
+      m.set(e.candidateId, [...(m.get(e.candidateId) ?? []), e]);
+    }
+    return m;
+  }, [entries]);
 
   if (loading) {
     return (
@@ -132,8 +261,6 @@ export default function AccountPage() {
       </main>
     );
   }
-
-  const regByCandidate = new Map(regs.map((r) => [r.candidate.id, r]));
 
   return (
     <main className="relative min-h-[calc(100dvh-4rem)] overflow-hidden bg-gradient-to-b from-primary-50 via-sand-50 to-sand-100 py-10">
@@ -151,7 +278,7 @@ export default function AccountPage() {
               <h1 className="text-xl font-extrabold tracking-tight text-sand-950 sm:text-2xl">
                 Assalamu&apos;alaikum, {name}
               </h1>
-              <p className="text-sm text-sand-600">Kelola pendaftaran murid baru Anda</p>
+              <p className="text-sm text-sand-600">Kelola titipan &amp; pendaftaran murid baru Anda</p>
             </div>
           </div>
           <Button
@@ -182,7 +309,8 @@ export default function AccountPage() {
         >
           {regs.length === 0 ? (
             <p className="rounded-2xl bg-sand-50 px-4 py-6 text-center text-sm text-sand-600">
-              Belum ada pendaftaran. Tambahkan calon murid di bawah, lalu mulai pendaftaran.
+              Belum ada pendaftaran. Daftarkan titipan dulu — setelah menerima
+              kode formulir dari panitia, Anda bisa melanjutkan ke pendaftaran resmi.
             </p>
           ) : (
             <ul className="space-y-3">
@@ -210,6 +338,72 @@ export default function AccountPage() {
         </Card>
 
         <Card
+          title="Daftar Titipan Saya"
+          action={
+            <Button size="sm" variant="outline" onClick={() => openRedeem()}>
+              Punya Kode Formulir?
+            </Button>
+          }
+        >
+          {entries.length === 0 ? (
+            <div className="rounded-2xl bg-sand-50 px-4 py-6 text-sm text-sand-600">
+              <p className="text-center">
+                Belum ada titipan. Titipan mengamankan posisi antrean anak —
+                bisa untuk tahun ajaran mendatang. Pilih kandidat di bawah lalu
+                tekan <b>Daftar Titipan</b>, atau titip tanpa akun lewat{' '}
+                <Link href="/daftar-titipan" className="font-semibold text-primary-700">
+                  formulir titipan
+                </Link>
+                .
+              </p>
+            </div>
+          ) : (
+            <ul className="space-y-3">
+              {entries.map((e) => (
+                <li
+                  key={e.id}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-sand-200 bg-sand-50 px-5 py-4"
+                >
+                  <div>
+                    <p className="font-bold text-sand-950">{e.candidateName}</p>
+                    <p className="mt-0.5 text-xs font-semibold tracking-wide text-sand-500">
+                      TA {e.academicYearName} · Antrean #{e.queueNo}
+                      {e.position != null ? ` · posisi ke-${e.position}` : ''}
+                    </p>
+                    {e.status === 'CODE_SENT' && e.formCode ? (
+                      <p className="mt-1 font-mono text-sm font-extrabold tracking-widest text-primary-700">
+                        {e.formCode}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge tone={TITIPAN_TONE[e.status] ?? 'neutral'}>
+                      {TITIPAN_STATUS_LABELS[e.status]}
+                    </Badge>
+                    {e.status === 'CODE_SENT' && e.formCode ? (
+                      <Button
+                        size="sm"
+                        onClick={() =>
+                          openRedeem(e.formCode ?? undefined, e.candidateId ?? undefined)
+                        }
+                      >
+                        Gunakan Kode
+                      </Button>
+                    ) : null}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="mt-4 text-xs leading-relaxed text-sand-500">
+            Cara kerja: daftarkan titipan → panitia memverifikasi → Anda
+            menerima <b>kode formulir unik</b> lewat WhatsApp sesuai antrean
+            &amp; kuota → masukkan kode untuk melanjutkan pendaftaran resmi
+            (pembayaran, formulir, berkas).
+          </p>
+        </Card>
+
+        <Card
           title="Calon Murid"
           action={
             <Button size="sm" onClick={() => setShowForm(true)}>
@@ -225,6 +419,10 @@ export default function AccountPage() {
             <ul className="grid gap-3 sm:grid-cols-2">
               {candidates.map((cd) => {
                 const reg = regByCandidate.get(cd.id);
+                const myEntries = entriesByCandidate.get(cd.id) ?? [];
+                const active = myEntries.filter((e) =>
+                  ['PENDING', 'WAITING', 'CODE_SENT'].includes(e.status),
+                );
                 return (
                   <li
                     key={cd.id}
@@ -240,6 +438,23 @@ export default function AccountPage() {
                         .filter(Boolean)
                         .join(' · ')}
                     </p>
+                    {active.length > 0 ? (
+                      <ul className="mt-3 space-y-1.5">
+                        {active.map((e) => (
+                          <li
+                            key={e.id}
+                            className="flex items-center justify-between rounded-xl bg-sand-50 px-3 py-2 text-xs"
+                          >
+                            <span className="font-semibold text-sand-700">
+                              TA {e.academicYearName} · #{e.queueNo}
+                            </span>
+                            <Badge tone={TITIPAN_TONE[e.status] ?? 'neutral'}>
+                              {TITIPAN_STATUS_LABELS[e.status]}
+                            </Badge>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
                     {reg ? (
                       <Link
                         href={`/akun/pendaftaran/${reg.id}`}
@@ -247,33 +462,14 @@ export default function AccountPage() {
                       >
                         Lihat pendaftaran ({REGISTRATION_STATUS_LABELS[reg.status]}) →
                       </Link>
-                    ) : waveFor === cd.id ? (
-                      <div className="mt-4 space-y-2">
-                        <p className="text-xs font-bold uppercase tracking-wider text-sand-500">
-                          Pilih Gelombang
-                        </p>
-                        {waves.length === 0 ? (
-                          <p className="text-xs text-sand-500">Belum ada gelombang dibuka.</p>
-                        ) : (
-                          waves.map((w) => (
-                            <Button
-                              key={w.id}
-                              size="sm"
-                              className="w-full"
-                              disabled={registering === cd.id}
-                              onClick={() => onRegister(cd.id, w.id)}
-                            >
-                              {registering === cd.id ? 'Memproses…' : `${w.name}`}
-                            </Button>
-                          ))
-                        )}
-                        <Button size="sm" variant="ghost" className="w-full" onClick={() => setWaveFor(null)}>
-                          Batal
-                        </Button>
-                      </div>
                     ) : (
-                      <Button size="sm" className="mt-4" onClick={() => setWaveFor(cd.id)}>
-                        Mulai Pendaftaran
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="mt-4"
+                        onClick={() => setTitipanFor(cd)}
+                      >
+                        Daftar Titipan
                       </Button>
                     )}
                   </li>
@@ -322,6 +518,143 @@ export default function AccountPage() {
               {busy ? 'Menyimpan…' : 'Simpan Calon Murid'}
             </Button>
           </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={titipanFor !== null}
+        onClose={() => setTitipanFor(null)}
+        title={`Daftar Titipan — ${titipanFor?.name ?? ''}`}
+        description="Titipan mengamankan posisi antrean. Anda bisa menitip untuk tahun ajaran mendatang sekalipun."
+      >
+        <form onSubmit={onTitipan} className="space-y-4">
+          <Field label="Tahun Ajaran Masuk">
+            <Select name="academicYearId" required defaultValue="">
+              <option value="" disabled>
+                Pilih tahun ajaran…
+              </option>
+              {years.map((y) => (
+                <option key={y.academicYearId} value={y.academicYearId}>
+                  {y.name}
+                  {y.quota != null ? ` (kuota ${y.quota})` : ''}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          {years.length === 0 ? (
+            <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
+              Daftar titipan belum dibuka — hubungi panitia SPMB.
+            </p>
+          ) : null}
+          <Field
+            label="No. HP Orang Tua/Wali"
+            hint="WhatsApp aktif — kosongkan untuk pakai nomor akun"
+          >
+            <Input
+              name="guardianPhone"
+              type="tel"
+              placeholder="08xxxxxxxxxx"
+            />
+          </Field>
+          <Field label="Sumber Informasi" hint="Dari mana Anda tahu SPMB ini?">
+            <Select name="infoSource" defaultValue="">
+              <option value="" disabled>
+                Pilih…
+              </option>
+              {INFO_SOURCES.map((s) => (
+                <option key={s} value={s}>
+                  {INFO_SOURCE_LABELS[s as InfoSource]}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Button type="submit" disabled={busy || years.length === 0} className="w-full">
+            {busy ? 'Mengirim…' : 'Kirim Titipan'}
+          </Button>
+        </form>
+      </Modal>
+
+      <Modal
+        open={redeemOpen}
+        onClose={() => setRedeemOpen(false)}
+        title="Gunakan Kode Formulir"
+        description="Masukkan kode unik yang dikirim panitia ke WhatsApp Anda untuk membuka pendaftaran resmi."
+      >
+        <form onSubmit={onRedeem} className="space-y-4">
+          <Field label="Kode Formulir" hint="Contoh: SPMB-X7K2PQ">
+            <Input
+              name="formCode"
+              required
+              value={redeemCode}
+              onChange={(e) => {
+                setRedeemCode(e.target.value);
+                void checkCode(e.target.value);
+              }}
+              placeholder="SPMB-XXXXXX"
+              className="font-mono uppercase tracking-widest"
+              autoComplete="off"
+            />
+          </Field>
+          {checkingCode ? (
+            <p className="text-xs text-sand-500">Memeriksa kode…</p>
+          ) : null}
+          {redeemInfo ? (
+            <div className="rounded-xl border border-primary-200 bg-primary-50 px-4 py-3 text-sm">
+              <p className="font-semibold text-primary-800">
+                Kode valid — TA {redeemInfo.academicYearName}
+              </p>
+              <p className="mt-0.5 text-xs text-primary-700">
+                untuk {redeemInfo.candidateName}
+              </p>
+            </div>
+          ) : null}
+          <Field label="Calon Murid" hint="Pilih anak yang akan didaftarkan dengan kode ini">
+            <Select
+              required
+              value={redeemCandidate}
+              onChange={(e) => setRedeemCandidate(e.target.value)}
+            >
+              <option value="" disabled>
+                Pilih calon murid…
+              </option>
+              {candidates.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          {candidates.length === 0 ? (
+            <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
+              Tambahkan data calon murid dulu di halaman ini, lalu ulangi.
+            </p>
+          ) : null}
+          {redeemInfo && redeemInfo.waves.length > 1 ? (
+            <Field label="Gelombang">
+              <Select
+                required
+                value={redeemWave}
+                onChange={(e) => setRedeemWave(e.target.value)}
+              >
+                <option value="" disabled>
+                  Pilih gelombang…
+                </option>
+                {redeemInfo.waves.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          ) : null}
+          {redeemError ? (
+            <p role="alert" className="rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+              {redeemError}
+            </p>
+          ) : null}
+          <Button type="submit" disabled={busy || !redeemInfo} className="w-full">
+            {busy ? 'Memproses…' : 'Buka Pendaftaran'}
+          </Button>
         </form>
       </Modal>
     </main>

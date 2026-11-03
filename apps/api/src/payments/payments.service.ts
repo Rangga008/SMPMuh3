@@ -415,7 +415,7 @@ export class PaymentsService {
       where: { id: invoiceId },
       include: { registration: { select: { parentId: true } } },
     });
-    if (!invoice || invoice.registration.parentId !== parentId) {
+    if (!invoice || !invoice.registration || invoice.registration.parentId !== parentId) {
       throw new NotFoundException('Invoice not found');
     }
     if (invoice.status !== 'OPEN') {
@@ -455,7 +455,7 @@ export class PaymentsService {
 
     // Status pendaftaran ikut maju → menunggu verifikasi admin.
     const review = REVIEW_STATUS[invoice.kind];
-    if (review) {
+    if (review && invoice.registrationId) {
       await this.prisma.registration.updateMany({
         where: { id: invoice.registrationId },
         data: { status: review },
@@ -522,17 +522,19 @@ export class PaymentsService {
         },
       });
       const awaiting = AWAITING_STATUS[payment.invoice.kind];
-      if (awaiting) {
+      if (awaiting && payment.invoice.registrationId) {
         await this.prisma.registration.updateMany({
           where: { id: payment.invoice.registrationId },
           data: { status: awaiting },
         });
       }
-      await this.notifications.notify(payment.invoice.registration.parentId, {
+      if (payment.invoice.registration) {
+        await this.notifications.notify(payment.invoice.registration.parentId, {
         title: 'Pembayaran ditolak',
         body: `Pembayaran ${payment.invoice.number} ditolak: ${note ?? 'bukti tidak valid'}. Silakan unggah ulang bukti yang benar.`,
         data: { invoiceId: payment.invoiceId },
-      });
+        });
+      }
     }
     await this.audit.log({
       actorId: staffId,
@@ -552,6 +554,7 @@ export class PaymentsService {
    * status pendaftaran maju otomatis (formulir / psikotes).
    */
   private async onSettled(payment: Payment & { invoice: Invoice }) {
+    if (!payment.invoice.registrationId) return; // tagihan siswa — bukan jalur SPMB
     const reg = await this.prisma.registration.findUniqueOrThrow({
       where: { id: payment.invoice.registrationId },
       include: { candidate: true, parent: true },
@@ -602,7 +605,7 @@ export class PaymentsService {
       where: { id: invoiceId },
       include: { registration: { select: { parentId: true } } },
     });
-    if (!invoice || invoice.registration.parentId !== parentId) {
+    if (!invoice || !invoice.registration || invoice.registration.parentId !== parentId) {
       throw new NotFoundException('Invoice not found');
     }
     if (invoice.status !== 'OPEN') {

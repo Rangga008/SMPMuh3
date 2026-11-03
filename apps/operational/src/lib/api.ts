@@ -144,6 +144,8 @@ export interface AcademicYear {
   id: string;
   name: string;
   isActive: boolean;
+  titipanOpen?: boolean;
+  quota?: number | null;
   startDate?: string;
   endDate?: string;
 }
@@ -454,7 +456,9 @@ export interface StudentDetail extends StudentDto {
   }[];
   achievements: { id: string; title: string; level?: string | null; year?: number | null; description?: string | null }[];
   violations: { id: string; type: string; description?: string | null; points: number; date: string }[];
-  parent?: { id: string; name: string; email: string } | null;
+  parent?: { id: string; name: string; email: string; phone?: string | null } | null;
+  /** Nomor registrasi SPMB asal — ada bila siswa hasil konversi pendaftar baru. */
+  spmbNumber?: string | null;
   documents: {
     id: string;
     type: string;
@@ -534,6 +538,7 @@ export interface SubjectView {
   code: string;
   name: string;
   gradeLevel?: number | null;
+  curriculumId?: string | null;
   curriculum?: { name: string } | null;
 }
 export interface ClassView {
@@ -547,6 +552,10 @@ export interface ClassView {
 export const listSubjects = () => req<SubjectView[]>('/subjects');
 export const createSubject = (dto: Record<string, unknown>) =>
   req<SubjectView>('/subjects', { method: 'POST', json: dto });
+export const updateSubject = (id: string, dto: Record<string, unknown>) =>
+  req<SubjectView>(`/subjects/${id}`, { method: 'PATCH', json: dto });
+export const deleteSubject = (id: string) =>
+  req<{ ok: boolean }>(`/subjects/${id}`, { method: 'DELETE' });
 export const listClasses = (academicYearId?: string) =>
   req<ClassView[]>(`/classes${academicYearId ? `?academicYearId=${academicYearId}` : ''}`);
 export const createClass = (dto: Record<string, unknown>) =>
@@ -558,12 +567,49 @@ export const listEnrollments = (classId: string) =>
     `/classes/${classId}/students`,
   );
 
+// ---- master data ----
+export interface CurriculumView {
+  id: string;
+  name: string;
+  description?: string | null;
+  isActive: boolean;
+  _count?: { subjects: number };
+}
+export const listCurricula = () => req<CurriculumView[]>('/curricula');
+export const createCurriculum = (dto: Record<string, unknown>) =>
+  req<CurriculumView>('/curricula', { method: 'POST', json: dto });
+export const updateCurriculum = (id: string, dto: Record<string, unknown>) =>
+  req<CurriculumView>(`/curricula/${id}`, { method: 'PATCH', json: dto });
+export const deleteCurriculum = (id: string) =>
+  req<{ ok: boolean }>(`/curricula/${id}`, { method: 'DELETE' });
+export interface SemesterView {
+  id: string;
+  academicYearId: string;
+  name: string;
+  startDate?: string | null;
+  endDate?: string | null;
+  isActive: boolean;
+  academicYear?: { name: string };
+}
+export const listSemesters = (academicYearId?: string) =>
+  req<SemesterView[]>(
+    `/semesters${academicYearId ? `?academicYearId=${academicYearId}` : ''}`,
+  );
+export const createSemester = (dto: Record<string, unknown>) =>
+  req<SemesterView>('/semesters', { method: 'POST', json: dto });
+export const updateSemester = (id: string, dto: Record<string, unknown>) =>
+  req<SemesterView>(`/semesters/${id}`, { method: 'PATCH', json: dto });
+export const deleteSemester = (id: string) =>
+  req<{ ok: boolean }>(`/semesters/${id}`, { method: 'DELETE' });
+
 // ---------- Keuangan ----------
 export interface FinanceCategory {
   id: string;
   key: string;
   name: string;
   type: 'INCOME' | 'EXPENSE';
+  standardGroup?: string | null;
+  isActive?: boolean;
 }
 export interface FinanceTransaction {
   id: string;
@@ -572,11 +618,13 @@ export interface FinanceTransaction {
   amount: number;
   occurredAt: string;
   description?: string | null;
-  source: 'manual' | 'spmb';
+  source: string;
   paymentId?: string | null;
+  cashAccountId?: string | null;
   academicYearId?: string | null;
   createdAt: string;
   category?: FinanceCategory;
+  cashAccount?: { id: string; name: string; type: 'CASH' | 'BANK' } | null;
   recordedBy?: { name: string } | null;
 }
 export interface FinanceSummary {
@@ -604,7 +652,7 @@ const qs = (o: Record<string, string | undefined>) => {
 export const getFinanceSummary = (q: { academicYearId?: string; from?: string; to?: string }) =>
   req<FinanceSummary>(`/admin/finance/summary${qs(q)}`);
 export const listFinanceTransactions = (q: {
-  type?: string; categoryId?: string; academicYearId?: string;
+  type?: string; categoryId?: string; cashAccountId?: string; academicYearId?: string;
   from?: string; to?: string; search?: string; take?: string; skip?: string;
 }) =>
   req<{ items: FinanceTransaction[]; total: number }>(`/admin/finance/transactions${qs(q)}`);
@@ -616,12 +664,298 @@ export const deleteFinanceTransaction = (id: string) =>
   req<{ ok: boolean }>(`/admin/finance/transactions/${id}`, { method: 'DELETE' });
 export const listFinanceCategories = () =>
   req<FinanceCategory[]>('/admin/finance/categories');
-export const createFinanceCategory = (dto: { name: string; type: 'INCOME' | 'EXPENSE' }) =>
+export const createFinanceCategory = (dto: { name: string; type: 'INCOME' | 'EXPENSE'; standardGroup?: string }) =>
   req<FinanceCategory>('/admin/finance/categories', { method: 'POST', json: dto });
 export const listFinanceBudgets = (academicYearId: string) =>
   req<FinanceBudget[]>(`/admin/finance/budgets?academicYearId=${academicYearId}`);
 export const upsertFinanceBudget = (dto: { academicYearId: string; categoryId: string; amount: number; note?: string }) =>
   req<FinanceBudget>('/admin/finance/budgets', { method: 'PUT', json: dto });
+
+// ---- laporan ----
+export interface FinanceReport {
+  range: { from: string | null; to: string | null; semesterName: string | null };
+  income: number;
+  expense: number;
+  balance: number;
+  monthly: { month: string; income: number; expense: number }[];
+  incomeByCategory: { categoryId: string; name: string; total: number }[];
+  expenseByCategory: { categoryId: string; name: string; total: number }[];
+  expenseByStandard: { group: string; total: number }[];
+  incomeBySource: { source: string; total: number }[];
+  expenseBySource: { source: string; total: number }[];
+  byCashAccount: { accountId: string; name: string; key: string; income: number; expense: number; net: number }[];
+  budgets: { categoryId: string; name: string; type: string; planned: number; actual: number; diff: number; pct: number }[];
+  paymentsByStudentMonth: {
+    studentId: string;
+    studentName: string;
+    classId: string;
+    className: string;
+    gradeLevel: number;
+    month: string;
+    total: number;
+  }[];
+  savings: { in: number; out: number; monthly: { month: string; in: number; out: number }[] };
+  loans: { disbursedCount: number; disbursedAmount: number; repaidAmount: number; outstanding: number };
+}
+export const getFinanceReport = (f: {
+  academicYearId?: string; semesterId?: string; from?: string; to?: string; cashAccountId?: string;
+}) => req<FinanceReport>(`/admin/finance/reports${qs(f)}`);
+
+// ---- kas & buku bank ----
+export interface CashAccountView {
+  id: string;
+  key: string;
+  name: string;
+  type: 'CASH' | 'BANK';
+  openingBalance: number;
+  isActive: boolean;
+  balance?: number;
+}
+export const listCashAccounts = () => req<CashAccountView[]>('/admin/finance/accounts');
+export const createCashAccount = (dto: Record<string, unknown>) =>
+  req<CashAccountView>('/admin/finance/accounts', { method: 'POST', json: dto });
+export const updateCashAccount = (id: string, dto: Record<string, unknown>) =>
+  req<CashAccountView>(`/admin/finance/accounts/${id}`, { method: 'PATCH', json: dto });
+export interface CashMovementView {
+  id: string;
+  direction: 'IN' | 'OUT';
+  amount: number;
+  refType: string;
+  description?: string | null;
+  occurredAt: string;
+  balance: number;
+}
+export interface AccountLedger {
+  account: CashAccountView;
+  opening: number;
+  items: CashMovementView[];
+  closing: number;
+}
+export const getAccountLedger = (id: string, q: { from?: string; to?: string }) => {
+  const p = new URLSearchParams();
+  if (q.from) p.set('from', q.from);
+  if (q.to) p.set('to', q.to);
+  const s = p.toString();
+  return req<AccountLedger>(`/admin/finance/accounts/${id}/ledger${s ? `?${s}` : ''}`);
+};
+export interface BankIncomeView {
+  id: string;
+  cashAccountId: string;
+  senderName: string;
+  purpose?: string | null;
+  amount: number;
+  receivedAt: string;
+  account?: { id: string; name: string };
+  category?: { id: string; name: string };
+}
+export const listBankIncome = (q: { cashAccountId?: string; from?: string; to?: string }) => {
+  const p = new URLSearchParams();
+  if (q.cashAccountId) p.set('cashAccountId', q.cashAccountId);
+  if (q.from) p.set('from', q.from);
+  if (q.to) p.set('to', q.to);
+  const s = p.toString();
+  return req<BankIncomeView[]>(`/admin/finance/bank-income${s ? `?${s}` : ''}`);
+};
+export const createBankIncome = (dto: Record<string, unknown>) =>
+  req<BankIncomeView>('/admin/finance/bank-income', { method: 'POST', json: dto });
+
+// ---- pengeluaran ----
+export interface ExpenseAllocationView {
+  id: string;
+  cashAccountId: string;
+  amount: number;
+  cashAccount?: { name: string; type?: 'CASH' | 'BANK' };
+}
+export interface ExpenseView {
+  id: string;
+  number: string;
+  occurredAt: string;
+  vendor?: string | null;
+  description: string;
+  categoryId: string;
+  academicYearId?: string | null;
+  totalAmount: number;
+  note?: string | null;
+  documentId?: string | null;
+  status: 'POSTED' | 'VOID';
+  category?: { name: string; standardGroup?: string | null };
+  academicYear?: { name: string };
+  allocations?: ExpenseAllocationView[];
+  creator?: { name: string } | null;
+}
+export const STANDARDS = [
+  'ISI', 'PROSES', 'KELULUSAN', 'TENAGA',
+  'SARANA', 'PENGELOLAAN', 'PEMBIAYAAN', 'PENILAIAN',
+] as const;
+export const listExpenses = (q: {
+  categoryId?: string; standardGroup?: string; cashAccountId?: string;
+  academicYearId?: string; from?: string; to?: string; search?: string;
+  take?: string; skip?: string;
+}) =>
+  req<{ items: ExpenseView[]; total: number }>(`/admin/finance/expenses${qs(q)}`);
+export const getExpense = (id: string) =>
+  req<ExpenseView>(`/admin/finance/expenses/${id}`);
+export const createExpense = (dto: Record<string, unknown>) =>
+  req<ExpenseView>('/admin/finance/expenses', { method: 'POST', json: dto });
+export const updateExpense = (id: string, dto: Record<string, unknown>) =>
+  req<ExpenseView>(`/admin/finance/expenses/${id}`, { method: 'PATCH', json: dto });
+export const voidExpense = (id: string) =>
+  req<{ voided: boolean }>(`/admin/finance/expenses/${id}`, { method: 'DELETE' });
+export interface FundUsageRow {
+  account: { id: string; key: string; name: string; type: 'CASH' | 'BANK' };
+  total: number;
+  byCategory: { name: string; amount: number }[];
+  byStandard: { name: string; amount: number }[];
+}
+export const getFundUsage = (q: { academicYearId?: string; from?: string; to?: string }) =>
+  req<FundUsageRow[]>(`/admin/finance/expenses/fund-usage${qs(q)}`);
+export const updateFinanceCategory = (
+  id: string,
+  dto: { name?: string; standardGroup?: string; isActive?: boolean },
+) =>
+  req<FinanceCategory>(`/admin/finance/categories/${id}`, { method: 'PATCH', json: dto });
+
+// ---- tagihan siswa ----
+export interface InvoiceItemView {
+  id: string;
+  kind: string;
+  label: string;
+  amount: number;
+  paidAmount?: number;
+  remaining?: number;
+}
+export interface StudentInvoice {
+  id: string;
+  number: string;
+  studentId: string;
+  title: string;
+  kind: string;
+  amount: number;
+  status: 'OPEN' | 'PARTIAL' | 'PAID' | 'EXPIRED' | 'CANCELLED';
+  dueAt?: string | null;
+  issuedAt: string;
+  paidAt?: string | null;
+  note?: string | null;
+  payerLabel?: string | null;
+  paidAmount: number;
+  remaining: number;
+  student?: {
+    id: string;
+    name: string;
+    nis?: string | null;
+    parent?: { name: string; phone?: string | null } | null;
+  } | null;
+  class?: { id: string; name: string; gradeLevel: number } | null;
+  items?: InvoiceItemView[];
+}
+export interface PaymentReceipt {
+  id: string;
+  amount: number;
+  method?: string | null;
+  paidAt?: string | null;
+  invoice: {
+    number: string;
+    student?: { name: string; nis?: string | null; parent?: { name: string; phone?: string | null } | null } | null;
+  };
+  cashAccount?: { name: string } | null;
+  allocations: {
+    id: string;
+    amount: number;
+    invoice: { number: string; title: string };
+    item?: { label: string } | null;
+  }[];
+}
+export interface BillingBatchView {
+  id: string;
+  kind: string;
+  title: string;
+  amount: number;
+  generatedCount: number;
+  skippedCount: number;
+  createdAt: string;
+}
+
+export const listStudentInvoices = (q: {
+  studentId?: string; classId?: string; gradeLevel?: string; academicYearId?: string;
+  semesterId?: string; kind?: string; status?: string; search?: string; take?: string; skip?: string;
+}) => {
+  const p = qs({ ...q });
+  return req<{ items: StudentInvoice[]; total: number }>(`/admin/finance/invoices${p}`);
+};
+export const createStudentInvoice = (dto: Record<string, unknown>) =>
+  req<StudentInvoice>('/admin/finance/invoices', { method: 'POST', json: dto });
+export const getStudentInvoice = (id: string) =>
+  req<StudentInvoice & {
+    allocations?: {
+      id: string;
+      amount: number;
+      createdAt: string;
+      item?: { label: string } | null;
+      payment?: { id: string; method?: string | null; paidAt?: string | null } | null;
+    }[];
+    academicYear?: { id: string; name: string } | null;
+    semester?: { id: string; name: string } | null;
+  }>(`/admin/finance/invoices/${id}`);
+export const updateStudentInvoice = (id: string, dto: Record<string, unknown>) =>
+  req<StudentInvoice>(`/admin/finance/invoices/${id}`, { method: 'PATCH', json: dto });
+export const generateBilling = (dto: Record<string, unknown>) =>
+  req<BillingBatchView>('/admin/finance/billing/generate', { method: 'POST', json: dto });
+export const listBillingBatches = (academicYearId?: string) =>
+  req<BillingBatchView[]>(`/admin/finance/billing/batches${academicYearId ? `?academicYearId=${academicYearId}` : ''}`);
+export const voidBillingBatch = (id: string) =>
+  req<{ cancelled: number; kept: number }>(`/admin/finance/billing/batches/${id}`, { method: 'DELETE' });
+export const recordBillingPayment = (dto: Record<string, unknown>) =>
+  req<PaymentReceipt>('/admin/finance/billing/payments', { method: 'POST', json: dto });
+export const getBillingReceipt = (id: string) =>
+  req<PaymentReceipt>(`/admin/finance/payments/${id}/receipt`);
+
+export interface StudentBillsView {
+  student: {
+    id: string; name: string; nis?: string | null;
+    parent?: { name: string; phone?: string | null } | null;
+    enrollments?: { class?: { name: string; gradeLevel: number } | null; academicYear?: { name: string } | null }[];
+  };
+  bills: StudentInvoice[];
+  savings: number;
+}
+export const getStudentBills = (studentId: string) =>
+  req<StudentBillsView>(`/admin/finance/students/${studentId}/bills`);
+export const notifyInvoice = (id: string) =>
+  req<{ sent: boolean; queued: boolean; waUrl: string; phone: string; messageId?: string }>(
+    `/admin/finance/invoices/${id}/notify`,
+    { method: 'POST' },
+  );
+
+// ---- tabungan siswa ----
+export interface SavingsEntryView {
+  id: string;
+  direction: 'IN' | 'OUT';
+  amount: number;
+  note?: string | null;
+  occurredAt: string;
+  balance: number;
+  cashAccount?: { name: string } | null;
+  recordedBy?: { name: string } | null;
+}
+export const getStudentSavings = (studentId: string) =>
+  req<{
+    student?: {
+      id: string;
+      name: string;
+      nis?: string | null;
+      enrollments?: { class?: { name: string } | null }[];
+    } | null;
+    balance: number;
+    items: SavingsEntryView[];
+  }>(`/admin/finance/savings/${studentId}`);
+export const listSavingsSummary = (q?: { search?: string; classId?: string; gradeLevel?: string }) => {
+  const p = q ? qs({ ...q }) : '';
+  return req<{ id: string; name: string; nis?: string | null; className?: string | null; gradeLevel?: number | null; balance: number }[]>(
+    `/admin/finance/savings/summary${p}`,
+  );
+};
+export const createSavingsEntry = (dto: Record<string, unknown>) =>
+  req<SavingsEntryView>('/admin/finance/savings', { method: 'POST', json: dto });
 
 // ---------- Pengaturan: akun staf & profil sekolah ----------
 
@@ -688,6 +1022,92 @@ export const createAcademicYear = (dto: {
 }) => req<AcademicYear>('/academic-years', { method: 'POST', json: dto });
 export const activateAcademicYear = (id: string) =>
   req<AcademicYear>(`/academic-years/${id}/activate`, { method: 'PATCH' });
+export const updateAcademicYear = (
+  id: string,
+  dto: {
+    name?: string;
+    startDate?: string;
+    endDate?: string;
+    titipanOpen?: boolean;
+    quota?: number | null;
+  },
+) => req<AcademicYear>(`/academic-years/${id}`, { method: 'PATCH', json: dto });
+export const deleteAcademicYear = (id: string) =>
+  req<{ ok: boolean }>(`/academic-years/${id}`, { method: 'DELETE' });
+
+// ---------- Daftar titipan / waiting list ----------
+import type { TitipanEntryDto, TitipanStatus } from '@smpmuh3/types';
+
+export interface TitipanAdmin extends TitipanEntryDto {
+  parentName?: string | null;
+  parentEmail?: string | null;
+  parentPhone?: string | null;
+}
+export interface TitipanSummary {
+  academicYearId: string;
+  name: string;
+  titipanOpen: boolean;
+  isActive: boolean;
+  quota?: number | null;
+  occupied: number;
+  waitingCount: number;
+  codeSentCount: number;
+  registeredCount: number;
+}
+export const titipanSummary = () => req<TitipanSummary[]>('/admin/titipan/summary');
+export const listTitipan = (q: {
+  academicYearId?: string | undefined;
+  status?: TitipanStatus | undefined;
+  q?: string | undefined;
+}) => req<TitipanAdmin[]>(`/admin/titipan${qs(q)}`);
+export const approveTitipan = (id: string) =>
+  req<TitipanAdmin>(`/admin/titipan/${id}/approve`, { method: 'POST' });
+export const sendTitipanCode = (id: string) =>
+  req<{ entry: TitipanAdmin; sent: boolean; queued: boolean; waUrl: string }>(
+    `/admin/titipan/${id}/send-code`,
+    { method: 'POST' },
+  );
+export const cancelTitipan = (id: string, note?: string) =>
+  req<TitipanAdmin>(`/admin/titipan/${id}/cancel`, { method: 'POST', json: { note } });
+export const noteTitipan = (id: string, note?: string) =>
+  req<TitipanAdmin>(`/admin/titipan/${id}`, { method: 'PATCH', json: { note } });
+/** Ubah status titipan manual (PENDING/WAITING/CODE_SENT/CANCELLED). */
+export const setTitipanStatus = (
+  id: string,
+  status: Exclude<TitipanStatus, 'REGISTERED'>,
+) => req<TitipanAdmin>(`/admin/titipan/${id}`, { method: 'PATCH', json: { status } });
+
+// ---------- WhatsApp gateway & antrean ----------
+import type {
+  WaMessageStatus,
+  WaMessagesResponse,
+  WhatsappSettingsDto,
+} from '@smpmuh3/types';
+
+export const getWaSettings = () => req<WhatsappSettingsDto>('/admin/wa/settings');
+export const updateWaSettings = (dto: {
+  enabled?: boolean | undefined;
+  gatewayUrl?: string | undefined;
+  gatewayToken?: string | undefined;
+  intervalSeconds?: number | undefined;
+  dailyLimit?: number | undefined;
+}) => req<WhatsappSettingsDto>('/admin/wa/settings', { method: 'PATCH', json: dto });
+export const listWaMessages = (q: {
+  type?: string | undefined;
+  status?: WaMessageStatus | undefined;
+  take?: number | undefined;
+}) =>
+  req<WaMessagesResponse>(
+    `/admin/wa/messages${qs({ ...q, take: q.take ? String(q.take) : undefined })}`,
+  );
+export const retryWaMessage = (id: string) =>
+  req<WaMessagesResponse['messages'][number]>(`/admin/wa/messages/${id}/retry`, {
+    method: 'POST',
+  });
+export const cancelWaMessage = (id: string) =>
+  req<WaMessagesResponse['messages'][number]>(`/admin/wa/messages/${id}/cancel`, {
+    method: 'POST',
+  });
 
 export interface AssignmentView {
   id: string;
@@ -862,3 +1282,218 @@ export const updateExamRecord = (id: string, dto: Record<string, unknown>) =>
   req<ExamRecord>(`/tu/exam-records/${id}`, { method: 'PATCH', json: dto });
 export const deleteExamRecord = (id: string) =>
   req(`/tu/exam-records/${id}`, { method: 'DELETE' });
+
+// ---- payroll ----
+export interface PayScaleView {
+  id: string;
+  name: string;
+  minYears: number;
+  maxYears?: number | null;
+  hourlyRate: number;
+  transportRate: number;
+  isActive: boolean;
+  _count?: { employees: number };
+}
+export interface EmployeePayroll extends EmployeeDto {
+  payScaleId?: string | null;
+  workStartDate?: string | null;
+  weeklyRequiredMinutes: number;
+  hourlyRate?: number | null;
+  transportRate?: number | null;
+  isCertified: boolean;
+  serviceYears?: number | null;
+  payScale?: PayScaleView | null;
+}
+export interface EmpAttendance {
+  id: string;
+  employeeId: string;
+  date: string;
+  status: 'HADIR' | 'TELAT' | 'IZIN' | 'SAKIT' | 'ALPHA';
+  teachingMinutes: number;
+  note?: string | null;
+  employee?: { name: string; nip?: string | null };
+}
+export interface HonorTypeView {
+  id: string;
+  key: string;
+  name: string;
+  period: 'MONTHLY' | 'PER_SESSION' | 'ONE_TIME';
+  defaultAmount: number;
+  isActive: boolean;
+  _count?: { honors: number };
+}
+export interface EmployeeHonorView {
+  id: string;
+  employeeId: string;
+  honorTypeId: string;
+  amount?: number | null;
+  sessions: number;
+  eventName?: string | null;
+  eventMonth?: string | null;
+  validFrom?: string | null;
+  validTo?: string | null;
+  isActive: boolean;
+  employee?: { name: string };
+  honorType?: { name: string; period: string };
+}
+export interface DeductionTypeView {
+  id: string;
+  key: string;
+  name: string;
+  defaultAmount: number;
+  isRecurring: boolean;
+  isActive: boolean;
+}
+export interface EmployeeDeductionView {
+  id: string;
+  employeeId: string;
+  deductionTypeId: string;
+  amount?: number | null;
+  month?: string | null;
+  isActive: boolean;
+  employee?: { name: string };
+  deductionType?: { name: string; key: string; isRecurring: boolean };
+}
+export interface LoanView {
+  id: string;
+  employeeId: string;
+  source: 'KASBON' | 'KOOPERASI' | 'EKSTERNAL';
+  principal: number;
+  fee: number;
+  installments: number;
+  monthlyAmount: number;
+  remaining: number;
+  startMonth: string;
+  status: 'ACTIVE' | 'PAID_OFF' | 'CANCELLED';
+  note?: string | null;
+  employee?: { name: string; nip?: string | null };
+  cashAccount?: { name: string } | null;
+}
+export interface BosHonorView {
+  id: string;
+  employeeId: string;
+  month: string;
+  amount: number;
+  certified: boolean;
+  note?: string | null;
+  employee?: { name: string; nip?: string | null; isCertified: boolean };
+}
+export interface PayrollLineView {
+  id: string;
+  kind: 'BASE' | 'TRANSPORT' | 'HONOR' | 'DEDUCTION' | 'LOAN' | 'PENSION' | 'BOS_HONOR';
+  label: string;
+  amount: number;
+}
+export interface PayrollItemView {
+  id: string;
+  employeeId: string;
+  workedMinutes: number;
+  requiredMinutes: number;
+  basePay: number;
+  transportPay: number;
+  grossAmount: number;
+  deductionAmount: number;
+  netAmount: number;
+  employee?: { name: string; nip?: string | null; type?: string; payScale?: { name: string } | null };
+  lines?: PayrollLineView[];
+}
+export interface PayrollRunView {
+  id: string;
+  month: string;
+  weeks: number;
+  status: 'DRAFT' | 'FINALIZED' | 'PAID' | 'VOID';
+  note?: string | null;
+  academicYearId?: string | null;
+  cashAccountId?: string | null;
+  paidAt?: string | null;
+  academicYear?: { name: string } | null;
+  cashAccount?: { name: string } | null;
+  items?: PayrollItemView[];
+  totalNet?: number;
+  _count?: { items: number };
+}
+export interface PensionSummaryRow {
+  employee: { id: string; name: string; nip?: string | null };
+  total: number;
+}
+export interface PensionLedger {
+  employee: { id: string; name: string; nip?: string | null };
+  entries: { id: string; month: string; amount: number; note?: string | null }[];
+  total: number;
+}
+
+const py = '/admin/payroll';
+export const listPayScales = () => req<PayScaleView[]>(`${py}/pay-scales`);
+export const createPayScale = (dto: Record<string, unknown>) =>
+  req<PayScaleView>(`${py}/pay-scales`, { method: 'POST', json: dto });
+export const updatePayScale = (id: string, dto: Record<string, unknown>) =>
+  req<PayScaleView>(`${py}/pay-scales/${id}`, { method: 'PATCH', json: dto });
+export const deletePayScale = (id: string) =>
+  req<{ deleted: boolean }>(`${py}/pay-scales/${id}`, { method: 'DELETE' });
+export const listPayrollEmployees = () => req<EmployeePayroll[]>(`${py}/employees`);
+export const updateEmployeePayrollSettings = (id: string, dto: Record<string, unknown>) =>
+  req<EmployeePayroll>(`${py}/employees/${id}/settings`, { method: 'PATCH', json: dto });
+export const listEmpAttendance = (month: string, employeeId?: string) => {
+  const p = new URLSearchParams({ month });
+  if (employeeId) p.set('employeeId', employeeId);
+  return req<EmpAttendance[]>(`${py}/attendance?${p}`);
+};
+export const saveEmpAttendance = (dto: { date: string; entries: Record<string, unknown>[] }) =>
+  req<{ saved: number }>(`${py}/attendance`, { method: 'POST', json: dto });
+export const listHonorTypes = () => req<HonorTypeView[]>(`${py}/honor-types`);
+export const createHonorType = (dto: Record<string, unknown>) =>
+  req<HonorTypeView>(`${py}/honor-types`, { method: 'POST', json: dto });
+export const updateHonorType = (id: string, dto: Record<string, unknown>) =>
+  req<HonorTypeView>(`${py}/honor-types/${id}`, { method: 'PATCH', json: dto });
+export const deleteHonorType = (id: string) =>
+  req<{ deleted: boolean }>(`${py}/honor-types/${id}`, { method: 'DELETE' });
+export const listEmployeeHonors = (employeeId?: string) =>
+  req<EmployeeHonorView[]>(`${py}/employee-honors${employeeId ? `?employeeId=${employeeId}` : ''}`);
+export const createEmployeeHonor = (dto: Record<string, unknown>) =>
+  req<EmployeeHonorView>(`${py}/employee-honors`, { method: 'POST', json: dto });
+export const updateEmployeeHonor = (id: string, dto: Record<string, unknown>) =>
+  req<EmployeeHonorView>(`${py}/employee-honors/${id}`, { method: 'PATCH', json: dto });
+export const deleteEmployeeHonor = (id: string) =>
+  req<{ deleted: boolean }>(`${py}/employee-honors/${id}`, { method: 'DELETE' });
+export const listDeductionTypes = () => req<DeductionTypeView[]>(`${py}/deduction-types`);
+export const createDeductionType = (dto: Record<string, unknown>) =>
+  req<DeductionTypeView>(`${py}/deduction-types`, { method: 'POST', json: dto });
+export const updateDeductionType = (id: string, dto: Record<string, unknown>) =>
+  req<DeductionTypeView>(`${py}/deduction-types/${id}`, { method: 'PATCH', json: dto });
+export const listEmployeeDeductions = (employeeId?: string) =>
+  req<EmployeeDeductionView[]>(`${py}/employee-deductions${employeeId ? `?employeeId=${employeeId}` : ''}`);
+export const createEmployeeDeduction = (dto: Record<string, unknown>) =>
+  req<EmployeeDeductionView>(`${py}/employee-deductions`, { method: 'POST', json: dto });
+export const updateEmployeeDeduction = (id: string, dto: Record<string, unknown>) =>
+  req<EmployeeDeductionView>(`${py}/employee-deductions/${id}`, { method: 'PATCH', json: dto });
+export const deleteEmployeeDeduction = (id: string) =>
+  req<{ deleted: boolean }>(`${py}/employee-deductions/${id}`, { method: 'DELETE' });
+export const listLoans = (q: { employeeId?: string; status?: string }) =>
+  req<LoanView[]>(`${py}/loans${qs({ employeeId: q.employeeId, status: q.status })}`);
+export const createLoan = (dto: Record<string, unknown>) =>
+  req<LoanView>(`${py}/loans`, { method: 'POST', json: dto });
+export const updateLoan = (id: string, dto: Record<string, unknown>) =>
+  req<LoanView>(`${py}/loans/${id}`, { method: 'PATCH', json: dto });
+export const getPensionSummary = () => req<PensionSummaryRow[]>(`${py}/pension`);
+export const getPensionLedger = (employeeId: string) =>
+  req<PensionLedger>(`${py}/pension/${employeeId}`);
+export const listBosHonors = (q: { month?: string; employeeId?: string }) =>
+  req<BosHonorView[]>(`${py}/bos-honors${qs({ month: q.month, employeeId: q.employeeId })}`);
+export const upsertBosHonor = (dto: Record<string, unknown>) =>
+  req<BosHonorView>(`${py}/bos-honors`, { method: 'POST', json: dto });
+export const deleteBosHonor = (id: string) =>
+  req<{ deleted: boolean }>(`${py}/bos-honors/${id}`, { method: 'DELETE' });
+export const listPayrollRuns = () => req<PayrollRunView[]>(`${py}/runs`);
+export const getPayrollRun = (id: string) => req<PayrollRunView>(`${py}/runs/${id}`);
+export const createPayrollRun = (dto: Record<string, unknown>) =>
+  req<PayrollRunView>(`${py}/runs`, { method: 'POST', json: dto });
+export const recomputePayrollRun = (id: string) =>
+  req<PayrollRunView>(`${py}/runs/${id}/recompute`, { method: 'POST' });
+export const finalizePayrollRun = (id: string) =>
+  req<PayrollRunView>(`${py}/runs/${id}/finalize`, { method: 'POST' });
+export const payPayrollRun = (id: string, cashAccountId: string) =>
+  req<PayrollRunView>(`${py}/runs/${id}/pay`, { method: 'POST', json: { cashAccountId } });
+export const voidPayrollRun = (id: string) =>
+  req<{ voided: boolean }>(`${py}/runs/${id}/void`, { method: 'POST' });
+export const deletePayrollRun = (id: string) =>
+  req<{ deleted: boolean }>(`${py}/runs/${id}`, { method: 'DELETE' });

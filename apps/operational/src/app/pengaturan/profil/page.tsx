@@ -65,7 +65,7 @@ export default function SchoolProfilePage() {
 
       <Widget title="Identitas Sekolah">
         {school ? (
-          <div className="grid gap-6 lg:grid-cols-[1fr_auto]">
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_auto]">
             <form
               className="grid gap-4 sm:grid-cols-2"
               onSubmit={(e) => {

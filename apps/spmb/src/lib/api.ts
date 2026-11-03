@@ -13,6 +13,8 @@ import type {
   PaymentDto,
   RegistrationDto,
   StatusLookupResult,
+  TitipanEntryDto,
+  TitipanYearSummaryDto,
   WaveDto,
 } from '@smpmuh3/types';
 
@@ -183,12 +185,53 @@ export async function viewDocument(id: string) {
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
+// ---- daftar titipan / waiting list ----
+export const listTitipanYears = () =>
+  req<TitipanYearSummaryDto[]>('/titipan/years');
+export const titipanBoard = (academicYearId?: string) =>
+  req<TitipanEntryDto[]>(
+    `/titipan/board${academicYearId ? `?academicYearId=${academicYearId}` : ''}`,
+  );
+export const createGuestTitipan = (dto: {
+  academicYearId: string;
+  candidateName: string;
+  birthPlace?: string | undefined;
+  birthDate?: string | undefined;
+  address?: string | undefined;
+  previousSchool?: string | undefined;
+  guardianPhone: string;
+  infoSource?: string | undefined;
+}) => req<TitipanEntryDto>('/titipan/guest', { method: 'POST', json: dto });
+export const listMyTitipan = () => req<TitipanEntryDto[]>('/titipan');
+export interface TitipanCodeInfo {
+  status: string;
+  academicYearId: string;
+  academicYearName: string;
+  candidateName: string;
+  waves: WaveDto[];
+}
+export const titipanCodeInfo = (code: string) =>
+  req<TitipanCodeInfo>(`/titipan/code/${encodeURIComponent(code)}`);
+export const listWavesFor = (academicYearId: string) =>
+  req<WaveDto[]>(`/waves?academicYearId=${academicYearId}`);
+export const createTitipan = (dto: {
+  candidateId: string;
+  academicYearId: string;
+  guardianPhone?: string | undefined;
+  infoSource?: string | undefined;
+}) => req<TitipanEntryDto>('/titipan', { method: 'POST', json: dto });
+
 // ---- registrations ----
 export const listRegistrations = () => req<RegistrationDto[]>('/registrations');
-export const createRegistration = (candidateId: string, waveId: string) =>
+/** Buat pendaftaran lewat kode formulir titipan. */
+export const createRegistration = (
+  candidateId: string,
+  formCode: string,
+  waveId?: string,
+) =>
   req<RegistrationDto>('/registrations', {
     method: 'POST',
-    json: { candidateId, waveId },
+    json: { candidateId, formCode, waveId },
   });
 export const getRegistration = (id: string) =>
   req<RegistrationDto>(`/registrations/${id}`);

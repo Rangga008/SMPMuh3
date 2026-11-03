@@ -17,9 +17,13 @@ import type {
   EnrollmentDto,
   GradeDto,
   ScheduleEntryDto,
+  SemesterDto,
   SubjectDto,
   TeachingAssignmentDto,
   UpdateClassDto,
+  UpdateCurriculumDto,
+  UpdateSemesterDto,
+  UpdateSubjectDto,
 } from './dto/academic.dto';
 
 @Injectable()
@@ -130,6 +134,41 @@ export class AcademicService {
     return c;
   }
 
+  async updateCurriculum(id: string, dto: UpdateCurriculumDto, actorId: string) {
+    const existing = await this.prisma.curriculum.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Kurikulum tidak ditemukan.');
+    if (dto.name !== undefined && dto.name.trim() !== existing.name) {
+      const clash = await this.prisma.curriculum.findUnique({ where: { name: dto.name.trim() } });
+      if (clash) throw new ConflictException(`Kurikulum "${dto.name}" sudah ada.`);
+    }
+    const c = await this.prisma.curriculum.update({
+      where: { id },
+      data: {
+        ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
+        ...(dto.description !== undefined ? { description: dto.description } : {}),
+        ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+      },
+    });
+    await this.audit.log({ actorId, action: 'curriculum.update', entity: 'curriculum', entityId: id });
+    return c;
+  }
+
+  async removeCurriculum(id: string, actorId: string) {
+    const existing = await this.prisma.curriculum.findUnique({
+      where: { id },
+      include: { _count: { select: { subjects: true } } },
+    });
+    if (!existing) throw new NotFoundException('Kurikulum tidak ditemukan.');
+    if (existing._count.subjects > 0) {
+      throw new ConflictException(
+        `Kurikulum masih dipakai ${existing._count.subjects} mapel — lepas dulu mapelnya.`,
+      );
+    }
+    await this.prisma.curriculum.delete({ where: { id } });
+    await this.audit.log({ actorId, action: 'curriculum.delete', entity: 'curriculum', entityId: id });
+    return { ok: true };
+  }
+
   listSubjects(curriculumId?: string) {
     return this.prisma.subject.findMany({
       where: curriculumId ? { curriculumId } : {},
@@ -151,6 +190,100 @@ export class AcademicService {
     });
     await this.audit.log({ actorId, action: 'subject.create', entity: 'subject', entityId: s.id });
     return s;
+  }
+
+  async updateSubject(id: string, dto: UpdateSubjectDto, actorId: string) {
+    const existing = await this.prisma.subject.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Mapel tidak ditemukan.');
+    const code = dto.code !== undefined ? dto.code.trim().toUpperCase() : undefined;
+    if (code !== undefined && code !== existing.code) {
+      const clash = await this.prisma.subject.findUnique({ where: { code } });
+      if (clash) throw new ConflictException(`Kode ${code} sudah dipakai`);
+    }
+    const s = await this.prisma.subject.update({
+      where: { id },
+      data: {
+        ...(code !== undefined ? { code } : {}),
+        ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
+        ...(dto.curriculumId !== undefined ? { curriculumId: dto.curriculumId } : {}),
+        ...(dto.gradeLevel !== undefined ? { gradeLevel: dto.gradeLevel } : {}),
+      },
+    });
+    await this.audit.log({ actorId, action: 'subject.update', entity: 'subject', entityId: id });
+    return s;
+  }
+
+  async removeSubject(id: string, actorId: string) {
+    const existing = await this.prisma.subject.findUnique({
+      where: { id },
+      include: { _count: { select: { assignments: true, assessments: true } } },
+    });
+    if (!existing) throw new NotFoundException('Mapel tidak ditemukan.');
+    const used = existing._count.assignments + existing._count.assessments;
+    if (used > 0) {
+      throw new ConflictException(
+        `Mapel masih dipakai ${existing._count.assignments} penugasan & ${existing._count.assessments} penilaian — tidak bisa dihapus.`,
+      );
+    }
+    await this.prisma.subject.delete({ where: { id } });
+    await this.audit.log({ actorId, action: 'subject.delete', entity: 'subject', entityId: id });
+    return { ok: true };
+  }
+
+  listSemesters(academicYearId?: string) {
+    return this.prisma.semester.findMany({
+      where: academicYearId ? { academicYearId } : {},
+      include: { academicYear: { select: { name: true } } },
+      orderBy: [{ academicYear: { name: 'desc' } }, { name: 'asc' }],
+    });
+  }
+
+  async createSemester(dto: SemesterDto, actorId: string) {
+    const s = await this.prisma.semester.create({
+      data: {
+        academicYearId: dto.academicYearId,
+        name: dto.name.trim(),
+        startDate: dto.startDate ? new Date(dto.startDate) : null,
+        endDate: dto.endDate ? new Date(dto.endDate) : null,
+        isActive: dto.isActive ?? false,
+      },
+    });
+    await this.audit.log({ actorId, action: 'semester.create', entity: 'semester', entityId: s.id });
+    return s;
+  }
+
+  async updateSemester(id: string, dto: UpdateSemesterDto, actorId: string) {
+    const existing = await this.prisma.semester.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Semester tidak ditemukan');
+    if (dto.isActive === true) {
+      await this.prisma.semester.updateMany({
+        where: { academicYearId: existing.academicYearId, id: { not: id } },
+        data: { isActive: false },
+      });
+    }
+    const s = await this.prisma.semester.update({
+      where: { id },
+      data: {
+        ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
+        ...(dto.startDate !== undefined
+          ? { startDate: dto.startDate ? new Date(dto.startDate) : null }
+          : {}),
+        ...(dto.endDate !== undefined
+          ? { endDate: dto.endDate ? new Date(dto.endDate) : null }
+          : {}),
+        ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+      },
+    });
+    await this.audit.log({ actorId, action: 'semester.update', entity: 'semester', entityId: id });
+    return s;
+  }
+
+  async removeSemester(id: string, actorId: string) {
+    const existing = await this.prisma.semester.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Semester tidak ditemukan.');
+    await this.prisma.semester.delete({ where: { id } });
+    await this.audit.log({ actorId, action: 'semester.delete', entity: 'semester', entityId: id });
+    return { ok: true };
   }
 
   // ---------- Classes & enrollment ----------

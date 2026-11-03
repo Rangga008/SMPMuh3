@@ -168,7 +168,7 @@ export default function PenilaianPage() {
         </Field>
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-[340px_1fr]">
+      <div className="grid gap-5 lg:grid-cols-[340px_minmax(0,1fr)]">
         {/* ---------- Daftar asesmen ---------- */}
         <Widget title={`Asesmen (${assessments.length})`}>
           <ul className="space-y-2">

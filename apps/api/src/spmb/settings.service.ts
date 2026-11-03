@@ -23,13 +23,17 @@ export class SpmbSettingsService {
   }
 
   /** Gelombang aktif untuk tahun ajaran aktif — dipakai ortu saat mendaftar. */
-  async activeWaves() {
-    const year = await this.prisma.academicYear.findFirst({
-      where: { isActive: true },
-    });
-    if (!year) return [];
+  async activeWaves(academicYearId?: string) {
+    const yearId =
+      academicYearId ??
+      (
+        await this.prisma.academicYear.findFirst({
+          where: { isActive: true },
+        })
+      )?.id;
+    if (!yearId) return [];
     return this.prisma.registrationWave.findMany({
-      where: { academicYearId: year.id, isActive: true },
+      where: { academicYearId: yearId, isActive: true },
       orderBy: { order: 'asc' },
     });
   }

@@ -21,6 +21,8 @@ const PERMISSION_DESCRIPTIONS: Record<string, string> = {
   [PERMISSIONS.AUDIT_READ]: 'View audit logs',
   [PERMISSIONS.SPMB_REGISTRATION_READ]: 'View SPMB registrations',
   [PERMISSIONS.SPMB_REGISTRATION_MANAGE]: 'Verify and manage SPMB registrations',
+  [PERMISSIONS.SPMB_TITIPAN_READ]: 'View SPMB waiting list (titipan)',
+  [PERMISSIONS.SPMB_TITIPAN_MANAGE]: 'Manage SPMB waiting list (verify, send codes, cancel)',
   [PERMISSIONS.NOTIFICATION_READ]: 'View notifications',
   [PERMISSIONS.STUDENT_READ]: 'View students',
   [PERMISSIONS.STUDENT_MANAGE]: 'Manage students',
@@ -34,6 +36,8 @@ const PERMISSION_DESCRIPTIONS: Record<string, string> = {
   [PERMISSIONS.FINANCE_MANAGE]: 'Manage finance records',
   [PERMISSIONS.TATAUSAHA_READ]: 'View tata usaha records (letters, mutations, exams)',
   [PERMISSIONS.TATAUSAHA_MANAGE]: 'Manage tata usaha records',
+  [PERMISSIONS.PAYROLL_READ]: 'View payroll data',
+  [PERMISSIONS.PAYROLL_MANAGE]: 'Manage payroll (runs, components, loans)',
 };
 
 const ROLES: Record<string, { name: string; description: string; permissionKeys: string[] | 'all' }> = {
@@ -48,6 +52,8 @@ const ROLES: Record<string, { name: string; description: string; permissionKeys:
     permissionKeys: [
       PERMISSIONS.SPMB_REGISTRATION_READ,
       PERMISSIONS.SPMB_REGISTRATION_MANAGE,
+      PERMISSIONS.SPMB_TITIPAN_READ,
+      PERMISSIONS.SPMB_TITIPAN_MANAGE,
       PERMISSIONS.ACADEMIC_YEAR_READ,
       PERMISSIONS.AUDIT_READ,
     ],
@@ -62,6 +68,7 @@ const ROLES: Record<string, { name: string; description: string; permissionKeys:
     description: 'Subject teacher — academic & attendance access',
     permissionKeys: [
       PERMISSIONS.ACADEMIC_READ,
+      PERMISSIONS.ACADEMIC_YEAR_READ,
       PERMISSIONS.ATTENDANCE_READ,
       PERMISSIONS.ATTENDANCE_MANAGE,
       PERMISSIONS.NOTIFICATION_READ,
@@ -73,6 +80,8 @@ const ROLES: Record<string, { name: string; description: string; permissionKeys:
     permissionKeys: [
       PERMISSIONS.SPMB_REGISTRATION_READ,
       PERMISSIONS.SPMB_REGISTRATION_MANAGE,
+      PERMISSIONS.SPMB_TITIPAN_READ,
+      PERMISSIONS.SPMB_TITIPAN_MANAGE,
       PERMISSIONS.STUDENT_READ,
       PERMISSIONS.EMPLOYEE_READ,
       PERMISSIONS.TATAUSAHA_READ,
@@ -88,6 +97,9 @@ const ROLES: Record<string, { name: string; description: string; permissionKeys:
       PERMISSIONS.SPMB_REGISTRATION_READ,
       PERMISSIONS.FINANCE_READ,
       PERMISSIONS.FINANCE_MANAGE,
+      PERMISSIONS.PAYROLL_READ,
+      PERMISSIONS.PAYROLL_MANAGE,
+      PERMISSIONS.EMPLOYEE_READ,
       PERMISSIONS.ACADEMIC_YEAR_READ,
       PERMISSIONS.NOTIFICATION_READ,
     ],
@@ -109,25 +121,106 @@ const ROLES: Record<string, { name: string; description: string; permissionKeys:
       PERMISSIONS.ACADEMIC_YEAR_READ,
       PERMISSIONS.NOTIFICATION_READ,
       PERMISSIONS.SPMB_REGISTRATION_READ,
+      PERMISSIONS.SPMB_TITIPAN_READ,
       PERMISSIONS.FINANCE_READ,
     ],
   },
 };
 
 /** Kategori keuangan default — pemasukan SPMB otomatis memetakan ke ini. */
-const FINANCE_CATEGORIES: { key: string; name: string; type: 'INCOME' | 'EXPENSE' }[] = [
+const FINANCE_CATEGORIES: {
+  key: string;
+  name: string;
+  type: 'INCOME' | 'EXPENSE';
+  standardGroup?: string;
+}[] = [
   { key: 'spmb_pendaftaran', name: 'Uang Pendaftaran SPMB', type: 'INCOME' },
   { key: 'spmb_dsp', name: 'DSP (Dana Sumbangan Pendidikan)', type: 'INCOME' },
   { key: 'spmb_spp', name: 'SPP Bulanan', type: 'INCOME' },
   { key: 'spmb_seragam', name: 'Seragam', type: 'INCOME' },
   { key: 'spmb_angsuran', name: 'Angsuran SPMB', type: 'INCOME' },
   { key: 'spmb_lainnya', name: 'Pemasukan SPMB Lainnya', type: 'INCOME' },
+  { key: 'kat', name: 'KAT (Kegiatan Akhir Tahun)', type: 'INCOME' },
+  { key: 'daftar_ulang', name: 'Daftar Ulang', type: 'INCOME' },
   { key: 'income_lainnya', name: 'Pemasukan Lainnya', type: 'INCOME' },
-  { key: 'ops_gaji', name: 'Gaji & Honor', type: 'EXPENSE' },
-  { key: 'ops_operasional', name: 'Operasional Sekolah', type: 'EXPENSE' },
-  { key: 'ops_sarana', name: 'Sarana & Prasarana', type: 'EXPENSE' },
-  { key: 'ops_kegiatan', name: 'Kegiatan Sekolah', type: 'EXPENSE' },
-  { key: 'ops_lainnya', name: 'Pengeluaran Lainnya', type: 'EXPENSE' },
+  {
+    key: 'ops_gaji',
+    name: 'Gaji & Honor',
+    type: 'EXPENSE',
+    standardGroup: 'TENAGA',
+  },
+  {
+    key: 'ops_operasional',
+    name: 'Operasional Sekolah',
+    type: 'EXPENSE',
+    standardGroup: 'PENGELOLAAN',
+  },
+  {
+    key: 'ops_atk',
+    name: 'Alat Tulis Kantor (ATK)',
+    type: 'EXPENSE',
+    standardGroup: 'PENGELOLAAN',
+  },
+  {
+    key: 'ops_listrik',
+    name: 'Listrik, Air & Internet',
+    type: 'EXPENSE',
+    standardGroup: 'PENGELOLAAN',
+  },
+  {
+    key: 'ops_sarana',
+    name: 'Sarana & Prasarana',
+    type: 'EXPENSE',
+    standardGroup: 'SARANA',
+  },
+  {
+    key: 'ops_kegiatan',
+    name: 'Kegiatan Sekolah',
+    type: 'EXPENSE',
+    standardGroup: 'PROSES',
+  },
+  {
+    key: 'ops_perpisahan',
+    name: 'Perpisahan & Kelulusan',
+    type: 'EXPENSE',
+    standardGroup: 'KELULUSAN',
+  },
+  {
+    key: 'ops_kurikulum',
+    name: 'Pengembangan Kurikulum',
+    type: 'EXPENSE',
+    standardGroup: 'ISI',
+  },
+  {
+    key: 'ops_pelatihan',
+    name: 'Pelatihan & Pengembangan Guru',
+    type: 'EXPENSE',
+    standardGroup: 'TENAGA',
+  },
+  {
+    key: 'ops_ujian',
+    name: 'Ujian & Penilaian',
+    type: 'EXPENSE',
+    standardGroup: 'PENILAIAN',
+  },
+  {
+    key: 'ops_honor_bos',
+    name: 'Honor BOS (Non-Sertifikasi)',
+    type: 'EXPENSE',
+    standardGroup: 'PEMBIAYAAN',
+  },
+  {
+    key: 'ops_panitia',
+    name: 'Honor Panitia Kegiatan',
+    type: 'EXPENSE',
+    standardGroup: 'TENAGA',
+  },
+  {
+    key: 'ops_lainnya',
+    name: 'Pengeluaran Lainnya',
+    type: 'EXPENSE',
+    standardGroup: 'PEMBIAYAAN',
+  },
 ];
 
 async function main() {
@@ -364,11 +457,74 @@ async function seedSpmb() {
   for (const c of FINANCE_CATEGORIES) {
     await prisma.financeCategory.upsert({
       where: { key: c.key },
-      update: { name: c.name, type: c.type },
+      update: {
+        name: c.name,
+        type: c.type,
+        standardGroup: c.standardGroup ?? null,
+      },
       create: c,
     });
   }
+
+  // Akun kas default — tempat semua arus uang bermuara
+  for (const a of [
+    { key: 'tunai', name: 'Kas Tunai', type: 'CASH' as const },
+    { key: 'bos', name: 'Kas BOS', type: 'CASH' as const },
+    { key: 'rmp', name: 'Kas RMP', type: 'CASH' as const },
+    { key: 'bank', name: 'Rekening Bank', type: 'BANK' as const },
+  ]) {
+    await prisma.cashAccount.upsert({
+      where: { key: a.key },
+      update: { name: a.name, type: a.type },
+      create: a,
+    });
+  }
   console.log(`Finance categories ensured: ${FINANCE_CATEGORIES.length}`);
+
+  // ---------- Payroll defaults ----------
+
+  for (const s of [
+    { name: '0–4 tahun', minYears: 0, maxYears: 4, hourlyRate: 25_000, transportRate: 10_000 },
+    { name: '5–9 tahun', minYears: 5, maxYears: 9, hourlyRate: 30_000, transportRate: 12_000 },
+    { name: '10+ tahun', minYears: 10, maxYears: null, hourlyRate: 35_000, transportRate: 15_000 },
+  ]) {
+    const existing = await prisma.payScale.findFirst({ where: { minYears: s.minYears } });
+    if (existing) {
+      await prisma.payScale.update({ where: { id: existing.id }, data: s });
+    } else {
+      await prisma.payScale.create({ data: s });
+    }
+  }
+
+  for (const h of [
+    { key: 'jabatan', name: 'Tunjangan Jabatan', period: 'MONTHLY' as const, defaultAmount: 0 },
+    { key: 'wali_kelas', name: 'Wali Kelas', period: 'MONTHLY' as const, defaultAmount: 0 },
+    { key: 'piket', name: 'Piket', period: 'PER_SESSION' as const, defaultAmount: 0 },
+    { key: 'eskul', name: 'Pembina Ekstrakurikuler', period: 'PER_SESSION' as const, defaultAmount: 0 },
+    { key: 'mamin', name: 'Tunjangan Mamin', period: 'MONTHLY' as const, defaultAmount: 0 },
+    { key: 'panitia', name: 'Honor Panitia Kegiatan', period: 'ONE_TIME' as const, defaultAmount: 0 },
+  ]) {
+    await prisma.honorType.upsert({
+      where: { key: h.key },
+      update: { name: h.name, period: h.period },
+      create: h,
+    });
+  }
+
+  for (const d of [
+    { key: 'infak', name: 'Infak', defaultAmount: 0 },
+    { key: 'pdm', name: 'PDM', defaultAmount: 0 },
+    { key: 'tabungan', name: 'Tabungan Pegawai', defaultAmount: 0 },
+    { key: 'pensiun', name: 'Dana Pensiun', defaultAmount: 0 },
+    { key: 'lainnya', name: 'Potongan Lainnya', defaultAmount: 0, isRecurring: false },
+  ]) {
+    await prisma.deductionType.upsert({
+      where: { key: d.key },
+      update: { name: d.name, isRecurring: d.isRecurring ?? true },
+      create: d,
+    });
+  }
+  console.log('Payroll defaults ensured (pay scales, honor & deduction types).');
 }
 
 main()

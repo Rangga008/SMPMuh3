@@ -9,9 +9,11 @@ import { SpmbImportService } from './import.service';
 import { RegistrationsService } from './registrations.service';
 import { SpmbSettingsService } from './settings.service';
 import { SpmbController } from './spmb.controller';
+import { TitipanService } from './titipan.service';
+import { WhatsappModule } from './whatsapp.module';
 
 @Module({
-  imports: [NotificationsModule, PaymentsModule, IdentityModule],
+  imports: [NotificationsModule, PaymentsModule, IdentityModule, WhatsappModule],
   controllers: [SpmbController, AdminSpmbController],
   providers: [
     CandidatesService,
@@ -19,6 +21,7 @@ import { SpmbController } from './spmb.controller';
     DocumentsService,
     SpmbSettingsService,
     SpmbImportService,
+    TitipanService,
   ],
 })
 export class SpmbModule {}

@@ -1,35 +1,27 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { Button, Field, Input, Select } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { PageTitle, Widget } from '@/components/widgets';
 import {
   createClass,
-  createSubject,
   listAcademicYears,
   listClasses,
-  listSubjects,
   type AcademicYear,
   type ClassView,
-  type SubjectView,
 } from '@/lib/api';
 
 export default function AcademicPage() {
   const [year, setYear] = useState<AcademicYear | null>(null);
-  const [subjects, setSubjects] = useState<SubjectView[]>([]);
   const [classes, setClasses] = useState<ClassView[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const refresh = useCallback(async (yearId?: string) => {
-    const [subs, cls] = await Promise.all([
-      listSubjects(),
-      listClasses(yearId),
-    ]);
-    setSubjects(subs);
-    setClasses(cls);
+    setClasses(await listClasses(yearId));
   }, []);
 
   useEffect(() => {
@@ -62,7 +54,7 @@ export default function AcademicPage() {
     <Shell>
       <PageTitle
         title="Kurikulum"
-        subtitle={`Mata pelajaran & rombel${year ? ` — TA ${year.name}` : ''}`}
+        subtitle={`Rombel / kelas${year ? ` — TA ${year.name}` : ''}`}
       />
 
       {error ? (
@@ -72,93 +64,57 @@ export default function AcademicPage() {
         <p role="status" className="mb-4 rounded-xl bg-primary-50 px-4 py-3 text-sm font-medium text-primary-800">{notice}</p>
       ) : null}
 
-      <div className="grid gap-5 lg:grid-cols-2">
-        <Widget title={`Mata Pelajaran (${subjects.length})`}>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              const f = new FormData(e.currentTarget);
-              run(
-                () =>
-                  createSubject({
-                    code: String(f.get('code')),
-                    name: String(f.get('name')),
-                    gradeLevel: Number(f.get('gradeLevel')) || undefined,
-                  }),
-                'Mapel ditambahkan.',
-                e.currentTarget,
-              );
-            }}
-            className="mb-4 grid gap-3 rounded-2xl border border-sand-200 bg-sand-50 p-4 sm:grid-cols-[100px_1fr_100px_auto] sm:items-end"
-          >
-            <Field label="Kode"><Input name="code" required placeholder="MTK" /></Field>
-            <Field label="Nama"><Input name="name" required placeholder="Matematika" /></Field>
-            <Field label="Tingkat"><Input name="gradeLevel" type="number" min={7} max={9} placeholder="7" /></Field>
-            <Button type="submit" disabled={busy} variant="outline">Tambah</Button>
-          </form>
-          <ul className="space-y-2">
-            {subjects.map((s) => (
-              <li key={s.id} className="flex items-center justify-between gap-3 rounded-xl border border-sand-200 bg-sand-50 px-4 py-3">
-                <div>
-                  <p className="text-sm font-semibold text-sand-900">{s.name}</p>
-                  <p className="text-xs text-sand-500">
-                    {s.code}
-                    {s.gradeLevel ? ` · Kelas ${s.gradeLevel}` : ''}
-                    {s.curriculum ? ` · ${s.curriculum.name}` : ''}
-                  </p>
-                </div>
-              </li>
-            ))}
-            {subjects.length === 0 ? (
-              <li className="py-6 text-center text-sm text-sand-500">Belum ada mapel.</li>
-            ) : null}
-          </ul>
-        </Widget>
+      <p className="mb-4 text-sm text-sand-600">
+        Kode mapel, tahun ajaran, semester, dan data kurikulum kini dikelola di{' '}
+        <Link href="/master-data/mapel" className="font-semibold text-primary-700 hover:underline">
+          Master Data
+        </Link>
+        .
+      </p>
 
-        <Widget title={`Rombel (${classes.length})`}>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              const f = new FormData(e.currentTarget);
-              run(
-                () =>
-                  createClass({
-                    name: String(f.get('name')),
-                    gradeLevel: Number(f.get('gradeLevel')),
-                    academicYearId: year?.id,
-                  }),
-                'Rombel ditambahkan.',
-                e.currentTarget,
-              );
-            }}
-            className="mb-4 grid gap-3 rounded-2xl border border-sand-200 bg-sand-50 p-4 sm:grid-cols-[1fr_120px_auto] sm:items-end"
-          >
-            <Field label="Nama Rombel"><Input name="name" required placeholder="7A" /></Field>
-            <Field label="Tingkat">
-              <Select name="gradeLevel" required defaultValue="7">
-                <option value="7">7</option>
-                <option value="8">8</option>
-                <option value="9">9</option>
-              </Select>
-            </Field>
-            <Button type="submit" disabled={busy} variant="outline">Tambah</Button>
-          </form>
-          <ul className="grid gap-2 sm:grid-cols-2">
-            {classes.map((c) => (
-              <li key={c.id} className="rounded-xl border border-sand-200 bg-sand-50 px-4 py-3">
-                <p className="text-sm font-semibold text-sand-900">{c.name}</p>
-                <p className="text-xs text-sand-500">
-                  Kelas {c.gradeLevel} · {c._count?.enrollments ?? 0} siswa
-                  {c.homeroom ? ` · Wali: ${c.homeroom.name}` : ''}
-                </p>
-              </li>
-            ))}
-            {classes.length === 0 ? (
-              <li className="col-span-2 py-6 text-center text-sm text-sand-500">Belum ada rombel.</li>
-            ) : null}
-          </ul>
-        </Widget>
-      </div>
+      <Widget title={`Rombel (${classes.length})`}>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const f = new FormData(e.currentTarget);
+            run(
+              () =>
+                createClass({
+                  name: String(f.get('name')),
+                  gradeLevel: Number(f.get('gradeLevel')),
+                  academicYearId: year?.id,
+                }),
+              'Rombel ditambahkan.',
+              e.currentTarget,
+            );
+          }}
+          className="mb-4 grid gap-3 rounded-2xl border border-sand-200 bg-sand-50 p-4 sm:grid-cols-[1fr_120px_auto] sm:items-end"
+        >
+          <Field label="Nama Rombel"><Input name="name" required placeholder="7A" /></Field>
+          <Field label="Tingkat">
+            <Select name="gradeLevel" required defaultValue="7">
+              <option value="7">7</option>
+              <option value="8">8</option>
+              <option value="9">9</option>
+            </Select>
+          </Field>
+          <Button type="submit" disabled={busy} variant="outline">Tambah</Button>
+        </form>
+        <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {classes.map((c) => (
+            <li key={c.id} className="rounded-xl border border-sand-200 bg-sand-50 px-4 py-3">
+              <p className="text-sm font-semibold text-sand-900">{c.name}</p>
+              <p className="text-xs text-sand-500">
+                Kelas {c.gradeLevel} · {c._count?.enrollments ?? 0} siswa
+                {c.homeroom ? ` · Wali: ${c.homeroom.name}` : ''}
+              </p>
+            </li>
+          ))}
+          {classes.length === 0 ? (
+            <li className="col-span-full py-6 text-center text-sm text-sand-500">Belum ada rombel.</li>
+          ) : null}
+        </ul>
+      </Widget>
     </Shell>
   );
 }

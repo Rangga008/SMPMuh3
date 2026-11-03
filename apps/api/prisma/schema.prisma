@@ -42,6 +42,10 @@ model User {
   students      Student[]      @relation("StudentParent")
   employee      Employee?
   financeTx     FinanceTransaction[]
+  bankIncomes   BankIncome[]
+  savingsEntries SavingsEntry[]
+  expenses      Expense[]      @relation("ExpenseCreator")
+  titipanEntries TitipanEntry[]
 
   @@map("users")
 }
@@ -129,13 +133,15 @@ model School {
 }
 
 model AcademicYear {
-  id        String   @id @default(uuid()) @db.Uuid
-  name      String   @unique // e.g. "2026/2027"
-  startDate DateTime @map("start_date") @db.Date
-  endDate   DateTime @map("end_date") @db.Date
-  isActive  Boolean  @default(false) @map("is_active")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique // e.g. "2026/2027"
+  startDate   DateTime @map("start_date") @db.Date
+  endDate     DateTime @map("end_date") @db.Date
+  isActive    Boolean  @default(false) @map("is_active")
+  titipanOpen Boolean  @default(false) @map("titipan_open") // terima pendaftar titipan (boleh tahun jauh)
+  quota       Int?     // kuota penerimaan — null = tanpa batas
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
   registrations Registration[]
   classes       Class[]
@@ -147,6 +153,11 @@ model AcademicYear {
   financeTx     FinanceTransaction[]
   financeBudgets FinanceBudget[]
   examRecords   SchoolExamRecord[]
+  titipanEntries TitipanEntry[]
+  semesters     Semester[]
+  invoices      Invoice[]
+  expenses      Expense[]
+  payrollRuns   PayrollRun[]
 
   @@map("academic_years")
 }
@@ -193,9 +204,57 @@ model Candidate {
   parent        User          @relation(fields: [parentId], references: [id], onDelete: Cascade)
   registrations Registration[]
   student       Student?
+  titipanEntries TitipanEntry[]
 
   @@index([parentId])
   @@map("candidates")
+}
+
+enum TitipanStatus {
+  PENDING
+  WAITING
+  CODE_SENT
+  REGISTERED
+  CANCELLED
+}
+
+/**
+ * Daftar titipan / waiting list SPMB. Ortu menitipkan anak untuk tahun
+ * ajaran tertentu (boleh tahun jauh), lalu admin menerbitkan kode formulir
+ * unik yang ditukar ortu menjadi pendaftaran resmi.
+ * Sumber data bisa akun ortu (tertaut candidate) atau form publik (guest).
+ */
+model TitipanEntry {
+  id             String        @id @default(uuid()) @db.Uuid
+  academicYearId String        @map("academic_year_id") @db.Uuid
+  parentId       String?       @map("parent_id") @db.Uuid
+  candidateId    String?       @map("candidate_id") @db.Uuid
+  candidateName  String        @map("candidate_name")
+  birthPlace     String?       @map("birth_place")
+  birthDate      DateTime?     @map("birth_date") @db.Date
+  address        String?
+  previousSchool String?       @map("previous_school")
+  guardianPhone  String?       @map("guardian_phone") // satu nomor HP ortu/wali — tujuan WA
+  infoSource     String?       @map("info_source")
+  queueNo        Int           @map("queue_no") // nomor antre per tahun ajaran — stabil, tidak berubah
+  status         TitipanStatus @default(PENDING)
+  formCode       String?       @unique @map("form_code")
+  codeSentAt     DateTime?     @map("code_sent_at")
+  codeSentBy     String?       @map("code_sent_by") @db.Uuid
+  codeUsedAt     DateTime?     @map("code_used_at")
+  registrationId String?       @map("registration_id") @db.Uuid
+  note           String?
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
+  parent       User?        @relation(fields: [parentId], references: [id], onDelete: SetNull)
+  candidate    Candidate?   @relation(fields: [candidateId], references: [id], onDelete: SetNull)
+
+  @@unique([academicYearId, queueNo])
+  @@index([academicYearId, status, queueNo])
+  @@index([parentId])
+  @@map("titipan_entries")
 }
 
 model RegistrationWave {
@@ -336,6 +395,7 @@ model PasswordResetToken {
 
 enum InvoiceStatus {
   OPEN
+  PARTIAL
   PAID
   EXPIRED
   CANCELLED
@@ -369,9 +429,11 @@ model InstallmentPlan {
 model Invoice {
   id              String        @id @default(uuid()) @db.Uuid
   number          String        @unique // e.g. "INV-2027-000123"
-  registrationId  String        @map("registration_id") @db.Uuid
+  registrationId  String?       @map("registration_id") @db.Uuid
+  studentId       String?       @map("student_id") @db.Uuid
   planId          String?       @map("plan_id") @db.Uuid
-  kind            String        @default("other") // registration_fee | dsp_dp | dsp | spp | seragam | installment | other
+  batchId         String?       @map("batch_id") @db.Uuid
+  kind            String        @default("other") // registration_fee | dsp_dp | dsp | spp | seragam | kat | daftar_ulang | installment | other
   title           String
   amount          Int
   baseAmount      Int?          @map("base_amount") // sebelum diskon
@@ -382,15 +444,45 @@ model Invoice {
   issuedAt        DateTime      @default(now()) @map("issued_at")
   paidAt          DateTime?     @map("paid_at")
   note            String?
+  payerLabel      String?       @map("payer_label") // nama penanggung bayar (ortu/wali)
+  academicYearId  String?       @map("academic_year_id") @db.Uuid
+  semesterId      String?       @map("semester_id") @db.Uuid
+  classId         String?       @map("class_id") @db.Uuid // kelas siswa saat tagihan dibuat (denormal untuk filter)
   createdAt       DateTime      @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")
 
-  registration Registration     @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  registration Registration?  @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  student      Student?       @relation(fields: [studentId], references: [id], onDelete: Cascade)
   plan         InstallmentPlan? @relation(fields: [planId], references: [id], onDelete: SetNull)
+  batch        BillingBatch?  @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  academicYear AcademicYear?  @relation(fields: [academicYearId], references: [id], onDelete: SetNull)
+  semester     Semester?      @relation(fields: [semesterId], references: [id], onDelete: SetNull)
+  class        Class?         @relation(fields: [classId], references: [id], onDelete: SetNull)
+  items        InvoiceItem[]
   payments     Payment[]
+  allocations  PaymentAllocation[]
 
   @@index([registrationId])
+  @@index([studentId, status])
+  @@index([academicYearId, kind])
   @@map("invoices")
+}
+
+/** Rincian komponen dalam satu invoice — "300rb = 250 SPP + 50 DSP". */
+model InvoiceItem {
+  id        String   @id @default(uuid()) @db.Uuid
+  invoiceId String   @map("invoice_id") @db.Uuid
+  kind      String   @default("other") // spp | dsp | seragam | kat | daftar_ulang | pendaftaran | tabungan | other
+  label     String
+  amount    Int
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  invoice     Invoice              @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  allocations PaymentAllocation[]
+
+  @@index([invoiceId])
+  @@map("invoice_items")
 }
 
 model Payment {
@@ -410,13 +502,82 @@ model Payment {
   createdAt       DateTime      @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")
 
+  cashAccountId  String?       @map("cash_account_id") @db.Uuid
+
   invoice        Invoice   @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   proofDocument  Document? @relation("PaymentProof", fields: [proofDocumentId], references: [id], onDelete: SetNull)
+  cashAccount    CashAccount? @relation(fields: [cashAccountId], references: [id], onDelete: SetNull)
   receipts       Receipt[]
   financeTx      FinanceTransaction?
+  allocations    PaymentAllocation[]
 
   @@index([invoiceId])
   @@map("payments")
+}
+
+/**
+ * Alokasi satu pembayaran ke komponen/invoice — pembayaran terpisah
+ * ("300rb: 250 SPP + 50 DSP") dan cicilan parsial harian.
+ */
+model PaymentAllocation {
+  id        String   @id @default(uuid()) @db.Uuid
+  paymentId String   @map("payment_id") @db.Uuid
+  invoiceId String   @map("invoice_id") @db.Uuid
+  itemId    String?  @map("item_id") @db.Uuid
+  amount    Int
+  createdAt DateTime @default(now()) @map("created_at")
+
+  payment  Payment      @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  invoice  Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  item     InvoiceItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  financeTx FinanceTransaction?
+
+  @@index([invoiceId])
+  @@index([paymentId])
+  @@map("payment_allocations")
+}
+
+/** Satu run penagihan massal (mis. SPP November seluruh kelas 7). */
+model BillingBatch {
+  id               String   @id @default(uuid()) @db.Uuid
+  kind             String // spp | daftar_ulang | kat | seragam | other
+  title            String
+  itemLabel        String   @map("item_label")
+  amount           Int // nominal per siswa
+  academicYearId   String?  @map("academic_year_id") @db.Uuid
+  semesterId       String?  @map("semester_id") @db.Uuid
+  classId          String?  @map("class_id") @db.Uuid
+  gradeLevel       Int?     @map("grade_level")
+  dueAt            DateTime? @map("due_at")
+  generatedCount   Int      @map("generated_count")
+  skippedCount     Int      @default(0) @map("skipped_count")
+  createdBy        String?  @map("created_by") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  invoices Invoice[]
+
+  @@index([academicYearId, kind])
+  @@map("billing_batches")
+}
+
+/** Tabungan siswa — setor/tarik, posting ke kas. Saldo = ΣIN − ΣOUT. */
+model SavingsEntry {
+  id            String        @id @default(uuid()) @db.Uuid
+  studentId     String        @map("student_id") @db.Uuid
+  direction     CashDirection
+  amount        Int
+  note          String?
+  cashAccountId String?       @map("cash_account_id") @db.Uuid
+  occurredAt    DateTime      @default(now()) @map("occurred_at")
+  recordedById  String?       @map("recorded_by_id") @db.Uuid
+  createdAt     DateTime      @default(now()) @map("created_at")
+
+  student      Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  cashAccount  CashAccount?  @relation(fields: [cashAccountId], references: [id], onDelete: SetNull)
+  recordedBy   User?         @relation(fields: [recordedById], references: [id], onDelete: SetNull)
+
+  @@index([studentId, occurredAt])
+  @@map("savings_entries")
 }
 
 /** Kwitansi pembayaran — dikirim ke nomor HP ortu (adapter WA menyusul). */
@@ -444,16 +605,25 @@ enum FinanceTxType {
   EXPENSE
 }
 
-/** Kategori transaksi — pemasukan (DSP/SPP/seragam/dst) & pengeluaran. */
+/**
+ * Kategori transaksi — pemasukan (DSP/SPP/seragam/dst) & pengeluaran.
+ * `standardGroup` = pengelompokan 8 Standar Nasional Pendidikan untuk
+ * kategori pengeluaran (ISI|PROSES|KELULUSAN|TENAGA|SARANA|PENGELOLAAN|
+ * PEMBIAYAAN|PENILAIAN), null = tanpa standar.
+ */
 model FinanceCategory {
-  id        String         @id @default(uuid()) @db.Uuid
-  key       String         @unique // e.g. "spmb_dsp"
-  name      String
-  type      FinanceTxType
-  createdAt DateTime       @default(now()) @map("created_at")
+  id            String         @id @default(uuid()) @db.Uuid
+  key           String         @unique // e.g. "spmb_dsp"
+  name          String
+  type          FinanceTxType
+  standardGroup String?        @map("standard_group")
+  isActive      Boolean        @default(true) @map("is_active")
+  createdAt     DateTime       @default(now()) @map("created_at")
 
   transactions FinanceTransaction[]
   budgets      FinanceBudget[]
+  bankIncomes  BankIncome[]
+  expenses     Expense[]
 
   @@map("finance_categories")
 }
@@ -470,8 +640,12 @@ model FinanceTransaction {
   amount         Int
   occurredAt     DateTime       @map("occurred_at")
   description    String?
-  source         String         @default("manual")
+  source         String         @default("manual") // manual | spmb | billing | expense | payroll
   paymentId      String?        @unique @map("payment_id") @db.Uuid
+  paymentAllocationId String?   @unique @map("payment_allocation_id") @db.Uuid
+  expenseAllocationId String?   @unique @map("expense_allocation_id") @db.Uuid
+  payrollItemId    String?      @unique @map("payroll_item_id") @db.Uuid
+  cashAccountId  String?        @map("cash_account_id") @db.Uuid
   academicYearId String?        @map("academic_year_id") @db.Uuid
   recordedById   String?        @map("recorded_by_id") @db.Uuid
   createdAt      DateTime       @default(now()) @map("created_at")
@@ -479,6 +653,10 @@ model FinanceTransaction {
 
   category     FinanceCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   payment      Payment?        @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  paymentAllocation PaymentAllocation? @relation(fields: [paymentAllocationId], references: [id], onDelete: SetNull)
+  expenseAllocation ExpenseAllocation? @relation(fields: [expenseAllocationId], references: [id], onDelete: SetNull)
+  payrollItem   PayrollItem?   @relation(fields: [payrollItemId], references: [id], onDelete: SetNull)
+  cashAccount  CashAccount?    @relation(fields: [cashAccountId], references: [id], onDelete: SetNull)
   academicYear AcademicYear?   @relation(fields: [academicYearId], references: [id], onDelete: SetNull)
   recordedBy   User?           @relation(fields: [recordedById], references: [id], onDelete: SetNull)
 
@@ -502,6 +680,408 @@ model FinanceBudget {
 
   @@unique([academicYearId, categoryId])
   @@map("finance_budgets")
+}
+
+enum CashAccountType {
+  CASH
+  BANK
+}
+
+/** Akun kas — semua arus uang bermuara ke sini (tunai, BOS, RMP, rekening bank). */
+model CashAccount {
+  id             String          @id @default(uuid()) @db.Uuid
+  key            String          @unique // tunai | bos | rmp | bank_bsi | ...
+  name           String
+  type           CashAccountType @default(CASH)
+  openingBalance Int             @default(0) @map("opening_balance")
+  isActive       Boolean         @default(true) @map("is_active")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+
+  movements    CashMovement[]
+  transactions FinanceTransaction[]
+  payments     Payment[]
+  bankIncomes  BankIncome[]
+  savings      SavingsEntry[]
+  expenseAllocations ExpenseAllocation[]
+  loans              Loan[]            @relation("LoanCashSource")
+  payrollRuns        PayrollRun[]
+
+  @@map("cash_accounts")
+}
+
+enum CashDirection {
+  IN
+  OUT
+}
+
+/**
+ * Gerakan kas — saldo = openingBalance + ΣIN − ΣOUT (tidak disimpan, tak bisa selisih).
+ * refType+refId menunjuk sumber: 'finance_tx' | 'payment' | 'bank_income' | 'expense' |
+ * 'payroll' | 'savings' | 'manual'.
+ */
+model CashMovement {
+  id            String        @id @default(uuid()) @db.Uuid
+  cashAccountId String        @map("cash_account_id") @db.Uuid
+  direction     CashDirection
+  amount        Int
+  refType       String        @default("manual") @map("ref_type")
+  refId         String?       @map("ref_id") @db.Uuid
+  description   String?
+  occurredAt    DateTime      @map("occurred_at")
+  createdAt     DateTime      @default(now()) @map("created_at")
+
+  account CashAccount @relation(fields: [cashAccountId], references: [id], onDelete: Cascade)
+
+  @@index([cashAccountId, occurredAt])
+  @@index([refType, refId])
+  @@map("cash_movements")
+}
+
+/** Buku bank — pemasukan via transfer (dari siapa, untuk apa, ke bank mana). */
+model BankIncome {
+  id            String   @id @default(uuid()) @db.Uuid
+  cashAccountId String   @map("cash_account_id") @db.Uuid
+  categoryId    String   @map("category_id") @db.Uuid
+  senderName    String   @map("sender_name")
+  purpose       String?  // untuk apa (mis. "SPP Nov a.n. Ahmad")
+  amount        Int
+  receivedAt    DateTime @map("received_at")
+  txId          String?  @map("tx_id") @db.Uuid // transaksi hasil posting
+  recordedById  String?  @map("recorded_by_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  account    CashAccount      @relation(fields: [cashAccountId], references: [id], onDelete: Cascade)
+  category   FinanceCategory  @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  recordedBy User?            @relation(fields: [recordedById], references: [id], onDelete: SetNull)
+
+  @@index([cashAccountId, receivedAt])
+  @@map("bank_incomes")
+}
+
+enum ExpenseStatus {
+  POSTED
+  VOID
+}
+
+/**
+ * Dokumen pengeluaran — ATK, listrik, sewa panggung, honor panitia, dst.
+ * Dana bisa ditarik dari beberapa kas sekaligus (ExpenseAllocation).
+ */
+model Expense {
+  id             String        @id @default(uuid()) @db.Uuid
+  number         String        @unique // e.g. "EXP-2026-000123"
+  occurredAt     DateTime      @map("occurred_at")
+  vendor         String?       // toko/penerima
+  description    String        // uraian pengeluaran
+  categoryId     String        @map("category_id") @db.Uuid
+  academicYearId String?       @map("academic_year_id") @db.Uuid
+  totalAmount    Int           @map("total_amount")
+  note           String?
+  documentId     String?       @map("document_id") @db.Uuid // nota/kwitansi
+  status         ExpenseStatus @default(POSTED)
+  createdBy      String?       @map("created_by") @db.Uuid
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  category     FinanceCategory      @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  academicYear AcademicYear?        @relation(fields: [academicYearId], references: [id], onDelete: SetNull)
+  creator      User?                @relation("ExpenseCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+  allocations  ExpenseAllocation[]
+
+  @@index([occurredAt])
+  @@index([categoryId])
+  @@map("expenses")
+}
+
+/** Penarikan dana satu pengeluaran dari satu kas — Σ = expense.totalAmount. */
+model ExpenseAllocation {
+  id            String   @id @default(uuid()) @db.Uuid
+  expenseId     String   @map("expense_id") @db.Uuid
+  cashAccountId String   @map("cash_account_id") @db.Uuid
+  amount        Int
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  expense    Expense       @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  cashAccount CashAccount  @relation(fields: [cashAccountId], references: [id], onDelete: Restrict)
+  financeTx  FinanceTransaction?
+
+  @@index([expenseId])
+  @@index([cashAccountId])
+  @@map("expense_allocations")
+}
+
+// ---------- Payroll ----------
+
+enum EmpAttendanceStatus {
+  HADIR
+  TELAT
+  IZIN
+  SAKIT
+  ALPHA
+}
+
+enum HonorPeriod {
+  MONTHLY     // rutin tiap bulan (jabatan, wali kelas)
+  PER_SESSION // per sesi/pertemuan (piket, eskul, mamin)
+  ONE_TIME    // sekali (honor panitia per kegiatan)
+}
+
+enum LoanSource {
+  KASBON     // pinjam ke sekolah — uang keluar dari kas saat dibuat
+  KOOPERASI  // koperasi sekolah
+  EKSTERNAL  // koperasi luar — sekolah hanya memotong gaji
+}
+
+enum LoanStatus {
+  ACTIVE
+  PAID_OFF
+  CANCELLED
+}
+
+enum PayrollStatus {
+  DRAFT      // sedang dihitung, bisa diubah
+  FINALIZED  // dikunci, slip final
+  PAID       // sudah dibayar — gerakan kas tercatat
+  VOID
+}
+
+enum PayrollLineKind {
+  BASE       // gaji wajib (jam wajib × minggu)
+  TRANSPORT  // transport (jam wajib × minggu)
+  HONOR      // honor tambahan (jabatan, wali, piket, eskul, mamin, panitia)
+  DEDUCTION  // potongan (infak, PDM, tabungan, dll)
+  LOAN       // angsuran pinjaman/kasbon/koperasi
+  PENSION    // potongan dana pensiun
+  BOS_HONOR  // honor BOS non-sertifikasi (dibayar sekolah)
+}
+
+/** Golongan masa kerja — tarif per jam wajib & transport. */
+model PayScale {
+  id            String  @id @default(uuid()) @db.Uuid
+  name          String  // e.g. "0–4 tahun"
+  minYears      Int     @map("min_years")
+  maxYears      Int?    @map("max_years") // null = tak terbatas
+  hourlyRate    Int     @map("hourly_rate")    // per jam wajib
+  transportRate Int     @map("transport_rate") // per jam transport
+  isActive      Boolean @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  employees Employee[]
+
+  @@map("pay_scales")
+}
+
+/** Absensi harian guru — status + menit mengajar yang dihitung. */
+model EmployeeAttendance {
+  id              String          @id @default(uuid()) @db.Uuid
+  employeeId      String          @map("employee_id") @db.Uuid
+  date            DateTime        @db.Date
+  status          EmpAttendanceStatus
+  teachingMinutes Int             @default(0) @map("teaching_minutes")
+  note            String?
+  recordedBy      String?         @map("recorded_by") @db.Uuid
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, date])
+  @@index([date])
+  @@map("employee_attendances")
+}
+
+/** Tipe honor tambahan — jabatan, wali kelas, piket, eskul, mamin, panitia. */
+model HonorType {
+  id            String      @id @default(uuid()) @db.Uuid
+  key           String      @unique
+  name          String
+  period        HonorPeriod
+  defaultAmount Int         @default(0) @map("default_amount") // per bulan/sesi
+  isActive      Boolean     @default(true) @map("is_active")
+  createdAt     DateTime    @default(now()) @map("created_at")
+
+  honors EmployeeHonor[]
+
+  @@map("honor_types")
+}
+
+/** Honor yang melekat ke pegawai — override nominal, sesi, dan masa berlaku. */
+model EmployeeHonor {
+  id          String    @id @default(uuid()) @db.Uuid
+  employeeId  String    @map("employee_id") @db.Uuid
+  honorTypeId String    @map("honor_type_id") @db.Uuid
+  amount      Int?      // null = pakai defaultAmount
+  sessions    Int       @default(1) // utk PER_SESSION: sesi per bulan
+  eventName   String?   @map("event_name") // utk ONE_TIME: nama kegiatan
+  eventMonth  String?   @map("event_month") // utk ONE_TIME: "YYYY-MM"
+  validFrom   String?   @map("valid_from") // "YYYY-MM" mulai berlaku
+  validTo     String?   @map("valid_to")   // "YYYY-MM" akhir (null = terus)
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  employee  Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  honorType HonorType @relation(fields: [honorTypeId], references: [id], onDelete: Restrict)
+
+  @@index([employeeId, isActive])
+  @@map("employee_honors")
+}
+
+/** Tipe potongan gaji — infak, PDM, kasbon, tabungan, pensiun. */
+model DeductionType {
+  id            String   @id @default(uuid()) @db.Uuid
+  key           String   @unique
+  name          String
+  defaultAmount Int      @default(0) @map("default_amount")
+  isRecurring   Boolean  @default(true) @map("is_recurring") // tiap bulan atau sekali
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  deductions EmployeeDeduction[]
+
+  @@map("deduction_types")
+}
+
+model EmployeeDeduction {
+  id              String   @id @default(uuid()) @db.Uuid
+  employeeId      String   @map("employee_id") @db.Uuid
+  deductionTypeId String   @map("deduction_type_id") @db.Uuid
+  amount          Int?     // null = pakai defaultAmount
+  month           String?  // "YYYY-MM" utk potongan sekali; null = tiap bulan
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  employee      Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  deductionType DeductionType @relation(fields: [deductionTypeId], references: [id], onDelete: Restrict)
+
+  @@index([employeeId, isActive])
+  @@map("employee_deductions")
+}
+
+/** Pinjaman: kasbon sekolah / koperasi sekolah / koperasi luar (potong gaji). */
+model Loan {
+  id              String     @id @default(uuid()) @db.Uuid
+  employeeId      String     @map("employee_id") @db.Uuid
+  source          LoanSource
+  principal       Int        // pokok pinjaman
+  fee             Int        @default(0) // jasa total
+  installments    Int        // jumlah angsuran
+  monthlyAmount   Int        @map("monthly_amount") // angsuran per bulan (bisa diubah)
+  remaining       Int        // sisa pokok+jasa yang belum dibayar
+  startMonth      String     @map("start_month") // "YYYY-MM" mulai dipotong
+  status          LoanStatus @default(ACTIVE)
+  note            String?
+  cashAccountId   String?    @map("cash_account_id") @db.Uuid // KASBON: kas sumber
+  createdAt       DateTime   @default(now()) @map("created_at")
+  updatedAt       DateTime   @updatedAt @map("updated_at")
+
+  employee    Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  cashAccount CashAccount? @relation("LoanCashSource", fields: [cashAccountId], references: [id], onDelete: SetNull)
+
+  @@index([employeeId, status])
+  @@map("loans")
+}
+
+/** Buku dana pensiun per pegawai — akumulasi potongan pensiun. */
+model PensionEntry {
+  id           String   @id @default(uuid()) @db.Uuid
+  employeeId   String   @map("employee_id") @db.Uuid
+  month        String   // "YYYY-MM"
+  amount       Int
+  payrollItemId String? @map("payroll_item_id") @db.Uuid
+  note         String?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId, month])
+  @@map("pension_entries")
+}
+
+/**
+ * Satu siklus penggajian bulanan.
+ * DRAFT → dihitung ulang bebas; FINALIZED → slip final; PAID → kas keluar.
+ */
+model PayrollRun {
+  id             String        @id @default(uuid()) @db.Uuid
+  month          String        // "YYYY-MM"
+  academicYearId String?       @map("academic_year_id") @db.Uuid
+  weeks          Int           @default(4) // jumlah minggu aktif bulan itu
+  status         PayrollStatus @default(DRAFT)
+  note           String?
+  cashAccountId  String?       @map("cash_account_id") @db.Uuid // kas pembayar
+  finalizedBy    String?       @map("finalized_by") @db.Uuid
+  finalizedAt    DateTime?     @map("finalized_at")
+  paidAt         DateTime?     @map("paid_at")
+  createdBy      String?       @map("created_by") @db.Uuid
+  createdAt      DateTime      @default(now()) @map("created_at")
+
+  academicYear AcademicYear? @relation(fields: [academicYearId], references: [id], onDelete: SetNull)
+  cashAccount  CashAccount?  @relation(fields: [cashAccountId], references: [id], onDelete: SetNull)
+  items        PayrollItem[]
+
+  @@unique([month])
+  @@map("payroll_runs")
+}
+
+/** Slip satu pegawai dalam satu run — rincian di PayrollItemLine. */
+model PayrollItem {
+  id              String   @id @default(uuid()) @db.Uuid
+  runId           String   @map("run_id") @db.Uuid
+  employeeId      String   @map("employee_id") @db.Uuid
+  workedMinutes   Int      @default(0) @map("worked_minutes")  // Σ menit hadir
+  requiredMinutes Int      @default(0) @map("required_minutes") // jam wajib × minggu
+  basePay         Int      @default(0) @map("base_pay")
+  transportPay    Int      @default(0) @map("transport_pay")
+  grossAmount     Int      @default(0) @map("gross_amount")
+  deductionAmount Int      @default(0) @map("deduction_amount")
+  netAmount       Int      @default(0) @map("net_amount")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  run      PayrollRun       @relation(fields: [runId], references: [id], onDelete: Cascade)
+  employee Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  lines    PayrollItemLine[]
+  financeTx FinanceTransaction?
+
+  @@unique([runId, employeeId])
+  @@index([employeeId])
+  @@map("payroll_items")
+}
+
+model PayrollItemLine {
+  id        String          @id @default(uuid()) @db.Uuid
+  itemId    String          @map("item_id") @db.Uuid
+  kind      PayrollLineKind
+  label     String
+  amount    Int             // positif = menambah, negatif = memotong
+  refId     String?         @map("ref_id") @db.Uuid // honor/loan/deduction id
+  createdAt DateTime        @default(now()) @map("created_at")
+
+  item PayrollItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId])
+  @@map("payroll_item_lines")
+}
+
+/**
+ * Pencatatan honor BOS dari dinas.
+ * Sertifikasi → hanya dicatat (uang langsung ke guru, bukan kas sekolah).
+ * Non-sertifikasi → dibayar sekolah lewat payroll (masuk slip sebagai BOS_HONOR).
+ */
+model BosHonor {
+  id          String   @id @default(uuid()) @db.Uuid
+  employeeId  String   @map("employee_id") @db.Uuid
+  month       String   // "YYYY-MM"
+  amount      Int
+  certified   Boolean  @default(true) // sertifikasi = pencatatan saja
+  note        String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, month])
+  @@map("bos_honors")
 }
 
 // ---------- Kesiswaan & Akademik ----------
@@ -551,6 +1131,8 @@ model Student {
   candidate    Candidate?    @relation(fields: [candidateId], references: [id])
   parent       User?         @relation("StudentParent", fields: [parentId], references: [id], onDelete: SetNull)
   enrollments  Enrollment[]
+  invoices     Invoice[]
+  savings      SavingsEntry[]
   attendances  AttendanceRecord[]
   achievements Achievement[]
   violations   Violation[]
@@ -570,12 +1152,27 @@ model Employee {
   phone     String?
   isActive  Boolean      @default(true) @map("is_active")
   userId    String?      @unique @map("user_id") @db.Uuid // optional login link
+  // payroll
+  payScaleId           String?  @map("pay_scale_id") @db.Uuid
+  workStartDate        DateTime? @map("work_start_date") @db.Date // masa kerja → golongan
+  weeklyRequiredMinutes Int     @default(0) @map("weekly_required_minutes") // jam wajib/minggu
+  hourlyRate           Int?     @map("hourly_rate")     // override tarif/jam
+  transportRate        Int?     @map("transport_rate")  // override transport/jam
+  isCertified          Boolean  @default(false) @map("is_certified") // sertifikasi (BOS)
   createdAt DateTime     @default(now()) @map("created_at")
   updatedAt DateTime     @updatedAt @map("updated_at")
 
   user        User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+  payScale    PayScale?            @relation(fields: [payScaleId], references: [id], onDelete: SetNull)
   homeroomFor Class[]              @relation("Homeroom")
   assignments TeachingAssignment[]
+  attendances EmployeeAttendance[]
+  honors      EmployeeHonor[]
+  deductions  EmployeeDeduction[]
+  loans       Loan[]
+  payrollItems PayrollItem[]
+  pensionEntries PensionEntry[]
+  bosHonors   BosHonor[]
 
   @@index([type, name])
   @@map("employees")
@@ -591,6 +1188,24 @@ model Curriculum {
   subjects Subject[]
 
   @@map("curricula")
+}
+
+model Semester {
+  id             String   @id @default(uuid()) @db.Uuid
+  academicYearId String   @map("academic_year_id") @db.Uuid
+  name           String // e.g. "Ganjil", "Genap"
+  startDate      DateTime? @map("start_date") @db.Date
+  endDate        DateTime? @map("end_date") @db.Date
+  isActive       Boolean  @default(false) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  invoices     Invoice[]
+
+  @@unique([academicYearId, name])
+  @@index([academicYearId])
+  @@map("semesters")
 }
 
 model Subject {
@@ -620,6 +1235,7 @@ model Class {
   academicYear AcademicYear        @relation(fields: [academicYearId], references: [id])
   homeroom     Employee?           @relation("Homeroom", fields: [homeroomId], references: [id], onDelete: SetNull)
   enrollments  Enrollment[]
+  invoices     Invoice[]
   assignments  TeachingAssignment[]
   attendances  AttendanceRecord[]
   assessments  Assessment[]
@@ -907,4 +1523,47 @@ model AuditLog {
   @@index([actorId])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+// ---------- WhatsApp gateway (antrean anti-spam) ----------
+
+enum WhatsappMessageStatus {
+  QUEUED
+  SENDING
+  SENT
+  FAILED
+  CANCELLED
+}
+
+model WhatsappSetting {
+  id              String   @id @default("whatsapp")
+  enabled         Boolean  @default(false)
+  gatewayUrl      String   @map("gateway_url")
+  gatewayToken    String?  @map("gateway_token")
+  intervalSeconds Int      @default(8) @map("interval_seconds") // jeda antar pesan
+  dailyLimit      Int      @default(200) @map("daily_limit")
+  updatedBy       String?  @map("updated_by") @db.Uuid
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("whatsapp_settings")
+}
+
+model WhatsappMessage {
+  id        String                @id @default(uuid()) @db.Uuid
+  type      String // kategori antrean — e.g. "titipan_code" (filterable)
+  phone     String // tujuan 62xxx
+  message   String
+  status    WhatsappMessageStatus @default(QUEUED)
+  attempts  Int                   @default(0)
+  lastError String?               @map("last_error")
+  sentAt    DateTime?             @map("sent_at")
+  refType   String?               @map("ref_type") // e.g. "titipan_entry"
+  refId     String?               @map("ref_id") @db.Uuid
+  createdBy String?               @map("created_by") @db.Uuid
+  createdAt DateTime              @default(now()) @map("created_at")
+  updatedAt DateTime              @updatedAt @map("updated_at")
+
+  @@index([status, createdAt])
+  @@index([type, status])
+  @@map("whatsapp_messages")
 }

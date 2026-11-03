@@ -141,6 +141,106 @@ export const REQUIRED_DOC_TYPES: readonly RegistrationDocType[] = [
   'surat_pernyataan',
 ];
 
+// ---------- Daftar titipan / waiting list ----------
+
+export const TITIPAN_STATUSES = [
+  'PENDING',
+  'WAITING',
+  'CODE_SENT',
+  'REGISTERED',
+  'CANCELLED',
+] as const;
+export type TitipanStatus = (typeof TITIPAN_STATUSES)[number];
+
+export const TITIPAN_STATUS_LABELS: Record<TitipanStatus, string> = {
+  PENDING: 'Menunggu Verifikasi',
+  WAITING: 'Dalam Antrean',
+  CODE_SENT: 'Kode Terkirim',
+  REGISTERED: 'Sudah Daftar',
+  CANCELLED: 'Batal',
+};
+
+/** Status yang masih menempati antrean (belum batal/terdaftar). */
+export const TITIPAN_ACTIVE_STATUSES: readonly TitipanStatus[] = [
+  'WAITING',
+  'CODE_SENT',
+];
+
+/** Sumber informasi pendaftar — pilihan pada form titipan. */
+export const INFO_SOURCES = [
+  'google',
+  'instagram',
+  'tiktok',
+  'facebook',
+  'website',
+  'spanduk',
+  'saudara',
+  'tetangga',
+  'teman_kerja',
+  'guru_karyawan',
+  'alumni',
+  'open_house',
+  'lainnya',
+] as const;
+export type InfoSource = (typeof INFO_SOURCES)[number];
+
+export const INFO_SOURCE_LABELS: Record<InfoSource, string> = {
+  google: 'Google',
+  instagram: 'Instagram',
+  tiktok: 'TikTok',
+  facebook: 'Facebook',
+  website: 'Website Sekolah',
+  spanduk: 'Spanduk',
+  saudara: 'Saudara',
+  tetangga: 'Tetangga',
+  teman_kerja: 'Teman Kerja',
+  guru_karyawan: 'Guru/Karyawan Sekolah',
+  alumni: 'Alumni',
+  open_house: 'Open House Sekolah',
+  lainnya: 'Lainnya',
+};
+
+export interface TitipanEntryDto {
+  id: string;
+  academicYearId: string;
+  academicYearName?: string | undefined;
+  candidateId?: string | null | undefined;
+  candidateName: string;
+  birthPlace?: string | null | undefined;
+  birthDate?: string | null | undefined;
+  address?: string | null | undefined;
+  previousSchool?: string | null | undefined;
+  /** Satu nomor HP orang tua/wali — hanya tampil di view admin/pemilik. */
+  guardianPhone?: string | null | undefined;
+  infoSource?: string | null | undefined;
+  queueNo: number;
+  /** Posisi antrean aktif (1 = paling depan) — null bila bukan antrean aktif. */
+  position?: number | null | undefined;
+  status: TitipanStatus;
+  /** Kode formulir hanya dikirim ke pemilik/admin, tidak ke publik. */
+  formCode?: string | null | undefined;
+  codeSentAt?: string | null | undefined;
+  codeUsedAt?: string | null | undefined;
+  note?: string | null | undefined;
+  /** Info akun ortu — hanya view admin. */
+  parentName?: string | null | undefined;
+  parentEmail?: string | null | undefined;
+  parentPhone?: string | null | undefined;
+  createdAt: string;
+}
+
+/** Ringkasan titipan per tahun ajaran untuk papan publik & admin. */
+export interface TitipanYearSummaryDto {
+  academicYearId: string;
+  name: string;
+  quota?: number | null | undefined;
+  /** Pendaftaran resmi yang menempati kuota. */
+  occupied?: number | undefined;
+  waitingCount: number;
+  codeSentCount: number;
+  registeredCount: number;
+}
+
 // ---------- Biaya ----------
 
 export const FEE_KEYS = ['registration', 'dsp', 'spp', 'seragam'] as const;
@@ -302,4 +402,75 @@ export interface NotificationDto {
   body: string;
   readAt?: string | undefined;
   createdAt: string;
+}
+
+// ---------- WhatsApp gateway & antrean ----------
+
+export const WA_MESSAGE_STATUSES = [
+  'QUEUED',
+  'SENDING',
+  'SENT',
+  'FAILED',
+  'CANCELLED',
+] as const;
+export type WaMessageStatus = (typeof WA_MESSAGE_STATUSES)[number];
+
+export const WA_MESSAGE_STATUS_LABELS: Record<WaMessageStatus, string> = {
+  QUEUED: 'Mengantre',
+  SENDING: 'Mengirim…',
+  SENT: 'Terkirim',
+  FAILED: 'Gagal',
+  CANCELLED: 'Dibatalkan',
+};
+
+/** Tipe antrean WA — dipakai sebagai filter & audit. */
+export const WA_MESSAGE_TYPES = [
+  'titipan_code',
+  'payment_reminder',
+  'announcement',
+  'other',
+] as const;
+export type WaMessageType = (typeof WA_MESSAGE_TYPES)[number];
+
+export const WA_MESSAGE_TYPE_LABELS: Record<string, string> = {
+  titipan_code: 'Kode Formulir Titipan',
+  payment_reminder: 'Pengingat Pembayaran',
+  announcement: 'Pengumuman',
+  other: 'Lainnya',
+};
+
+export interface WhatsappMessageDto {
+  id: string;
+  type: string;
+  phone: string;
+  message: string;
+  status: WaMessageStatus;
+  attempts: number;
+  lastError?: string | null | undefined;
+  sentAt?: string | null | undefined;
+  refType?: string | null | undefined;
+  refId?: string | null | undefined;
+  /** Tautan wa.me siap klik — jalur manual bila gateway nonaktif. */
+  waUrl: string;
+  createdAt: string;
+}
+
+export interface WaMessagesResponse {
+  messages: WhatsappMessageDto[];
+  counts: Partial<Record<WaMessageStatus, number>>;
+  /** Tipe antrean yang pernah dipakai — untuk opsi filter. */
+  types: string[];
+}
+
+export interface WhatsappSettingsDto {
+  enabled: boolean;
+  gatewayUrl: string;
+  hasToken: boolean;
+  /** Token tidak pernah dikembalikan penuh — hanya 4 digit terakhir. */
+  tokenPreview?: string | null | undefined;
+  /** Jeda minimal antar pesan (detik) — anti-spam. */
+  intervalSeconds: number;
+  /** Batas pesan terkirim per hari. */
+  dailyLimit: number;
+  source: 'db' | 'env';
 }

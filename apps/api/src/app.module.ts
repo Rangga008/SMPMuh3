@@ -15,6 +15,7 @@ import { PaymentsModule } from './payments/payments.module';
 import { StudentsModule } from './students/students.module';
 import { AcademicModule } from './academic/academic.module';
 import { FinanceModule } from './finance/finance.module';
+import { PayrollModule } from './payroll/payroll.module';
 import { TatausahaModule } from './tatausaha/tatausaha.module';
 
 @Module({
@@ -51,6 +52,7 @@ import { TatausahaModule } from './tatausaha/tatausaha.module';
     StudentsModule,
     AcademicModule,
     FinanceModule,
+    PayrollModule,
     TatausahaModule,
     NotificationsModule,
     AuditModule,

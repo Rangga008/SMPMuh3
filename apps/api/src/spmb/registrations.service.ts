@@ -20,6 +20,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { PaymentsService } from '../payments/payments.service';
 import { CandidatesService } from './candidates.service';
 import { SpmbSettingsService } from './settings.service';
+import { TitipanService } from './titipan.service';
 
 const include = {
   candidate: {
@@ -58,6 +59,7 @@ export class RegistrationsService {
     private readonly settings: SpmbSettingsService,
     private readonly payments: PaymentsService,
     private readonly audit: AuditService,
+    private readonly titipan: TitipanService,
   ) {}
 
   listByParent(parentId: string) {
@@ -69,27 +71,56 @@ export class RegistrationsService {
   }
 
   /**
-   * Buat pendaftaran: data dasar calon + gelombang → status AWAITING_PAYMENT
-   * dengan invoice uang pendaftaran (nominal dari pengaturan biaya admin).
+   * Buat pendaftaran lewat kode formulir daftar titipan. Kode memetakan
+   * tahun ajaran (boleh tahun jauh); gelombang dipilih bila tahun itu
+   * punya lebih dari satu gelombang aktif.
    */
-  async createDraft(parentId: string, candidateId: string, waveId: string) {
-    await this.candidates.owned(parentId, candidateId);
-    const wave = await this.prisma.registrationWave.findUnique({
-      where: { id: waveId },
-    });
-    if (!wave || !wave.isActive) {
-      throw new BadRequestException('Gelombang tidak tersedia');
+  async redeemCode(
+    parentId: string,
+    dto: { formCode: string; candidateId: string; waveId?: string | undefined },
+  ) {
+    const entry = await this.titipan.findByCode(dto.formCode);
+    if (entry.status !== 'CODE_SENT') {
+      throw new BadRequestException(
+        entry.status === 'REGISTERED'
+          ? 'Kode formulir ini sudah dipakai.'
+          : 'Kode formulir ini belum aktif.',
+      );
     }
-    const year = await this.prisma.academicYear.findFirstOrThrow({
-      where: { id: wave.academicYearId },
-    });
-    if (!year.isActive) {
-      throw new BadRequestException('Tahun ajaran gelombang tidak aktif');
+    if (entry.candidateId && entry.candidateId !== dto.candidateId) {
+      throw new BadRequestException(
+        'Kode formulir ini diterbitkan untuk calon murid lain.',
+      );
     }
+    await this.candidates.owned(parentId, dto.candidateId);
+    const year = entry.academicYear;
+
+    let waveId: string | null = null;
+    if (dto.waveId) {
+      const wave = await this.prisma.registrationWave.findUnique({
+        where: { id: dto.waveId },
+      });
+      if (!wave || !wave.isActive || wave.academicYearId !== year.id) {
+        throw new BadRequestException('Gelombang tidak tersedia');
+      }
+      waveId = wave.id;
+    } else {
+      const waves = await this.prisma.registrationWave.findMany({
+        where: { academicYearId: year.id, isActive: true },
+        orderBy: { order: 'asc' },
+      });
+      if (waves.length > 1) {
+        throw new BadRequestException(
+          `Tahun ajaran ${year.name} punya beberapa gelombang — pilih salah satu.`,
+        );
+      }
+      waveId = waves[0]?.id ?? null;
+    }
+
     const existing = await this.prisma.registration.findUnique({
       where: {
         candidateId_academicYearId: {
-          candidateId,
+          candidateId: dto.candidateId,
           academicYearId: year.id,
         },
       },
@@ -100,14 +131,14 @@ export class RegistrationsService {
       );
     }
 
-    const feeAmount = await this.settings.feeAmountFor(wave.id, 'registration');
+    const feeAmount = await this.settings.feeAmountFor(waveId, 'registration');
     const registration = await this.prisma.registration.create({
       data: {
         number: await this.generateNumber(year),
-        candidateId,
+        candidateId: dto.candidateId,
         parentId,
         academicYearId: year.id,
-        waveId: wave.id,
+        waveId,
         pathway: 'reguler',
         status: 'AWAITING_PAYMENT',
         invoices: {
@@ -121,11 +152,17 @@ export class RegistrationsService {
       },
       include: { ...include, invoices: true },
     });
+    await this.titipan.markRedeemed(entry.id, {
+      parentId,
+      candidateId: dto.candidateId,
+      registrationId: registration.id,
+    });
     await this.audit.log({
       actorId: parentId,
       action: 'registration.create',
       entity: 'registration',
       entityId: registration.id,
+      metadata: { titipanEntryId: entry.id },
     });
     return registration;
   }
@@ -488,6 +525,12 @@ export class RegistrationsService {
         candidateId: cand.id,
         parentId: reg.parentId,
       },
+    });
+    // Tagihan SPMB yang belum lunas (sisa DSP/seragam/dst) ikut ke siswa —
+    // penagihan berlanjut di modul keuangan, bukan lagi bagian SPMB.
+    await this.prisma.invoice.updateMany({
+      where: { registrationId: id, studentId: null, status: { notIn: ['PAID', 'CANCELLED', 'EXPIRED'] } },
+      data: { studentId: student.id, academicYearId: reg.academicYearId },
     });
     await this.audit.log({
       actorId,

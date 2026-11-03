@@ -28,13 +28,16 @@ import { RegistrationsService } from './registrations.service';
 import { SpmbSettingsService } from './settings.service';
 import {
   CreateCandidateDto,
-  CreateRegistrationDto,
+  GuestTitipanDto,
+  ParentTitipanDto,
+  RedeemTitipanDto,
   StatusLookupDto,
   UpdateCandidateDto,
   UpdateRegistrationDto,
   UploadDocumentDto,
   type RegistrationDocType,
 } from './dto/spmb.dto';
+import { TitipanService } from './titipan.service';
 
 @Controller({ version: '1' })
 export class SpmbController {
@@ -44,13 +47,14 @@ export class SpmbController {
     private readonly documents: DocumentsService,
     private readonly settings: SpmbSettingsService,
     private readonly payments: PaymentsService,
+    private readonly titipan: TitipanService,
   ) {}
 
   // ---------- Info publik/ortu ----------
-  /** Gelombang aktif untuk tahun ajaran aktif. */
+  /** Gelombang aktif — default tahun ajaran aktif, bisa per tahun lain. */
   @Get('waves')
-  activeWaves() {
-    return this.settings.activeWaves();
+  activeWaves(@Query('academicYearId') academicYearId?: string) {
+    return this.settings.activeWaves(academicYearId || undefined);
   }
 
   /** Pertanyaan formulir aktif — diisi ortu pada tahap FORM_FILLING. */
@@ -70,6 +74,58 @@ export class SpmbController {
   @Get('fees')
   fees() {
     return this.settings.listFees();
+  }
+
+  // ---------- Daftar titipan / waiting list ----------
+
+  /** Tahun ajaran yang membuka titipan + ringkasan antrean (publik). */
+  @Public()
+  @Get('titipan/years')
+  titipanYears() {
+    return this.titipan.openYears();
+  }
+
+  /** Papan antrean titipan publik — pola data-titipan SPMB SDM3. */
+  @Public()
+  @Get('titipan/board')
+  titipanBoard(@Query('academicYearId') academicYearId?: string) {
+    return this.titipan.publicBoard(academicYearId || undefined);
+  }
+
+  /** Form titipan publik — tanpa akun, masuk status PENDING. */
+  @Public()
+  @Post('titipan/guest')
+  titipanGuest(@Body() dto: GuestTitipanDto) {
+    return this.titipan.createGuest(dto);
+  }
+
+  /**
+   * Info kode formulir (publik) — status + tahun + gelombang aktifnya.
+   * Dipakai ortu yang menitip lewat form publik lalu menerima kode via WA.
+   */
+  @Public()
+  @Get('titipan/code/:code')
+  async titipanCodeInfo(@Param('code') code: string) {
+    const entry = await this.titipan.findByCode(code);
+    return {
+      status: entry.status,
+      academicYearId: entry.academicYearId,
+      academicYearName: entry.academicYear.name,
+      candidateName: entry.candidateName,
+      waves: await this.settings.activeWaves(entry.academicYearId),
+    };
+  }
+
+  /** Titipan milik ortu yang sedang login. */
+  @Get('titipan')
+  myTitipan(@CurrentUser() user: AuthUser) {
+    return this.titipan.listForParent(user.id);
+  }
+
+  /** Titipan dari akun ortu — tertaut kandidat. */
+  @Post('titipan')
+  createTitipan(@CurrentUser() user: AuthUser, @Body() dto: ParentTitipanDto) {
+    return this.titipan.createForParent(user.id, dto);
   }
 
   // ---------- Candidates (own) ----------
@@ -101,16 +157,13 @@ export class SpmbController {
     return this.registrations.listByParent(user.id);
   }
 
+  /** Buat pendaftaran — wajib kode formulir unik dari daftar titipan. */
   @Post('registrations')
   createRegistration(
     @CurrentUser() user: AuthUser,
-    @Body() dto: CreateRegistrationDto,
+    @Body() dto: RedeemTitipanDto,
   ) {
-    return this.registrations.createDraft(
-      user.id,
-      dto.candidateId,
-      dto.waveId,
-    );
+    return this.registrations.redeemCode(user.id, dto);
   }
 
   @Get('registrations/lookup')

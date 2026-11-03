@@ -194,8 +194,8 @@ export default function AccountSettingsPage() {
         <p className="mb-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{notice}</p>
       ) : null}
 
-      <div className="overflow-hidden rounded-3xl border border-sand-200 bg-white shadow-sm">
-        <table className="w-full text-sm">
+      <div className="overflow-x-auto rounded-3xl border border-sand-200 bg-white shadow-sm">
+        <table className="w-full min-w-[44rem] text-sm">
           <thead>
             <tr className="border-b border-sand-200 bg-sand-50 text-left text-xs uppercase tracking-wide text-sand-500">
               <th className="px-5 py-3">Akun</th>

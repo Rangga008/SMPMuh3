@@ -8,6 +8,7 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  IsUrl,
   IsUUID,
   Length,
   Matches,
@@ -282,4 +283,142 @@ export class SaveQuestionDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+}
+
+// ---------- Daftar titipan / waiting list ----------
+
+export class GuestTitipanDto {
+  @IsUUID()
+  academicYearId!: string;
+
+  @IsString()
+  @MinLength(3)
+  @MaxLength(120)
+  candidateName!: string;
+
+  @emptyToUndefined()
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  birthPlace?: string;
+
+  @emptyToUndefined()
+  @IsOptional()
+  @IsDateString()
+  birthDate?: string;
+
+  @emptyToUndefined()
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  address?: string;
+
+  @emptyToUndefined()
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  previousSchool?: string;
+
+  @emptyToUndefined()
+  @IsString()
+  @MinLength(9)
+  @MaxLength(20)
+  guardianPhone!: string;
+
+  @emptyToUndefined()
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  infoSource?: string;
+
+  /** Honeypot anti-spam — harus kosong. */
+  @emptyToUndefined()
+  @IsOptional()
+  @IsString()
+  website?: string;
+}
+
+export class ParentTitipanDto {
+  @IsUUID()
+  candidateId!: string;
+
+  @IsUUID()
+  academicYearId!: string;
+
+  @emptyToUndefined()
+  @IsOptional()
+  @IsString()
+  @MinLength(9)
+  @MaxLength(20)
+  guardianPhone?: string;
+
+  @emptyToUndefined()
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  infoSource?: string;
+}
+
+export class RedeemTitipanDto {
+  @IsString()
+  @Length(4, 40)
+  formCode!: string;
+
+  @IsUUID()
+  candidateId!: string;
+
+  @IsOptional()
+  @IsUUID()
+  waveId?: string;
+}
+
+export class AdminTitipanNoteDto {
+  @emptyToUndefined()
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  note?: string;
+
+  /** Ubah status manual — REGISTERED tidak bisa diubah/dituju manual. */
+  @emptyToUndefined()
+  @IsOptional()
+  @IsIn(['PENDING', 'WAITING', 'CODE_SENT', 'CANCELLED'])
+  status?: 'PENDING' | 'WAITING' | 'CODE_SENT' | 'CANCELLED';
+}
+
+/** Konfigurasi gateway WhatsApp — token write-only (tidak pernah dikembalikan). */
+export class WaSettingsUpdateDto {
+  @emptyToUndefined()
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  enabled?: boolean;
+
+  @emptyToUndefined()
+  @IsOptional()
+  @IsUrl({ require_tld: false })
+  @MaxLength(200)
+  gatewayUrl?: string;
+
+  /** Kirim "" untuk menghapus token; abaikan field untuk tidak mengubah. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  gatewayToken?: string;
+
+  @emptyToUndefined()
+  @IsOptional()
+  @Transform(({ value }) => Number(value))
+  @IsInt()
+  @Min(3)
+  @Max(300)
+  intervalSeconds?: number;
+
+  @emptyToUndefined()
+  @IsOptional()
+  @Transform(({ value }) => Number(value))
+  @IsInt()
+  @Min(1)
+  @Max(5000)
+  dailyLimit?: number;
 }

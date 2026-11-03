@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { PageTitle, Widget } from '@/components/widgets';
+import { SearchSelect } from '@/components/search-select';
 import {
   createAssignment,
   createSchedule,
@@ -146,7 +147,7 @@ export default function JadwalPage() {
         </Field>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[320px_1fr]">
+      <div className="grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)]">
         {/* ---------- Penugasan ---------- */}
         <Widget title={`Penugasan Kelas ${classes.find((c) => c.id === classId)?.name ?? ''}`}>
           <ul className="space-y-2">
@@ -223,11 +224,18 @@ export default function JadwalPage() {
           }}
         >
           <Field label="Guru">
-            <Select name="employeeId" required>
-              {employees.map((e) => (
-                <option key={e.id} value={e.id}>{e.name}{e.nip ? ` · ${e.nip}` : ''}</option>
-              ))}
-            </Select>
+            <SearchSelect
+              name="employeeId"
+              required
+              placeholder="Ketik nama guru…"
+              load={(q) =>
+                Promise.resolve(
+                  employees.filter((e) => e.name.toLowerCase().includes(q.trim().toLowerCase())),
+                )
+              }
+              label={(e) => e.name}
+              sub={(e) => e.nip}
+            />
           </Field>
           <Field label="Mata Pelajaran">
             <Select name="subjectId" required>

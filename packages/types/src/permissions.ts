@@ -18,6 +18,8 @@ export const PERMISSIONS = {
   AUDIT_READ: 'audit.read',
   SPMB_REGISTRATION_READ: 'spmb.registration.read',
   SPMB_REGISTRATION_MANAGE: 'spmb.registration.manage',
+  SPMB_TITIPAN_READ: 'spmb.titipan.read',
+  SPMB_TITIPAN_MANAGE: 'spmb.titipan.manage',
   NOTIFICATION_READ: 'notification.read',
   STUDENT_READ: 'student.read',
   STUDENT_MANAGE: 'student.manage',
@@ -31,6 +33,8 @@ export const PERMISSIONS = {
   FINANCE_MANAGE: 'finance.manage',
   TATAUSAHA_READ: 'tatausaha.read',
   TATAUSAHA_MANAGE: 'tatausaha.manage',
+  PAYROLL_READ: 'payroll.read',
+  PAYROLL_MANAGE: 'payroll.manage',
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];

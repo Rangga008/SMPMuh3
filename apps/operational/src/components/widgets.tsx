@@ -40,7 +40,7 @@ export function Widget({
     <section
       aria-label={title}
       className={cn(
-        'rounded-3xl border border-sand-200 bg-white p-5 shadow-card sm:p-6',
+        'min-w-0 rounded-3xl border border-sand-200 bg-white p-5 shadow-card sm:p-6',
         className,
       )}
     >

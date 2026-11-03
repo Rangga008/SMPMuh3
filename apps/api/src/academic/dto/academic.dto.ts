@@ -96,6 +96,98 @@ export class SubjectDto {
   gradeLevel?: number;
 }
 
+export class UpdateCurriculumDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(3)
+  @MaxLength(120)
+  name?: string;
+
+  /** Kosongkan deskripsi dengan mengirim null. */
+  @IsOptional()
+  @ValidateIf((o: UpdateCurriculumDto) => o.description !== null)
+  @IsString()
+  @MaxLength(500)
+  description?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}
+
+export class UpdateSubjectDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(16)
+  code?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(3)
+  @MaxLength(120)
+  name?: string;
+
+  /** Lepas dari kurikulum dengan mengirim null. */
+  @IsOptional()
+  @ValidateIf((o: UpdateSubjectDto) => o.curriculumId !== null)
+  @IsUUID()
+  curriculumId?: string | null;
+
+  /** Berlaku semua tingkat dengan mengirim null. */
+  @IsOptional()
+  @ValidateIf((o: UpdateSubjectDto) => o.gradeLevel !== null)
+  @IsInt()
+  @Min(7)
+  @Max(9)
+  gradeLevel?: number | null;
+}
+
+export class SemesterDto {
+  @IsUUID()
+  academicYearId!: string;
+
+  @IsString()
+  @MinLength(2)
+  @MaxLength(40)
+  name!: string;
+
+  @IsOptional()
+  @IsString()
+  startDate?: string;
+
+  @IsOptional()
+  @IsString()
+  endDate?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}
+
+export class UpdateSemesterDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  @MaxLength(40)
+  name?: string;
+
+  /** Kosongkan tanggal dengan mengirim null. */
+  @IsOptional()
+  @ValidateIf((o: UpdateSemesterDto) => o.startDate !== null)
+  @IsString()
+  startDate?: string | null;
+
+  @IsOptional()
+  @ValidateIf((o: UpdateSemesterDto) => o.endDate !== null)
+  @IsString()
+  endDate?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}
+
 export class ClassDto {
   @IsString()
   @MinLength(1)

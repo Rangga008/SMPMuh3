@@ -12,6 +12,7 @@ export const NAV_LINKS = [
   { href: '/#biaya', label: 'Biaya' },
   { href: '/#syarat', label: 'Syarat' },
   { href: '/#gelombang', label: 'Gelombang' },
+  { href: '/titipan', label: 'Titipan' },
   { href: '/#brosur', label: 'Brosur' },
   { href: '/#kontak', label: 'Kontak' },
 ];

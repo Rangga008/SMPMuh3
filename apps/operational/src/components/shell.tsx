@@ -2,19 +2,20 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { AuthUser } from '@smpmuh3/types';
 import { cn } from '@smpmuh3/ui';
 import { navFor, type NavItem } from '@/config/nav';
+import { ScrollKeeper } from '@/components/scroll-keeper';
 import { getSchool, getTokens, logout, me, type School } from '@/lib/api';
 
 function NavLink({ item, active }: { item: NavItem; active: boolean }) {
   const inner = (
     <>
-      <span aria-hidden="true" className="w-5 text-center opacity-80">
+      <span aria-hidden="true" className="w-5 shrink-0 text-center opacity-80">
         {item.icon}
       </span>
-      <span className="truncate">{item.label}</span>
+      <span className="min-w-0 flex-1 leading-snug">{item.label}</span>
       {!item.enabled ? (
         <span className="ml-auto rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-sky-300">
           segera
@@ -64,10 +65,10 @@ function NavGroup({ item, pathname }: { item: NavItem; pathname: string }) {
               : 'cursor-default text-sky-300/40',
         )}
       >
-        <span aria-hidden="true" className="w-5 text-center opacity-80">
+        <span aria-hidden="true" className="w-5 shrink-0 text-center opacity-80">
           {item.icon}
         </span>
-        <span className="truncate">{item.label}</span>
+        <span className="min-w-0 flex-1 leading-snug">{item.label}</span>
         {!item.enabled ? (
           <span className="ml-auto rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-sky-300">
             segera
@@ -101,6 +102,39 @@ function NavGroup({ item, pathname }: { item: NavItem; pathname: string }) {
  * does not re-fetch /auth/me and flash its loading state on every page. */
 let cachedUser: AuthUser | null = null;
 let cachedSchool: School | null | undefined;
+
+/** Daftar nav yang mengingat posisi scroll-nya — Shell di-mount ulang di
+ * setiap halaman, jadi tanpa ini sidebar selalu melompat ke atas. */
+function NavScrollList({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLUListElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const saved = sessionStorage.getItem('nav-scroll');
+    if (saved) el.scrollTop = Number(saved);
+    let t: ReturnType<typeof setTimeout>;
+    const onScroll = () => {
+      clearTimeout(t);
+      t = setTimeout(
+        () => sessionStorage.setItem('nav-scroll', String(el.scrollTop)),
+        120,
+      );
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      clearTimeout(t);
+      el.removeEventListener('scroll', onScroll);
+    };
+  }, []);
+  return (
+    <ul
+      ref={ref}
+      className="dark-scroll flex-1 space-y-1 overflow-y-auto px-3 py-4"
+    >
+      {children}
+    </ul>
+  );
+}
 
 export function Shell({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -217,7 +251,7 @@ export function Shell({ children }: { children: ReactNode }) {
         </span>
       </Link>
 
-      <ul className="dark-scroll flex-1 space-y-1 overflow-y-auto px-3 py-4">
+      <NavScrollList>
         {nav.map((item) =>
           item.children?.length ? (
             <NavGroup key={item.key} item={item} pathname={pathname} />
@@ -234,7 +268,7 @@ export function Shell({ children }: { children: ReactNode }) {
             </li>
           ),
         )}
-      </ul>
+      </NavScrollList>
 
       <div className="border-t border-white/10 p-3">
         <Link
@@ -392,6 +426,7 @@ export function Shell({ children }: { children: ReactNode }) {
             {children}
           </div>
         </main>
+        <ScrollKeeper />
       </div>
     </div>
   );
