@@ -6,6 +6,7 @@ import { Input, Select } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { DataTable } from '@/components/data-table';
 import { PageTitle, StatCard, Widget } from '@/components/widgets';
+import { rowActionClasses } from '@/components/row-btn';
 import { listClasses, listSavingsSummary, type ClassView } from '@/lib/api';
 
 const rupiah = (n: number) => `Rp${n.toLocaleString('id-ID')}`;
@@ -117,7 +118,7 @@ export default function TabunganPage() {
                 {rupiah(s.balance)}
               </td>
               <td className="px-5 py-3 text-right">
-                <Link href={`/keuangan/tabungan/${s.id}`} className="text-xs font-semibold text-primary-700 hover:underline">
+                <Link href={`/keuangan/tabungan/${s.id}`} className={rowActionClasses()}>
                   Buku
                 </Link>
               </td>

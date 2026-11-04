@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Badge, Button, Field, Input, Modal } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { PageTitle } from '@/components/widgets';
+import { useConfirm } from '@/components/confirm-dialog';
 import {
   createStaffUser,
   deleteStaffUser,
@@ -23,6 +24,7 @@ const roleBadge = (key: string) =>
       : 'text-sand-600 bg-sand-100';
 
 export default function AccountSettingsPage() {
+  const { confirm, dialog } = useConfirm();
   const [users, setUsers] = useState<StaffUser[]>([]);
   const [roles, setRoles] = useState<RoleOption[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -67,7 +69,7 @@ export default function AccountSettingsPage() {
         <button
           key={r.id}
           type="button"
-          onClick={() => toggleRole(r.id)}
+          onClick={async () => toggleRole(r.id)}
           className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
             picked.has(r.id)
               ? 'border-primary-600 bg-primary-600 text-white'
@@ -164,7 +166,7 @@ export default function AccountSettingsPage() {
   };
 
   const remove = async (u: StaffUser) => {
-    if (!window.confirm(`Hapus akun ${u.name}? Ini tidak bisa dibatalkan.`)) return;
+    if (!(await confirm(`Hapus akun ${u.name}? Ini tidak bisa dibatalkan.`))) return;
     setBusy(true);
     try {
       await deleteStaffUser(u.id);
@@ -183,7 +185,7 @@ export default function AccountSettingsPage() {
         title="Manajemen Akun"
         subtitle="Akun staf & pegawai operasional — terpisah dari akun orang tua SPMB."
         actions={
-          <Button onClick={() => { setPicked(new Set()); setShowNew(true); }}>
+          <Button onClick={async () => { setPicked(new Set()); setShowNew(true); }}>
             + Akun Baru
           </Button>
         }
@@ -249,14 +251,14 @@ export default function AccountSettingsPage() {
                   <div className="flex justify-end gap-1.5 text-xs">
                     <button
                       type="button"
-                      onClick={() => openEdit(u)}
+                      onClick={async () => openEdit(u)}
                       className="rounded-lg px-2.5 py-1.5 font-semibold text-primary-700 hover:bg-primary-50"
                     >
                       Ubah
                     </button>
                     <button
                       type="button"
-                      onClick={() => setResetTarget(u)}
+                      onClick={async () => setResetTarget(u)}
                       className="rounded-lg px-2.5 py-1.5 font-semibold text-sand-600 hover:bg-sand-100"
                     >
                       Sandi
@@ -264,7 +266,7 @@ export default function AccountSettingsPage() {
                     <button
                       type="button"
                       disabled={busy}
-                      onClick={() => void toggleStatus(u)}
+                      onClick={async () => void toggleStatus(u)}
                       className="rounded-lg px-2.5 py-1.5 font-semibold text-amber-700 hover:bg-amber-50"
                     >
                       {u.status === 'ACTIVE' ? 'Nonaktifkan' : 'Aktifkan'}
@@ -272,7 +274,7 @@ export default function AccountSettingsPage() {
                     <button
                       type="button"
                       disabled={busy}
-                      onClick={() => void remove(u)}
+                      onClick={async () => void remove(u)}
                       className="rounded-lg px-2.5 py-1.5 font-semibold text-red-600 hover:bg-red-50"
                     >
                       Hapus
@@ -313,7 +315,7 @@ export default function AccountSettingsPage() {
             {rolePicker}
           </Field>
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="secondary" onClick={() => setShowNew(false)}>
+            <Button type="button" variant="secondary" onClick={async () => setShowNew(false)}>
               Batal
             </Button>
             <Button type="submit" disabled={busy}>
@@ -342,7 +344,7 @@ export default function AccountSettingsPage() {
               {rolePicker}
             </Field>
             <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="secondary" onClick={() => setEditing(null)}>
+              <Button type="button" variant="secondary" onClick={async () => setEditing(null)}>
                 Batal
               </Button>
               <Button type="submit" disabled={busy}>
@@ -365,7 +367,7 @@ export default function AccountSettingsPage() {
               <Input name="password" type="password" required minLength={8} />
             </Field>
             <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="secondary" onClick={() => setResetTarget(null)}>
+              <Button type="button" variant="secondary" onClick={async () => setResetTarget(null)}>
                 Batal
               </Button>
               <Button type="submit" disabled={busy}>
@@ -375,6 +377,7 @@ export default function AccountSettingsPage() {
           </form>
         ) : null}
       </Modal>
-    </Shell>
+          {dialog}
+      </Shell>
   );
 }

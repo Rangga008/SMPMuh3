@@ -11,8 +11,9 @@ import {
   REGISTRATION_STATUSES,
   type RegistrationStatus,
 } from '@smpmuh3/types';
-import { Badge, Button, Field, Input, Select, Textarea } from '@smpmuh3/ui';
+import { Badge, Button, Field, Input, Modal, Select, Textarea } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
+import { useConfirm } from '@/components/confirm-dialog';
 import { PageTitle, Widget } from '@/components/widgets';
 import {
   bulkPromote,
@@ -54,7 +55,9 @@ export default function AdminRegistrationPage() {
   const [busy, setBusy] = useState(false);
   const [target, setTarget] = useState<RegistrationStatus>('DOCUMENT_REVIEW');
   const [rejectFor, setRejectFor] = useState<string | null>(null);
+  const [modal, setModal] = useState<'invoice' | 'plan' | null>(null);
   const [questions, setQuestions] = useState<FormQuestionDto[]>([]);
+  const { confirm, dialog } = useConfirm();
 
   const refresh = useCallback(async () => {
     setReg(await getAdminRegistration(id));
@@ -72,6 +75,19 @@ export default function AdminRegistrationPage() {
       setError('Catatan wajib diisi untuk revisi/penolakan.');
       return;
     }
+    const label = REGISTRATION_STATUS_LABELS[target];
+    const ok = await confirm({
+      title: `Ubah status menjadi "${label}"?`,
+      body:
+        target === 'ACCEPTED'
+          ? 'Pendaftar dinyatakan diterima — tagihan pelunasan akan diterbitkan dan calon murid siap dijadikan siswa.'
+          : target === 'REJECTED'
+            ? 'Pendaftar akan ditolak. Keputusan ini dicatat dan sulit dibatalkan.'
+            : `Status pendaftaran akan berubah menjadi "${label}".`,
+      confirmLabel: 'Ya, ubah status',
+      danger: target === 'REJECTED' || target === 'NEEDS_REVISION',
+    });
+    if (!ok) return;
     setError(null);
     setBusy(true);
     try {
@@ -86,6 +102,19 @@ export default function AdminRegistrationPage() {
   }
 
   async function onVerify(docId: string, action: 'verified' | 'rejected', note?: string) {
+    const ok = await confirm({
+      title:
+        action === 'verified'
+          ? 'Tandai dokumen ini terverifikasi?'
+          : 'Tolak dokumen ini?',
+      body:
+        action === 'rejected'
+          ? 'Dokumen ditolak — orang tua akan diminta mengunggah ulang.'
+          : undefined,
+      confirmLabel: action === 'verified' ? 'Ya, verifikasi' : 'Ya, tolak',
+      danger: action === 'rejected',
+    });
+    if (!ok) return;
     setError(null);
     try {
       await verifyDocument(docId, action, note);
@@ -111,6 +140,7 @@ export default function AdminRegistrationPage() {
       e.currentTarget.reset();
       await refresh();
       setNotice('Tagihan dibuat.');
+      setModal(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Gagal membuat tagihan.');
     } finally {
@@ -133,6 +163,7 @@ export default function AdminRegistrationPage() {
       e.currentTarget.reset();
       await refresh();
       setNotice('Rencana angsuran dibuat.');
+      setModal(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Gagal membuat angsuran.');
     } finally {
@@ -147,6 +178,19 @@ export default function AdminRegistrationPage() {
       note = window.prompt('Alasan penolakan pembayaran:') ?? '';
       if (!note) return;
     }
+    const ok = await confirm({
+      title:
+        action === 'confirm'
+          ? 'Konfirmasi pembayaran ini?'
+          : 'Tolak pembayaran ini?',
+      body:
+        action === 'confirm'
+          ? 'Pembayaran akan ditandai lunas dan kwitansi diterbitkan.'
+          : 'Pembayaran akan ditolak — tagihan kembali terbuka.',
+      confirmLabel: action === 'confirm' ? 'Ya, konfirmasi' : 'Ya, tolak',
+      danger: action === 'reject',
+    });
+    if (!ok) return;
     try {
       await verifyPayment(paymentId, action, note);
       await refresh();
@@ -157,6 +201,15 @@ export default function AdminRegistrationPage() {
   }
 
   async function onRecordCash(invoiceId: string) {
+    if (
+      !(await confirm({
+        title: 'Catat pembayaran tunai?',
+        body: 'Tagihan akan ditandai lunas dan kwitansi diterbitkan.',
+        confirmLabel: 'Ya, catat lunas',
+        danger: false,
+      }))
+    )
+      return;
     setError(null);
     setBusy(true);
     try {
@@ -171,6 +224,15 @@ export default function AdminRegistrationPage() {
   }
 
   async function onPromote() {
+    if (
+      !(await confirm({
+        title: 'Jadikan pendaftar ini murid?',
+        body: 'Data siswa baru akan dibuat di Kesiswaan dan akun orang tua tertaut. Aksi ini tidak bisa dibatalkan otomatis.',
+        confirmLabel: 'Ya, jadikan murid',
+        danger: false,
+      }))
+    )
+      return;
     setError(null);
     setBusy(true);
     try {
@@ -455,28 +517,14 @@ export default function AdminRegistrationPage() {
                 </ul>
               )}
 
-              <form onSubmit={onInvoice} className="grid gap-3 rounded-2xl border border-sand-200 bg-sand-50 p-4 sm:grid-cols-[1fr_140px_120px_auto] sm:items-end">
-                <Field label="Judul Tagihan">
-                  <Input name="title" required placeholder="DP DSP / DSP / Seragam" />
-                </Field>
-                <Field label="Jumlah (Rp)">
-                  <Input name="amount" type="number" min={1000} required placeholder="0" />
-                </Field>
-                <Field label="Jenis">
-                  <Select name="kind" defaultValue="dsp_dp">
-                    <option value="dsp_dp">DP DSP</option>
-                    <option value="dsp">DSP</option>
-                    <option value="spp">SPP</option>
-                    <option value="seragam">Seragam</option>
-                    <option value="other">Lainnya</option>
-                  </Select>
-                </Field>
-                <Button type="submit" disabled={busy} variant="outline">Buat</Button>
-                <label className="col-span-full flex items-center gap-2 text-xs font-semibold text-sand-600">
-                  <input type="checkbox" name="applyDiscount" className="accent-primary-700" />
-                  Terapkan diskon DSP ({reg.discountPercent}%)
-                </label>
-              </form>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant="outline" onClick={() => setModal('invoice')}>
+                  + Buat Tagihan
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setModal('plan')}>
+                  + Rencana Angsuran
+                </Button>
+              </div>
 
               {reg.installmentPlans.length > 0 ? (
                 <ul className="mt-4 space-y-2">
@@ -487,23 +535,6 @@ export default function AdminRegistrationPage() {
                   ))}
                 </ul>
               ) : null}
-
-              <form onSubmit={onPlan} className="mt-4 grid gap-3 rounded-2xl border border-dashed border-sand-300 bg-white p-4 sm:grid-cols-[1fr_140px_100px_auto] sm:items-end">
-                <Field label="Rencana Angsuran">
-                  <Input name="ptitle" required placeholder="Angsuran DSP" />
-                </Field>
-                <Field label="Total (Rp)">
-                  <Input name="ptotal" type="number" min={10000} required placeholder="2800000" />
-                </Field>
-                <Field label="Jumlah">
-                  <Input name="pcount" type="number" min={2} max={12} required defaultValue={3} />
-                </Field>
-                <Button type="submit" disabled={busy} variant="ghost">Buat Rencana</Button>
-                <label className="col-span-full flex items-center gap-2 text-xs font-semibold text-sand-600">
-                  <input type="checkbox" name="papplyDiscount" className="accent-primary-700" />
-                  Terapkan diskon DSP
-                </label>
-              </form>
             </Widget>
           </div>
 
@@ -576,6 +607,61 @@ export default function AdminRegistrationPage() {
           </div>
         </div>
       )}
+
+      <Modal open={modal === 'invoice'} onClose={() => setModal(null)} title="Buat Tagihan">
+        <form onSubmit={onInvoice} className="grid gap-4">
+          <Field label="Judul Tagihan">
+            <Input name="title" required placeholder="DP DSP / DSP / Seragam" />
+          </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Jumlah (Rp)">
+              <Input name="amount" type="number" min={1000} required placeholder="0" />
+            </Field>
+            <Field label="Jenis">
+              <Select name="kind" defaultValue="dsp_dp">
+                <option value="dsp_dp">DP DSP</option>
+                <option value="dsp">DSP</option>
+                <option value="spp">SPP</option>
+                <option value="seragam">Seragam</option>
+                <option value="other">Lainnya</option>
+              </Select>
+            </Field>
+          </div>
+          <label className="flex items-center gap-2 text-xs font-semibold text-sand-600">
+            <input type="checkbox" name="applyDiscount" className="accent-primary-700" />
+            Terapkan diskon DSP ({reg?.discountPercent ?? 0}%)
+          </label>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={() => setModal(null)}>Batal</Button>
+            <Button type="submit" disabled={busy}>Buat Tagihan</Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal open={modal === 'plan'} onClose={() => setModal(null)} title="Rencana Angsuran">
+        <form onSubmit={onPlan} className="grid gap-4">
+          <Field label="Rencana Angsuran">
+            <Input name="ptitle" required placeholder="Angsuran DSP" />
+          </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Total (Rp)">
+              <Input name="ptotal" type="number" min={10000} required placeholder="2800000" />
+            </Field>
+            <Field label="Jumlah Angsuran">
+              <Input name="pcount" type="number" min={2} max={12} required defaultValue={3} />
+            </Field>
+          </div>
+          <label className="flex items-center gap-2 text-xs font-semibold text-sand-600">
+            <input type="checkbox" name="papplyDiscount" className="accent-primary-700" />
+            Terapkan diskon DSP
+          </label>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={() => setModal(null)}>Batal</Button>
+            <Button type="submit" disabled={busy}>Buat Rencana</Button>
+          </div>
+        </form>
+      </Modal>
+      {dialog}
     </Shell>
   );
 }

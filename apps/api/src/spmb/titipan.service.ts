@@ -173,23 +173,6 @@ export class TitipanService {
     return entry;
   }
 
-  /** Tandai kode terpakai — dipanggil setelah pendaftaran dibuat. */
-  markRedeemed(
-    entryId: string,
-    data: { parentId: string; candidateId: string; registrationId: string },
-  ) {
-    return this.prisma.titipanEntry.update({
-      where: { id: entryId },
-      data: {
-        status: 'REGISTERED',
-        codeUsedAt: new Date(),
-        parentId: data.parentId,
-        candidateId: data.candidateId,
-        registrationId: data.registrationId,
-      },
-    });
-  }
-
   // ---------- Admin ----------
 
   async listForAdmin(options: {

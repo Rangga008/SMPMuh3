@@ -66,10 +66,59 @@ export class CreateStudentDto {
   force?: boolean;
 }
 
-export class UpdateStudentDto extends CreateStudentDto {
+export class UpdateStudentDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(3)
+  @MaxLength(120)
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  nis?: string;
+
+  @IsOptional()
+  @Matches(/^\d{10}$/, { message: 'nisn must be 10 digits' })
+  nisn?: string;
+
+  @IsOptional()
+  @IsIn(['MALE', 'FEMALE'])
+  gender?: Gender;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  birthPlace?: string;
+
+  @IsOptional()
+  @IsDateString()
+  birthDate?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  address?: string;
+
+  @IsOptional()
+  @IsUUID()
+  parentId?: string;
+
   @IsOptional()
   @IsIn(STUDENT_STATUSES)
   status?: StudentStatus;
+
+  /** Nama orang tua/wali — dibuat/diperbarui lewat data ortu siswa. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  parentName?: string;
+
+  /** No. HP orang tua/wali — dipakai untuk WA gateway & kwitansi. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  parentPhone?: string;
 }
 
 export class AchievementDto {
@@ -93,6 +142,11 @@ export class AchievementDto {
   @IsString()
   @MaxLength(500)
   description?: string;
+
+  /** Dokumen bukti (piagam/foto) — id hasil upload /students/:id/documents. */
+  @IsOptional()
+  @IsUUID()
+  evidenceDocumentId?: string;
 }
 
 export class ViolationDto {
@@ -114,6 +168,11 @@ export class ViolationDto {
 
   @IsDateString()
   date!: string;
+
+  /** Dokumen bukti — id hasil upload /students/:id/documents. */
+  @IsOptional()
+  @IsUUID()
+  evidenceDocumentId?: string;
 }
 
 class AttendanceRecordDto {

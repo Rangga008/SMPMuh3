@@ -234,11 +234,13 @@ export class FinanceController {
   @RequirePermission(PERMISSIONS.FINANCE_READ)
   fundUsage(
     @Query('academicYearId') academicYearId?: string,
+    @Query('cashAccountId') cashAccountId?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
     return this.finance.fundUsage({
       academicYearId: academicYearId || undefined,
+      cashAccountId: cashAccountId || undefined,
       from: from ? new Date(from) : undefined,
       to: to ? new Date(`${to}T23:59:59`) : undefined,
     });

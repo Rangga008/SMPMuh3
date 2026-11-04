@@ -505,11 +505,21 @@ export default function LaporanPage() {
             <div ref={printRef}>
               {/* Kepala laporan — hanya tampil saat cetak (kelas 'hidden' tak berlaku di jendela print) */}
               <div className="hidden">
-                <div className="ctr b2" style={{ paddingBottom: 8 }}>
-                  <div className="b" style={{ fontSize: 16 }}>{school?.name ?? 'Sekolah'}</div>
-                  <div className="xs">{school?.address ?? ''}</div>
-                  <div className="up mt2">Laporan — {tabLabel}</div>
-                  <div className="xs">Periode: {periodLabel} · {years.find((y) => y.id === yearId)?.name ?? ''} · Digenerate {new Date().toLocaleString('id-ID')}</div>
+                <div className="b2" style={{ display: 'flex', alignItems: 'center', gap: 12, paddingBottom: 8 }}>
+                  {school?.logoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src="/logo.png" alt="" style={{ width: 48, height: 48, objectFit: 'contain' }} />
+                  ) : null}
+                  <div className="ctr" style={{ flex: 1 }}>
+                    <div className="b" style={{ fontSize: 16 }}>{school?.name ?? 'Sekolah'}</div>
+                    <div className="xs">
+                      {school?.address ?? ''}
+                      {school?.phone ? ` · Telp ${school.phone}` : ''}
+                    </div>
+                    <div className="up mt2">Laporan — {tabLabel}</div>
+                    <div className="xs">Periode: {periodLabel} · {years.find((y) => y.id === yearId)?.name ?? ''} · Digenerate {new Date().toLocaleString('id-ID')}</div>
+                  </div>
+                  {school?.logoUrl ? <span style={{ width: 48 }} /> : null}
                 </div>
               </div>
 

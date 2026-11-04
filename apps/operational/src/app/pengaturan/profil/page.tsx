@@ -8,10 +8,11 @@ import {
   getSchool,
   updateSchool,
   uploadSchoolLogo,
+  uploadSchoolSignature,
   type School,
 } from '@/lib/api';
 
-/** Profil & kontak sekolah — dipakai situs SPMB publik + favicon kedua app. */
+/** Profil & kontak sekolah — dipakai situs SPMB publik, kop kwitansi/slip/laporan, dan favicon. */
 export default function SchoolProfilePage() {
   const [school, setSchool] = useState<School | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -19,6 +20,7 @@ export default function SchoolProfilePage() {
   const [busy, setBusy] = useState(false);
   const [logoVer, setLogoVer] = useState(0);
   const logoRef = useRef<HTMLInputElement>(null);
+  const sigRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     try {
@@ -54,7 +56,7 @@ export default function SchoolProfilePage() {
     <Shell>
       <PageTitle
         title="Profil & Kontak Sekolah"
-        subtitle="Ditampilkan di situs SPMB publik, sidebar admin, dan favicon."
+        subtitle="Ditampilkan di situs SPMB publik, sidebar admin, favicon, dan kop dokumen (kwitansi, slip gaji, laporan)."
       />
       {error ? (
         <p role="alert" className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</p>
@@ -80,6 +82,8 @@ export default function SchoolProfilePage() {
                       phone: String(f.get('phone') || ''),
                       whatsapp: String(f.get('whatsapp') || ''),
                       email: String(f.get('email') || ''),
+                      headmaster: String(f.get('headmaster') || ''),
+                      headmasterNip: String(f.get('headmasterNip') || ''),
                     }),
                   'Profil sekolah diperbarui — situs publik menampilkannya dalam ±5 menit.',
                 );
@@ -102,6 +106,12 @@ export default function SchoolProfilePage() {
               </Field>
               <Field label="Alamat">
                 <Input name="address" defaultValue={school.address ?? ''} />
+              </Field>
+              <Field label="Nama Kepala Sekolah" hint="Tercetak di bagian tanda tangan slip gaji & dokumen resmi">
+                <Input name="headmaster" defaultValue={school.headmaster ?? ''} placeholder="mis. Drs. H. Ahmad Syaefulloh" />
+              </Field>
+              <Field label="NIP Kepala Sekolah" hint="Opsional — tercetak di bawah nama">
+                <Input name="headmasterNip" defaultValue={school.headmasterNip ?? ''} placeholder="mis. 196605151990031007" />
               </Field>
               <div className="sm:col-span-2">
                 <Button type="submit" disabled={busy}>
@@ -145,6 +155,55 @@ export default function SchoolProfilePage() {
               <p className="text-center text-xs leading-relaxed text-sand-400">
                 PNG/JPG/WebP/SVG maks 3 MB. Dipakai di header situs SPMB,
                 sidebar admin, dan favicon.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-sand-400">Memuat profil…</p>
+        )}
+      </Widget>
+
+      <Widget title="Tanda Tangan Kepala Sekolah" className="mt-5">
+        {school ? (
+          <div className="flex flex-wrap items-center gap-6">
+            {school.headmasterSignatureUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={`/signature.png?v=${logoVer}`}
+                alt="Tanda tangan kepala sekolah"
+                className="h-24 w-44 rounded-xl border border-sand-200 bg-white object-contain p-2"
+              />
+            ) : (
+              <span className="flex h-24 w-44 items-center justify-center rounded-xl border border-dashed border-sand-300 bg-sand-50 text-center text-xs text-sand-400">
+                Belum ada tanda tangan
+              </span>
+            )}
+            <div className="min-w-56 space-y-2">
+              <p className="text-sm text-sand-600">
+                Foto/scan tanda tangan ini tercetak otomatis di bagian tanda
+                tangan kepala sekolah pada kwitansi, slip gaji, dan dokumen resmi
+                — tidak perlu tanda tangan basah satu per satu.
+              </p>
+              <input
+                ref={sigRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = '';
+                  if (!file) return;
+                  await run(
+                    () => uploadSchoolSignature(file),
+                    'Tanda tangan diperbarui — langsung dipakai di semua cetakan.',
+                  );
+                }}
+              />
+              <Button size="sm" variant="outline" disabled={busy} onClick={() => sigRef.current?.click()}>
+                {school.headmasterSignatureUrl ? 'Ganti Tanda Tangan' : 'Unggah Tanda Tangan'}
+              </Button>
+              <p className="text-xs text-sand-400">
+                PNG/JPG/WebP maks 3 MB — hasil scan/foto, latar putih/polos paling rapi.
               </p>
             </div>
           </div>

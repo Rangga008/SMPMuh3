@@ -38,10 +38,20 @@ export function SlipView({
   const dec = (item.lines ?? []).filter((l) => l.amount < 0);
   return (
     <div className="text-sm text-sand-900">
-      <div className="border-b-2 border-sand-900 pb-3 text-center">
-        <p className="text-base font-bold uppercase tracking-wide">{school?.name ?? 'Sekolah'}</p>
-        <p className="text-xs text-sand-600">{school?.address ?? ''}</p>
-        <p className="mt-1 text-sm font-semibold">SLIP GAJI — {monthLabel(run.month)}</p>
+      <div className="flex items-center gap-3 border-b-2 border-sand-900 pb-3">
+        {school?.logoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src="/logo.png" alt="Logo" className="size-12 object-contain" />
+        ) : null}
+        <div className="flex-1 text-center">
+          <p className="text-base font-bold uppercase tracking-wide">{school?.name ?? 'Sekolah'}</p>
+          <p className="text-xs text-sand-600">
+            {school?.address ?? ''}
+            {school?.phone ? ` · Telp ${school.phone}` : ''}
+          </p>
+          <p className="mt-1 text-sm font-semibold">SLIP GAJI — {monthLabel(run.month)}</p>
+        </div>
+        {school?.logoUrl ? <span className="size-12" /> : null}
       </div>
       <table className="mt-3 w-full text-sm">
         <tbody>
@@ -98,7 +108,14 @@ export function SlipView({
       <div className="mt-8 grid grid-cols-2 gap-4 text-center text-xs">
         <div>
           <p>Kepala Sekolah</p>
-          <p className="mt-14 font-semibold underline">{principal || '…………………………'}</p>
+          {school?.headmasterSignatureUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src="/signature.png" alt="TTD" style={{ height: 52, objectFit: 'contain', margin: '4px auto 0' }} />
+          ) : null}
+          <p className={`font-semibold underline ${school?.headmasterSignatureUrl ? 'mt-1' : 'mt-14'}`}>
+            {principal || '…………………………'}
+          </p>
+          {school?.headmasterNip ? <p className="mt-0.5 text-sand-500">NIP {school.headmasterNip}</p> : null}
         </div>
         <div>
           <p>Bendahara / Keuangan</p>
@@ -114,7 +131,7 @@ export function printEl(el: HTMLElement | null, title = 'Slip Gaji') {
   if (!el) return;
   const w = window.open('', '_blank', 'width=800,height=900');
   if (!w) return;
-  w.document.write(`<html><head><title>${title}</title><style>
+  w.document.write(`<html><head><base href="${window.location.origin}"><title>${title}</title><style>
     body{font-family:ui-sans-serif,system-ui,sans-serif;padding:24px;color:#1c1917}
     table{width:100%;border-collapse:collapse;font-size:12px}
     th,td{padding:5px 8px;border-bottom:1px solid #e7e5e4;text-align:left;vertical-align:top}

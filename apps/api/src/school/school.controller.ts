@@ -69,6 +69,18 @@ export class UpdateSchoolDto {
   @IsOptional()
   @IsEmail()
   email?: string | null;
+
+  @emptyToNull()
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  headmaster?: string | null;
+
+  @emptyToNull()
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  headmasterNip?: string | null;
 }
 
 @Controller({ path: 'school', version: '1' })
@@ -90,6 +102,15 @@ export class SchoolController {
   @Get('logo')
   async getLogo(@Res({ passthrough: true }) res: Response) {
     const { buf, mime } = await this.school.getLogo();
+    res.set({ 'Content-Type': mime, 'Cache-Control': 'public, max-age=300' });
+    return new StreamableFile(buf);
+  }
+
+  /** TTD kepala sekolah (publik) — dipakai <img> di kop cetakan. */
+  @Public()
+  @Get('signature')
+  async getSignature(@Res({ passthrough: true }) res: Response) {
+    const { buf, mime } = await this.school.getSignature();
     res.set({ 'Content-Type': mime, 'Cache-Control': 'public, max-age=300' });
     return new StreamableFile(buf);
   }
@@ -135,6 +156,34 @@ export class SchoolController {
     await this.audit.log({
       actorId: me.id,
       action: 'school.logo_upload',
+      entity: 'school',
+      entityId: school.id,
+    });
+    return school;
+  }
+
+  @Post('signature')
+  @RequirePermission(PERMISSIONS.SCHOOL_MANAGE)
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadSignature(
+    @CurrentUser() me: AuthUser,
+    @UploadedFile(
+      new ParseFilePipeBuilder()
+        .addMaxSizeValidator({ maxSize: 3 * 1024 * 1024 })
+        .addFileTypeValidator({
+          fileType: /image\/(png|jpeg|webp)/,
+        })
+        .build({ fileIsRequired: true }),
+    )
+    file: Express.Multer.File,
+  ) {
+    if (!file.mimetype.startsWith('image/')) {
+      throw new NotFoundException('Hanya file gambar yang diperbolehkan');
+    }
+    const school = await this.school.uploadSignature(file);
+    await this.audit.log({
+      actorId: me.id,
+      action: 'school.signature_upload',
       entity: 'school',
       entityId: school.id,
     });

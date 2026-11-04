@@ -21,6 +21,8 @@ import {
 import { me } from '@/lib/api';
 import { PERMISSIONS } from '@smpmuh3/types';
 
+import { RowBtn } from '@/components/row-btn';
+import { useConfirm } from '@/components/confirm-dialog';
 const rupiah = (n: number) => `Rp${n.toLocaleString('id-ID')}`;
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -32,6 +34,7 @@ const SRC_LABEL: Record<string, string> = {
 };
 
 export default function HarianPage() {
+  const { confirm, dialog } = useConfirm();
   const [canManage, setCanManage] = useState(false);
   const [years, setYears] = useState<AcademicYear[]>([]);
   const [categories, setCategories] = useState<FinanceCategory[]>([]);
@@ -168,7 +171,7 @@ export default function HarianPage() {
         subtitle="Catat pemasukan & pengeluaran harian — pemberian tamu, ATK, dsb."
         actions={
           canManage ? (
-            <Button size="sm" onClick={() => setQModal(true)}>+ Catat Transaksi</Button>
+            <Button size="sm" onClick={async () => setQModal(true)}>+ Catat Transaksi</Button>
           ) : undefined
         }
       />
@@ -216,7 +219,7 @@ export default function HarianPage() {
             </Select>
           </Field>
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={() => setQModal(false)}>Batal</Button>
+            <Button type="button" variant="ghost" onClick={async () => setQModal(false)}>Batal</Button>
             <Button type="submit" disabled={busy}>Simpan</Button>
           </div>
         </form>
@@ -281,15 +284,15 @@ export default function HarianPage() {
             <span className="text-red-600">Keluar {rupiah(outToday)}</span>
           </span>
         }
-      >
+>
         <DataTable
           head={['Tanggal', 'Deskripsi', 'Kategori', 'Jumlah', '']}
           loading={loading}
           error={null}
           empty={rows.length === 0 ? 'Belum ada transaksi pada rentang ini.' : undefined}
-        >
+>
           {rows.map((t) => (
-            <tr key={t.id} className="cursor-pointer" onClick={() => setTxDetail(t)}>
+            <tr key={t.id} className="cursor-pointer" onClick={async () => setTxDetail(t)}>
               <td className="whitespace-nowrap px-5 py-3 text-xs text-sand-500">{fmtDate(t.occurredAt)}</td>
               <td className="max-w-72 px-5 py-3">
                 <p className="truncate font-medium text-sand-900" title={t.description ?? ''}>
@@ -309,19 +312,12 @@ export default function HarianPage() {
                 <span className="flex justify-end gap-2">
                   {canManage && t.source === 'manual' ? (
                     <>
-                      <button type="button" onClick={() => setTxModal(t)} className="text-xs font-semibold text-primary-700 hover:underline">
+                      <RowBtn type="button" onClick={async () => setTxModal(t)}>
                         Ubah
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (window.confirm('Hapus transaksi ini?'))
-                            void run(() => deleteFinanceTransaction(t.id), 'Transaksi dihapus.');
-                        }}
-                        className="text-xs font-semibold text-red-600 hover:underline"
-                      >
+                      </RowBtn>
+                      <RowBtn tone="danger" type="button" onClick={async () => { if (await confirm('Hapus transaksi ini?')) void run(() => deleteFinanceTransaction(t.id), 'Transaksi dihapus.'); }}>
                         Hapus
-                      </button>
+                      </RowBtn>
                     </>
                   ) : null}
                 </span>
@@ -416,6 +412,7 @@ export default function HarianPage() {
           </div>
         ) : null}
       </Modal>
-    </Shell>
+          {dialog}
+      </Shell>
   );
 }

@@ -13,13 +13,17 @@ import {
   type CurriculumView,
 } from '@/lib/api';
 
+import { RowBtn } from '@/components/row-btn';
+import { useConfirm } from '@/components/confirm-dialog';
 export default function KurikulumDataPage() {
+  const { confirm, dialog } = useConfirm();
   const [rows, setRows] = useState<CurriculumView[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<CurriculumView | null>(null);
+  const [creating, setCreating] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -60,6 +64,7 @@ export default function KurikulumDataPage() {
       <PageTitle
         title="Data Kurikulum"
         subtitle="Kerangka kurikulum yang dipakai sekolah (mis. Kurikulum Merdeka)"
+        actions={<Button size="sm" onClick={async () => setCreating(true)}>+ Kurikulum Baru</Button>}
       />
       {error ? (
         <p role="alert" className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</p>
@@ -68,33 +73,12 @@ export default function KurikulumDataPage() {
         <p role="status" className="mb-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">{notice}</p>
       ) : null}
 
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          const f = new FormData(e.currentTarget);
-          void run(
-            () =>
-              createCurriculum({
-                name: String(f.get('name')),
-                description: String(f.get('description')) || undefined,
-              }),
-            'Kurikulum ditambahkan.',
-            e.currentTarget,
-          );
-        }}
-        className="mb-5 grid gap-3 rounded-2xl border border-sand-200 bg-white p-4 shadow-card sm:grid-cols-[1fr_2fr_auto] sm:items-end"
-      >
-        <Field label="Nama"><Input name="name" required placeholder="Kurikulum Merdeka" /></Field>
-        <Field label="Deskripsi"><Input name="description" placeholder="Opsional" /></Field>
-        <Button type="submit" disabled={busy} variant="outline">Tambah</Button>
-      </form>
-
       <DataTable
         head={['Nama', 'Deskripsi', 'Mapel', 'Status', '']}
         loading={loading}
         error={error}
         empty={rows.length === 0 ? 'Belum ada kurikulum.' : undefined}
-      >
+>
         {rows.map((c) => (
           <tr key={c.id}>
             <td className="px-5 py-3 font-bold text-sand-900">{c.name}</td>
@@ -109,34 +93,50 @@ export default function KurikulumDataPage() {
             </td>
             <td className="px-5 py-3 text-right">
               <div className="flex items-center justify-end gap-3">
-                <button
-                  type="button"
-                  className="text-sm font-semibold text-sand-700 hover:underline"
-                  onClick={() => setEditing(c)}
-                >
+                <RowBtn tone="neutral" type="button" onClick={async () => setEditing(c)}>
                   Edit
-                </button>
-                <button
-                  type="button"
-                  className="text-sm font-semibold text-red-600 hover:underline"
-                  onClick={() => {
-                    if (!confirm(`Hapus kurikulum ${c.name}?`)) return;
-                    void run(() => deleteCurriculum(c.id), `Kurikulum ${c.name} dihapus.`);
-                  }}
-                >
+                </RowBtn>
+                <RowBtn tone="danger" type="button" onClick={async () => { if (!confirm(`Hapus kurikulum ${c.name}?`)) return; void run(() => deleteCurriculum(c.id), `Kurikulum ${c.name} dihapus.`); }}>
                   Hapus
-                </button>
+                </RowBtn>
               </div>
             </td>
           </tr>
         ))}
       </DataTable>
 
+      <Modal open={creating} onClose={() => setCreating(false)} title="Kurikulum Baru">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const f = new FormData(e.currentTarget);
+            void run(
+              () =>
+                createCurriculum({
+                  name: String(f.get('name')),
+                  description: String(f.get('description')) || undefined,
+                }),
+              'Kurikulum ditambahkan.',
+            ).then((ok) => {
+              if (ok) setCreating(false);
+            });
+          }}
+          className="grid gap-3"
+>
+          <Field label="Nama"><Input name="name" required placeholder="Kurikulum Merdeka" /></Field>
+          <Field label="Deskripsi"><Input name="description" placeholder="Opsional" /></Field>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="ghost" onClick={async () => setCreating(false)}>Batal</Button>
+            <Button type="submit" disabled={busy}>Simpan</Button>
+          </div>
+        </form>
+      </Modal>
+
       <Modal
         open={editing !== null}
         onClose={() => setEditing(null)}
         title={`Edit Kurikulum ${editing?.name ?? ''}`}
-      >
+>
         {editing ? (
           <form
             onSubmit={(e) => {
@@ -156,7 +156,7 @@ export default function KurikulumDataPage() {
               });
             }}
             className="grid gap-3"
-          >
+>
             <Field label="Nama">
               <Input name="name" required defaultValue={editing.name} />
             </Field>
@@ -173,7 +173,7 @@ export default function KurikulumDataPage() {
               Aktif
             </label>
             <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="ghost" onClick={() => setEditing(null)}>
+              <Button type="button" variant="ghost" onClick={async () => setEditing(null)}>
                 Batal
               </Button>
               <Button type="submit" disabled={busy}>Simpan</Button>
@@ -181,6 +181,7 @@ export default function KurikulumDataPage() {
           </form>
         ) : null}
       </Modal>
-    </Shell>
+          {dialog}
+      </Shell>
   );
 }

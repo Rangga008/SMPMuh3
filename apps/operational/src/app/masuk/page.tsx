@@ -1,14 +1,22 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button, Field, Input } from '@smpmuh3/ui';
-import { ApiError, login, setTokens } from '@/lib/api';
+import { API, ApiError, login, setTokens } from '@/lib/api';
 
 export default function LoginPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [school, setSchool] = useState<{ name: string; logoUrl?: string | null } | null>(null);
+
+  useEffect(() => {
+    fetch(`${API}/school/public`, { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => setSchool(j?.data ?? j ?? null))
+      .catch(() => undefined);
+  }, []);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -35,17 +43,26 @@ export default function LoginPage() {
       <div aria-hidden="true" className="pattern-islami-light pointer-events-none absolute inset-0" />
       <div className="relative w-full max-w-md">
         <div className="text-center">
-          <span
-            aria-hidden="true"
-            className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-accent-400 text-lg font-extrabold text-primary-950 shadow-card"
-          >
-            M3
-          </span>
+          {school?.logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src="/logo.png"
+              alt=""
+              className="mx-auto size-14 rounded-2xl bg-white object-contain p-1.5 shadow-card"
+            />
+          ) : (
+            <span
+              aria-hidden="true"
+              className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-accent-400 text-lg font-extrabold text-primary-950 shadow-card"
+            >
+              M3
+            </span>
+          )}
           <h1 className="mt-5 text-2xl font-extrabold tracking-tight text-white">
             Admin Sekolah
           </h1>
           <p className="mt-1.5 text-sm text-primary-200">
-            SMP Muhammadiyah 3 Kota Bandung
+            {school?.name ?? 'Sekolah'}
           </p>
         </div>
 

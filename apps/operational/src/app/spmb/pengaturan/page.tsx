@@ -1,10 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import type { DiscountRuleDto, FeeDto, FormQuestionDto, WaveDto } from '@smpmuh3/types';
 import { Badge, Button, Field, Input, Modal, Select, Textarea } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { PageTitle, Widget } from '@/components/widgets';
+import { useConfirm } from '@/components/confirm-dialog';
 import {
   deleteQuestion,
   listAdminDiscounts,
@@ -54,7 +57,37 @@ const SUBTYPE_LABELS: Record<string, string> = {
   alumni_sdm: 'Alumni SD Muhammadiyah Kota Bandung',
 };
 
+type Section = 'template' | 'biaya' | 'diskon' | 'gelombang' | 'pertanyaan';
+const SECTIONS: { key: Section; title: string; desc: string }[] = [
+  { key: 'template', title: 'Template Surat Pernyataan', desc: 'File PDF/JPG yang diunduh ortu, diisi, lalu diunggah kembali.' },
+  { key: 'biaya', title: 'Biaya Pendidikan', desc: 'Tarif dasar: pendaftaran, DSP, SPP, seragam.' },
+  { key: 'diskon', title: 'Diskon DSP Prestasi', desc: 'Potongan DSP per jalur prestasi & alumni SDM.' },
+  { key: 'gelombang', title: 'Gelombang Pendaftaran', desc: 'Periode gelombang, status aktif, jadwal psikotes, tarif khusus.' },
+  { key: 'pertanyaan', title: 'Pertanyaan Formulir', desc: 'Pertanyaan tambahan yang tampil setelah pembayaran.' },
+];
+const SECTION_TITLES = Object.fromEntries(SECTIONS.map((s) => [s.key, s.title])) as Record<Section, string>;
+
 export default function SpmbSettingsPage() {
+  return (
+    <Suspense
+      fallback={
+        <Shell>
+          <p className="text-sm text-sand-500">Memuat pengaturan…</p>
+        </Shell>
+      }
+    >
+      <SpmbSettingsInner />
+    </Suspense>
+  );
+}
+
+function SpmbSettingsInner() {
+  const { confirm, dialog } = useConfirm();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const section = (searchParams.get('bagian') ?? '') as Section | '';
+  const setSection = (s: Section | '') =>
+    router.replace(s ? `/spmb/pengaturan?bagian=${s}` : '/spmb/pengaturan', { scroll: false });
   const [fees, setFees] = useState<FeeDto[]>([]);
   const [waves, setWaves] = useState<WaveDto[]>([]);
   const [questions, setQuestions] = useState<FormQuestionDto[]>([]);
@@ -115,10 +148,17 @@ export default function SpmbSettingsPage() {
 
   return (
     <Shell>
+      {section ? (
+        <Link href="/spmb/pengaturan" className="text-sm font-semibold text-primary-700 hover:text-primary-800">
+          ← Pengaturan SPMB
+        </Link>
+      ) : null}
+      <div className={section ? 'mt-2' : ''}>
       <PageTitle
-        title="Pengaturan SPMB"
-        subtitle="Kelola biaya, gelombang, diskon prestasi, dan pertanyaan formulir"
+        title={section ? SECTION_TITLES[section] : 'Pengaturan SPMB'}
+        subtitle={section ? '' : 'Kelola biaya, gelombang, diskon prestasi, dan pertanyaan formulir'}
       />
+      </div>
       {error ? (
         <p role="alert" className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</p>
       ) : null}
@@ -126,9 +166,30 @@ export default function SpmbSettingsPage() {
         <p role="status" className="mb-4 rounded-xl bg-primary-50 px-4 py-3 text-sm font-medium text-primary-800">{notice}</p>
       ) : null}
 
+      {!section ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {SECTIONS.map((s) => (
+            <button
+              key={s.key}
+              type="button"
+              onClick={() => setSection(s.key)}
+              className="group flex items-center justify-between gap-3 rounded-2xl border border-sand-200 bg-white px-5 py-4 text-left shadow-card transition hover:border-primary-300 hover:shadow-lift"
+            >
+              <span>
+                <span className="block text-sm font-bold text-sand-900 group-hover:text-primary-800">{s.title}</span>
+                <span className="mt-0.5 block text-xs text-sand-500">{s.desc}</span>
+              </span>
+              <span className="text-lg text-sand-300 transition group-hover:translate-x-0.5 group-hover:text-primary-600">→</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {section ? (
       <div className="grid gap-5 lg:grid-cols-2">
         {/* ---------- TEMPLATE SURAT PERNYATAAN ---------- */}
-        <Widget title="Template Surat Pernyataan">
+        {section === 'template' ? (
+        <Widget title="Template Surat Pernyataan" className="lg:col-span-2">
           <p className="mb-4 text-sm leading-relaxed text-sand-600">
             Unggah template surat pernyataan (PDF/JPG/PNG, maks 5 MB). Orang tua
             dapat mengunduhnya dari halaman pendaftaran, mengisi &
@@ -150,13 +211,15 @@ export default function SpmbSettingsPage() {
               );
             }}
           />
-          <Button variant="outline" disabled={busy} onClick={() => templateRef.current?.click()}>
+          <Button variant="outline" disabled={busy} onClick={async () => templateRef.current?.click()}>
             Unggah Template Baru
           </Button>
         </Widget>
+        ) : null}
 
         {/* ---------- BIAYA ---------- */}
-        <Widget title="Biaya Pendidikan">
+        {section === 'biaya' ? (
+        <Widget title="Biaya Pendidikan" className="lg:col-span-2">
           <ul className="space-y-3">
             {fees.map((f) => (
               <li key={f.key} className="rounded-xl border border-sand-200 bg-sand-50 px-4 py-3">
@@ -181,9 +244,11 @@ export default function SpmbSettingsPage() {
             ))}
           </ul>
         </Widget>
+        ) : null}
 
         {/* ---------- DISKON ---------- */}
-        <Widget title="Diskon DSP Jalur Prestasi">
+        {section === 'diskon' ? (
+        <Widget title="Diskon DSP Jalur Prestasi" className="lg:col-span-2">
           <ul className="space-y-3">
             {SUBTYPES.map((st) => {
               const rule = discounts.find((d) => d.subType === st);
@@ -238,12 +303,14 @@ export default function SpmbSettingsPage() {
             })}
           </ul>
         </Widget>
+        ) : null}
 
         {/* ---------- GELOMBANG ---------- */}
+        {section === 'gelombang' ? (
         <Widget
           title="Gelombang Pendaftaran"
           action={
-            <Button size="sm" onClick={() => setShowWaveForm(true)}>
+            <Button size="sm" onClick={async () => setShowWaveForm(true)}>
               + Tambah
             </Button>
           }
@@ -264,7 +331,7 @@ export default function SpmbSettingsPage() {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => {
+                    onClick={async () => {
                       setFeeWave(w);
                       setWaveFees([]);
                       void listWaveFees(w.id)
@@ -278,7 +345,7 @@ export default function SpmbSettingsPage() {
                     size="sm"
                     variant="ghost"
                     disabled={busy}
-                    onClick={() =>
+                    onClick={async () =>
                       run(
                         () =>
                           saveWave(
@@ -300,8 +367,8 @@ export default function SpmbSettingsPage() {
                     size="sm"
                     variant="danger"
                     disabled={busy}
-                    onClick={() => {
-                      if (window.confirm(`Hapus ${w.name}?`)) {
+                    onClick={async () => {
+                      if (await confirm(`Hapus ${w.name}?`)) {
                         void run(() => deleteWave(w.id), 'Gelombang dihapus.');
                       }
                     }}
@@ -316,12 +383,15 @@ export default function SpmbSettingsPage() {
             ) : null}
           </ul>
         </Widget>
+        ) : null}
 
         {/* ---------- PERTANYAAN ---------- */}
+        {section === 'pertanyaan' ? (
         <Widget
           title="Pertanyaan Formulir"
+          className="lg:col-span-2"
           action={
-            <Button size="sm" onClick={() => setShowQuestionForm(true)}>
+            <Button size="sm" onClick={async () => setShowQuestionForm(true)}>
               + Tambah
             </Button>
           }
@@ -345,8 +415,8 @@ export default function SpmbSettingsPage() {
                   size="sm"
                   variant="danger"
                   disabled={busy}
-                  onClick={() => {
-                    if (window.confirm(`Hapus pertanyaan "${q.label}"?`)) {
+                  onClick={async () => {
+                    if (await confirm(`Hapus pertanyaan "${q.label}"?`)) {
                       void run(() => deleteQuestion(q.id), 'Pertanyaan dihapus.');
                     }
                   }}
@@ -360,7 +430,9 @@ export default function SpmbSettingsPage() {
             ) : null}
           </ul>
         </Widget>
+        ) : null}
       </div>
+      ) : null}
 
       <Modal
         open={showWaveForm}
@@ -540,6 +612,7 @@ export default function SpmbSettingsPage() {
           </div>
         )}
       </Modal>
-    </Shell>
+          {dialog}
+      </Shell>
   );
 }

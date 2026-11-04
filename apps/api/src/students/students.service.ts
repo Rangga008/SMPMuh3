@@ -1,10 +1,17 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
+  NotFoundException,
 } from '@nestjs/common';
+import { randomBytes, randomUUID } from 'node:crypto';
+import { extname } from 'node:path';
+import argon2 from 'argon2';
 import type { Prisma, StudentStatus } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../core/prisma/prisma.service';
+import { StorageService } from '../core/storage/storage.service';
+import { WhatsappService } from '../spmb/whatsapp.service';
 import type {
   AchievementDto,
   CreateStudentDto,
@@ -33,6 +40,8 @@ export class StudentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly storage: StorageService,
+    private readonly whatsapp: WhatsappService,
   ) {}
 
   list(q: {
@@ -69,8 +78,22 @@ export class StudentsService {
           include: { class: true, academicYear: true },
           orderBy: { createdAt: 'desc' },
         },
-        achievements: { orderBy: { createdAt: 'desc' } },
-        violations: { orderBy: { date: 'desc' } },
+        achievements: {
+          orderBy: { createdAt: 'desc' },
+          include: {
+            evidenceDocument: {
+              select: { id: true, fileName: true, mimeType: true },
+            },
+          },
+        },
+        violations: {
+          orderBy: { date: 'desc' },
+          include: {
+            evidenceDocument: {
+              select: { id: true, fileName: true, mimeType: true },
+            },
+          },
+        },
         documents: { orderBy: { createdAt: 'desc' } },
         parent: { select: { id: true, name: true, email: true, phone: true } },
       },
@@ -126,10 +149,24 @@ export class StudentsService {
   }
 
   async update(id: string, dto: UpdateStudentDto, actorId: string) {
-    await this.prisma.student.findUniqueOrThrow({ where: { id } });
+    const existing = await this.prisma.student.findUniqueOrThrow({
+      where: { id },
+      select: { parentId: true },
+    });
+    const data: Prisma.StudentUpdateInput = this.toUpdateData(dto);
+    // Data ortu/wali — siswa non-SPMB (kelas lanjutan/mutasi) belum punya
+    // akun ortu, jadi dibuat bila nama/HP diisi; yang sudah ada diperbarui.
+    if (dto.parentName !== undefined || dto.parentPhone !== undefined) {
+      const parent = await this.parentData(existing.parentId, dto);
+      if (parent) data.parent = parent;
+    } else if (dto.parentId !== undefined) {
+      data.parent = dto.parentId
+        ? { connect: { id: dto.parentId } }
+        : { disconnect: true };
+    }
     const updated = await this.prisma.student.update({
       where: { id },
-      data: { ...this.toData(dto), ...(dto.status ? { status: dto.status } : {}) },
+      data,
       select: studentSelect,
     });
     await this.audit.log({
@@ -167,6 +204,7 @@ export class StudentsService {
         level: dto.level ?? null,
         year: dto.year ?? null,
         description: dto.description ?? null,
+        evidenceDocumentId: dto.evidenceDocumentId ?? null,
       },
     });
   }
@@ -179,8 +217,71 @@ export class StudentsService {
         description: dto.description ?? null,
         points: dto.points ?? 0,
         date: new Date(dto.date),
+        evidenceDocumentId: dto.evidenceDocumentId ?? null,
       },
     });
+  }
+
+  // ---- dokumen siswa (bukti prestasi/pelanggaran, berkas umum) ----
+  private static readonly DOC_MIME = new Map([
+    ['image/jpeg', ['.jpg', '.jpeg']],
+    ['image/png', ['.png']],
+    ['image/webp', ['.webp']],
+    ['application/pdf', ['.pdf']],
+  ]);
+  private static readonly DOC_MAX = 5 * 1024 * 1024;
+
+  async uploadDocument(
+    studentId: string,
+    type: string,
+    file: { buffer: Buffer; originalname: string; mimetype: string; size: number },
+    actorId: string,
+  ) {
+    await this.prisma.student.findUniqueOrThrow({ where: { id: studentId } });
+    const allowed = StudentsService.DOC_MIME.get(file.mimetype);
+    if (!allowed) throw new BadRequestException('Hanya JPG, PNG, WebP, atau PDF');
+    if (file.size > StudentsService.DOC_MAX) {
+      throw new BadRequestException('Ukuran file melebihi 5 MB');
+    }
+    if (!allowed.includes(extname(file.originalname).toLowerCase())) {
+      throw new BadRequestException('Ekstensi file tidak sesuai tipenya');
+    }
+    const docId = randomUUID();
+    const safeName = file.originalname.replace(/[^\w.\- ]/g, '_').slice(-80);
+    const storageKey = `students/${studentId}/${docId}-${safeName}`;
+    await this.storage.putObject(storageKey, file.buffer, file.mimetype);
+    const doc = await this.prisma.document.create({
+      data: {
+        id: docId,
+        ownerId: actorId,
+        uploadedBy: actorId,
+        studentId,
+        type: type || 'lainnya',
+        storageKey,
+        fileName: safeName,
+        mimeType: file.mimetype,
+        sizeBytes: file.size,
+      },
+      select: {
+        id: true, type: true, fileName: true, mimeType: true, sizeBytes: true, createdAt: true,
+      },
+    });
+    await this.audit.log({
+      actorId,
+      action: 'student.document.upload',
+      entity: 'document',
+      entityId: doc.id,
+      metadata: { studentId, type },
+    });
+    return doc;
+  }
+
+  /** Stream dokumen milik siswa — staf ber-STUDENT_READ. */
+  async openDocument(docId: string) {
+    const doc = await this.prisma.document.findUnique({ where: { id: docId } });
+    if (!doc || !doc.studentId) throw new NotFoundException('Dokumen tidak ditemukan');
+    const buffer = await this.storage.getObjectBuffer(doc.storageKey);
+    return { doc, buffer };
   }
 
   // ---- attendance ----
@@ -217,6 +318,294 @@ export class StudentsService {
       include: { student: { select: { id: true, name: true, nis: true } } },
       orderBy: { student: { name: 'asc' } },
     });
+  }
+
+  /**
+   * Bentuk input relasi `parent` untuk update siswa:
+   * - sudah tertaut → perbarui nama/HP akun ortu
+   * - HP cocok akun lain → tautkan (ortu punya >1 anak)
+   * - belum ada → buat akun ortu minimal (password acak — direset via WA)
+   */
+  private async parentData(parentId: string | null, dto: UpdateStudentDto) {
+    const name = dto.parentName?.trim() || undefined;
+    const phone = dto.parentPhone?.trim() || undefined;
+    if (!name && !phone) return undefined;
+
+    if (parentId) {
+      if (phone) {
+        const clash = await this.prisma.user.findFirst({
+          where: { phone, id: { not: parentId } },
+          select: { id: true },
+        });
+        if (clash) {
+          throw new ConflictException(
+            'Nomor HP sudah dipakai akun lain — tautkan ortu lewat HP itu atau kosongkan.',
+          );
+        }
+      }
+      return {
+        update: {
+          ...(name !== undefined ? { name } : {}),
+          ...(phone !== undefined ? { phone } : {}),
+        },
+      };
+    }
+
+    if (phone) {
+      const found = await this.prisma.user.findUnique({ where: { phone } });
+      if (found) {
+        return name !== undefined
+          ? { connect: { id: found.id }, update: { name } }
+          : { connect: { id: found.id } };
+      }
+    }
+    const parentRole = await this.prisma.role.findUnique({
+      where: { key: 'spmb_parent' },
+      select: { id: true },
+    });
+    return {
+      create: {
+        name: name ?? 'Orang Tua',
+        ...(phone !== undefined ? { phone } : {}),
+        passwordHash: await argon2.hash(randomBytes(24).toString('hex')),
+        ...(parentRole ? { roles: { create: { roleId: parentRole.id } } } : {}),
+      },
+    };
+  }
+
+  // ---------- Orang tua / wali ----------
+
+  /** Daftar ortu yang punya anak terdaftar — untuk halaman Kesiswaan → Orang Tua. */
+  async listParents(search?: string) {
+    const parents = await this.prisma.user.findMany({
+      where: {
+        status: { not: 'DISABLED' },
+        students: { some: { deletedAt: null } },
+        ...(search
+          ? {
+              OR: [
+                { name: { contains: search, mode: 'insensitive' as const } },
+                { phone: { contains: search } },
+                { email: { contains: search, mode: 'insensitive' as const } },
+                {
+                  students: {
+                    some: {
+                      deletedAt: null,
+                      name: { contains: search, mode: 'insensitive' as const },
+                    },
+                  },
+                },
+              ],
+            }
+          : {}),
+      },
+      select: {
+        id: true,
+        name: true,
+        phone: true,
+        email: true,
+        students: {
+          where: { deletedAt: null },
+          select: { id: true, name: true, nis: true },
+        },
+      },
+      orderBy: { name: 'asc' },
+      take: 300,
+    });
+    const ids = parents.flatMap((p) => p.students.map((s) => s.id));
+    const openTotals = await this.openInvoiceTotals(ids);
+    return parents.map((p) => ({
+      ...p,
+      studentCount: p.students.length,
+      openInvoiceTotal: p.students.reduce(
+        (sum, s) => sum + (openTotals.get(s.id) ?? 0),
+        0,
+      ),
+    }));
+  }
+
+  /**
+   * Detail ortu — data diri, anak-anak, tagihan terbuka semua anak,
+   * dan kode formulir titipan (sekali pakai) milik ortu.
+   */
+  async parentDetail(id: string) {
+    const parent = await this.prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        name: true,
+        phone: true,
+        email: true,
+        createdAt: true,
+        students: {
+          where: { deletedAt: null },
+          select: {
+            ...studentSelect,
+            enrollments: {
+              select: {
+                academicYear: { select: { name: true, isActive: true } },
+                class: { select: { name: true, gradeLevel: true } },
+              },
+            },
+            candidate: {
+              select: {
+                registrations: {
+                  select: { number: true, status: true },
+                  orderBy: { createdAt: 'desc' },
+                  take: 1,
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!parent || parent.students.length === 0) {
+      throw new NotFoundException('Orang tua tidak ditemukan');
+    }
+    const studentIds = parent.students.map((s) => s.id);
+    const [invoices, titipan] = await Promise.all([
+      this.prisma.invoice.findMany({
+        where: {
+          studentId: { in: studentIds },
+          status: { in: ['OPEN', 'PARTIAL'] },
+        },
+        select: {
+          id: true,
+          number: true,
+          title: true,
+          kind: true,
+          amount: true,
+          status: true,
+          dueAt: true,
+          studentId: true,
+          student: { select: { name: true } },
+        },
+        orderBy: { dueAt: 'asc' },
+      }),
+      this.prisma.titipanEntry.findMany({
+        where: { parentId: id },
+        select: {
+          id: true,
+          formCode: true,
+          status: true,
+          candidateName: true,
+          codeSentAt: true,
+          codeUsedAt: true,
+          academicYear: { select: { name: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+    const paidMap = await this.invoicePaidTotals(invoices.map((i) => i.id));
+    return {
+      parent: {
+        id: parent.id,
+        name: parent.name,
+        phone: parent.phone,
+        email: parent.email,
+        createdAt: parent.createdAt,
+      },
+      students: parent.students,
+      invoices: invoices.map((i) => {
+        const paid = paidMap.get(i.id) ?? 0;
+        return { ...i, paidAmount: paid, remaining: Math.max(0, i.amount - paid) };
+      }),
+      titipan,
+    };
+  }
+
+  /** Kirim pengingat tagihan gabungan semua anak ke WA ortu (antrean gateway). */
+  async remindParent(id: string, actorId: string) {
+    const detail = await this.parentDetail(id);
+    const phone = detail.parent.phone;
+    if (!phone) {
+      throw new BadRequestException('Nomor WhatsApp orang tua belum tercatat');
+    }
+    const open = detail.invoices.filter((i) => i.remaining > 0);
+    if (open.length === 0) {
+      throw new BadRequestException('Tidak ada tagihan terbuka untuk orang tua ini');
+    }
+    const school = await this.prisma.school.findFirst({
+      select: { name: true },
+    });
+    const lines = open.map(
+      (i) =>
+        `• ${i.student?.name ?? 'Siswa'}: ${i.title} — sisa Rp${i.remaining.toLocaleString('id-ID')}` +
+        (i.dueAt
+          ? ` (tempo ${new Date(i.dueAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })})`
+          : ''),
+    );
+    const total = open.reduce((s, i) => s + i.remaining, 0);
+    const message =
+      `Assalamu'alaikum Bpk/Ibu ${detail.parent.name}.\n\n` +
+      `Pengingat tagihan sekolah di ${school?.name ?? 'sekolah'}:\n\n` +
+      lines.join('\n') +
+      `\n\nTotal sisa: *Rp${total.toLocaleString('id-ID')}*\n\n` +
+      `Silakan hubungi Tata Usaha bila ada pertanyaan. Terima kasih.`;
+    const wa = await this.whatsapp.enqueue({
+      type: 'billing_reminder',
+      phone,
+      message,
+      refType: 'user',
+      refId: id,
+      actorId,
+    });
+    await this.audit.log({
+      actorId,
+      action: 'student.parent_remind',
+      entity: 'user',
+      entityId: id,
+      metadata: { invoices: open.length, total },
+    });
+    return { ...wa, message };
+  }
+
+  /** Total terbayar (SETTLED) per invoice — helper internal ortu. */
+  private async invoicePaidTotals(ids: string[]) {
+    const map = new Map<string, number>();
+    if (ids.length === 0) return map;
+    const rows = await this.prisma.paymentAllocation.groupBy({
+      by: ['invoiceId'],
+      where: { invoiceId: { in: ids }, payment: { status: 'SETTLED' } },
+      _sum: { amount: true },
+    });
+    for (const r of rows) map.set(r.invoiceId, r._sum.amount ?? 0);
+    return map;
+  }
+
+  /** Sisa tagihan terbuka per siswa — untuk ringkasan daftar ortu. */
+  private async openInvoiceTotals(studentIds: string[]) {
+    const map = new Map<string, number>();
+    if (studentIds.length === 0) return map;
+    const invoices = await this.prisma.invoice.findMany({
+      where: { studentId: { in: studentIds }, status: { in: ['OPEN', 'PARTIAL'] } },
+      select: { id: true, studentId: true, amount: true },
+    });
+    const paid = await this.invoicePaidTotals(invoices.map((i) => i.id));
+    for (const inv of invoices) {
+      const remaining = Math.max(0, inv.amount - (paid.get(inv.id) ?? 0));
+      if (remaining > 0 && inv.studentId) {
+        map.set(inv.studentId, (map.get(inv.studentId) ?? 0) + remaining);
+      }
+    }
+    return map;
+  }
+
+  /** PATCH parsial — hanya field yang dikirim yang diubah; sisanya utuh. */
+  private toUpdateData(dto: UpdateStudentDto): Prisma.StudentUpdateInput {
+    const data: Prisma.StudentUpdateInput = {};
+    if (dto.name !== undefined) data.name = dto.name.trim();
+    if (dto.nis !== undefined) data.nis = dto.nis || null;
+    if (dto.nisn !== undefined) data.nisn = dto.nisn || null;
+    if (dto.gender !== undefined) data.gender = dto.gender;
+    if (dto.birthPlace !== undefined) data.birthPlace = dto.birthPlace || null;
+    if (dto.birthDate !== undefined) {
+      data.birthDate = dto.birthDate ? new Date(dto.birthDate) : null;
+    }
+    if (dto.address !== undefined) data.address = dto.address || null;
+    if (dto.status !== undefined) data.status = dto.status;
+    return data;
   }
 
   private toData(dto: CreateStudentDto) {

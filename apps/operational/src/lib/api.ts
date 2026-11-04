@@ -8,7 +8,7 @@ import type {
   RegistrationStatus,
 } from '@smpmuh3/types';
 
-const API =
+export const API =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
 const TOKEN_KEY = 'ops.tokens';
 
@@ -247,7 +247,16 @@ async function downloadFile(path: string, filename: string) {
       ? { Authorization: `Bearer ${tokens.accessToken}` }
       : {},
   });
-  if (!res.ok) throw new ApiError('Gagal mengunduh file', res.status);
+  if (!res.ok) {
+    let msg = 'Gagal mengunduh file';
+    try {
+      const j = await res.json();
+      msg = j?.error?.message ?? j?.message ?? msg;
+    } catch {
+      /* body bukan JSON */
+    }
+    throw new ApiError(msg, res.status);
+  }
   const url = URL.createObjectURL(await res.blob());
   const a = document.createElement('a');
   a.href = url;
@@ -454,8 +463,14 @@ export interface StudentDetail extends StudentDto {
     class: { name: string; gradeLevel: number };
     academicYear: { name: string };
   }[];
-  achievements: { id: string; title: string; level?: string | null; year?: number | null; description?: string | null }[];
-  violations: { id: string; type: string; description?: string | null; points: number; date: string }[];
+  achievements: {
+    id: string; title: string; level?: string | null; year?: number | null; description?: string | null;
+    evidenceDocument?: { id: string; fileName: string; mimeType: string } | null;
+  }[];
+  violations: {
+    id: string; type: string; description?: string | null; points: number; date: string;
+    evidenceDocument?: { id: string; fileName: string; mimeType: string } | null;
+  }[];
   parent?: { id: string; name: string; email: string; phone?: string | null } | null;
   /** Nomor registrasi SPMB asal — ada bila siswa hasil konversi pendaftar baru. */
   spmbNumber?: string | null;
@@ -490,6 +505,27 @@ export const addAchievement = (id: string, dto: Record<string, unknown>) =>
   req(`/students/${id}/achievements`, { method: 'POST', json: dto });
 export const addViolation = (id: string, dto: Record<string, unknown>) =>
   req(`/students/${id}/violations`, { method: 'POST', json: dto });
+export interface StudentDoc {
+  id: string; type: string; fileName: string; mimeType: string; sizeBytes: number; createdAt: string;
+}
+export const uploadStudentDocument = (id: string, file: File, type = 'lainnya') => {
+  const fd = new FormData();
+  fd.set('file', file);
+  return req<StudentDoc>(`/students/${id}/documents?type=${encodeURIComponent(type)}`, {
+    method: 'POST',
+    body: fd,
+  });
+};
+/** Buka dokumen siswa di tab baru — fetch ber-auth → blob → object URL. */
+export async function openStudentDocument(docId: string) {
+  const tokens = getTokens();
+  const res = await fetch(`${API}/students/documents/${docId}`, {
+    headers: tokens?.accessToken ? { Authorization: `Bearer ${tokens.accessToken}` } : {},
+  });
+  if (!res.ok) throw new ApiError(`Gagal membuka dokumen (${res.status})`, res.status);
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+}
 
 // ---- kepegawaian ----
 export interface EmployeeDto {
@@ -807,7 +843,7 @@ export interface FundUsageRow {
   byCategory: { name: string; amount: number }[];
   byStandard: { name: string; amount: number }[];
 }
-export const getFundUsage = (q: { academicYearId?: string; from?: string; to?: string }) =>
+export const getFundUsage = (q: { academicYearId?: string; cashAccountId?: string; from?: string; to?: string }) =>
   req<FundUsageRow[]>(`/admin/finance/expenses/fund-usage${qs(q)}`);
 export const updateFinanceCategory = (
   id: string,
@@ -857,6 +893,32 @@ export interface PaymentReceipt {
     number: string;
     student?: { name: string; nis?: string | null; parent?: { name: string; phone?: string | null } | null } | null;
   };
+  cashAccount?: { name: string } | null;
+  receipts?: { id: string; number: string; createdAt: string }[];
+  cashierName?: string | null;
+  school?: {
+    name: string;
+    address?: string | null;
+    phone?: string | null;
+    whatsapp?: string | null;
+    headmaster?: string | null;
+    headmasterNip?: string | null;
+    headmasterSignatureUrl?: string | null;
+    logoUrl?: string | null;
+  } | null;
+  allocations: {
+    id: string;
+    amount: number;
+    invoice: { number: string; title: string };
+    item?: { label: string } | null;
+  }[];
+}
+export interface StudentPaymentRow {
+  id: string;
+  amount: number;
+  method?: string | null;
+  paidAt?: string | null;
+  receipts?: { number: string }[];
   cashAccount?: { name: string } | null;
   allocations: {
     id: string;
@@ -916,6 +978,7 @@ export interface StudentBillsView {
     enrollments?: { class?: { name: string; gradeLevel: number } | null; academicYear?: { name: string } | null }[];
   };
   bills: StudentInvoice[];
+  payments: StudentPaymentRow[];
   savings: number;
 }
 export const getStudentBills = (studentId: string) =>
@@ -980,6 +1043,9 @@ export interface School {
   phone: string | null;
   whatsapp: string | null;
   email: string | null;
+  headmaster?: string | null;
+  headmasterNip?: string | null;
+  headmasterSignatureUrl?: string | null;
   logoUrl: string | null;
   updatedAt: string;
 }
@@ -1000,19 +1066,29 @@ export const getSchool = () => req<School>('/school');
 export const updateSchool = (dto: Record<string, unknown>) =>
   req<School>('/school', { method: 'PATCH', json: dto });
 
-export async function uploadSchoolLogo(file: File): Promise<School> {
+async function uploadSchoolImage(path: string, file: File): Promise<School> {
   const t = getTokens();
   const fd = new FormData();
   fd.append('file', file);
-  const res = await fetch(`${API}/school/logo`, {
+  const res = await fetch(`${API}${path}`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${t?.accessToken ?? ''}` },
     body: fd,
   });
-  if (!res.ok) throw new Error('Upload logo gagal');
+  if (!res.ok) {
+    let msg = 'Upload gambar gagal';
+    try {
+      const j = await res.json();
+      msg = j?.error?.message ?? j?.message ?? msg;
+    } catch { /* body bukan JSON */ }
+    throw new ApiError(msg, res.status);
+  }
   const data = (await res.json()) as { data?: School } | School;
   return ('data' in data && data.data ? data.data : data) as School;
 }
+export const uploadSchoolLogo = (file: File) => uploadSchoolImage('/school/logo', file);
+export const uploadSchoolSignature = (file: File) =>
+  uploadSchoolImage('/school/signature', file);
 
 // ---------- Akademik lanjutan (fase 6) ----------
 export const updateClass = (id: string, dto: Record<string, unknown>) =>
@@ -1076,6 +1152,64 @@ export const setTitipanStatus = (
   id: string,
   status: Exclude<TitipanStatus, 'REGISTERED'>,
 ) => req<TitipanAdmin>(`/admin/titipan/${id}`, { method: 'PATCH', json: { status } });
+
+// ---------- Orang tua / wali (Kesiswaan) ----------
+export interface ParentListItem {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  studentCount: number;
+  openInvoiceTotal: number;
+  students: { id: string; name: string; nis: string | null }[];
+}
+export interface ParentDetail {
+  parent: {
+    id: string;
+    name: string;
+    phone: string | null;
+    email: string | null;
+    createdAt: string;
+  };
+  students: ({
+    enrollments: {
+      academicYear: { name: string; isActive: boolean };
+      class: { name: string; gradeLevel: number };
+    }[];
+    candidate?: { registrations: { number: string; status: string }[] } | null;
+  } & StudentDetail)[];
+  invoices: {
+    id: string;
+    number: string;
+    title: string;
+    kind: string;
+    amount: number;
+    status: string;
+    dueAt: string | null;
+    studentId: string;
+    student: { name: string };
+    paidAmount: number;
+    remaining: number;
+  }[];
+  titipan: {
+    id: string;
+    formCode: string | null;
+    status: string;
+    candidateName: string;
+    codeSentAt: string | null;
+    codeUsedAt: string | null;
+    academicYear: { name: string };
+  }[];
+}
+export const listStudentParents = (search?: string) =>
+  req<ParentListItem[]>(`/students/parents${search ? `?search=${encodeURIComponent(search)}` : ''}`);
+export const getStudentParent = (id: string) =>
+  req<ParentDetail>(`/students/parents/${id}`);
+export const remindStudentParent = (id: string) =>
+  req<{ queued: boolean; sent: boolean; waUrl: string; messageId?: string; message: string }>(
+    `/students/parents/${id}/remind`,
+    { method: 'POST' },
+  );
 
 // ---------- WhatsApp gateway & antrean ----------
 import type {

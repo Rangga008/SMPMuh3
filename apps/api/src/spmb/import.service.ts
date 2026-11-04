@@ -241,6 +241,8 @@ export class SpmbImportService {
       archive.on('error', reject);
     });
 
+    let added = 0;
+    const missing: string[] = [];
     for (const reg of regs) {
       const folder = `${reg.number} - ${reg.candidate.name}`.replace(
         /[\\/:*?"<>|]/g,
@@ -254,10 +256,22 @@ export class SpmbImportService {
           archive.append(buf, {
             name: `${folder}/${doc.type}_${idx}_${doc.fileName}`,
           });
+          added += 1;
         } catch {
-          // Lewati berkas yang gagal diambil dari storage.
+          missing.push(`${folder}/${doc.type} — ${doc.fileName}`);
         }
       }
+    }
+    if (added === 0) {
+      throw new BadRequestException(
+        'Berkas tidak ditemukan di penyimpanan — semua dokumen gagal diambil.',
+      );
+    }
+    if (missing.length > 0) {
+      archive.append(
+        `Berkas yang gagal diambil dari storage (${missing.length}):\n\n${missing.join('\n')}\n`,
+        { name: '_GAGAL-DIUNDUH.txt' },
+      );
     }
     await archive.finalize();
     return done;

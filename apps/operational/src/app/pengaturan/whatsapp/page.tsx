@@ -22,6 +22,7 @@ import {
   updateWaSettings,
 } from '@/lib/api';
 
+import { RowBtn, rowActionClasses } from '@/components/row-btn';
 const TONE: Record<WaMessageStatus, 'primary' | 'accent' | 'neutral' | 'danger'> = {
   QUEUED: 'neutral',
   SENDING: 'accent',
@@ -168,7 +169,7 @@ export default function WhatsappSettingsPage() {
                       ? `Tersimpan: ${cfg.tokenPreview} — isi untuk mengganti`
                       : 'Token API provider (mis. Fonnte)'
                   }
-                >
+>
                   <Input
                     name="gatewayToken"
                     type="password"
@@ -215,7 +216,7 @@ export default function WhatsappSettingsPage() {
                 className={`rounded-xl px-2 py-2.5 text-left transition ${
                   status === s ? 'ring-2 ring-primary-400' : ''
                 } bg-sand-50 hover:bg-sand-100`}
-              >
+>
                 <p className="text-xs text-sand-500">
                   {WA_MESSAGE_STATUS_LABELS[s]}
                 </p>
@@ -246,7 +247,7 @@ export default function WhatsappSettingsPage() {
               <Select
                 value={status}
                 onChange={(e) => setStatus(e.target.value as WaMessageStatus | '')}
-              >
+>
                 <option value="">Semua status</option>
                 {WA_MESSAGE_STATUSES.map((s) => (
                   <option key={s} value={s}>
@@ -266,7 +267,7 @@ export default function WhatsappSettingsPage() {
                 ? 'Belum ada pesan pada filter ini.'
                 : undefined
             }
-          >
+>
             {(data?.messages ?? []).map((m: WaMessage) => (
               <tr key={m.id}>
                 <td className="whitespace-nowrap px-4 py-3 text-xs text-sand-600">
@@ -307,31 +308,19 @@ export default function WhatsappSettingsPage() {
                       href={m.waUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-xs font-semibold text-primary-700 hover:underline"
+                      className={rowActionClasses('neutral')}
                     >
                       wa.me
                     </a>
                     {m.status === 'FAILED' || m.status === 'CANCELLED' ? (
-                      <button
-                        type="button"
-                        className="text-xs font-semibold text-accent-700 hover:underline"
-                        onClick={() =>
-                          void act(() => retryWaMessage(m.id), 'Pesan diantrekan ulang.')
-                        }
-                      >
+                      <RowBtn type="button" onClick={() => void act(() => retryWaMessage(m.id), 'Pesan diantrekan ulang.') }>
                         Kirim Ulang
-                      </button>
+                      </RowBtn>
                     ) : null}
                     {m.status === 'QUEUED' ? (
-                      <button
-                        type="button"
-                        className="text-xs font-semibold text-red-600 hover:underline"
-                        onClick={() =>
-                          void act(() => cancelWaMessage(m.id), 'Pesan dibatalkan.')
-                        }
-                      >
+                      <RowBtn tone="danger" type="button" onClick={() => void act(() => cancelWaMessage(m.id), 'Pesan dibatalkan.') }>
                         Batalkan
-                      </button>
+                      </RowBtn>
                     ) : null}
                   </div>
                 </td>

@@ -18,6 +18,7 @@ import {
 } from '@/lib/api';
 import { PERMISSIONS } from '@smpmuh3/types';
 
+import { RowBtn } from '@/components/row-btn';
 const rupiah = (n: number) => `Rp${n.toLocaleString('id-ID')}`;
 
 export default function AnggaranPage() {
@@ -125,13 +126,13 @@ export default function AnggaranPage() {
             ))}
           </Select>
         }
-      >
+>
         <DataTable
           head={['Kategori', 'Jenis', 'Rencana', 'Realisasi', 'Selisih', '%', '']}
           loading={false}
           error={null}
           empty={budgets.length === 0 ? 'Belum ada anggaran pada TA ini.' : undefined}
-        >
+>
           {budgets.map((b) => {
             const pct = b.amount > 0 ? Math.round((b.realized / b.amount) * 100) : b.realized > 0 ? 100 : 0;
             const diff = b.amount - b.realized;
@@ -164,9 +165,9 @@ export default function AnggaranPage() {
                 </td>
                 <td className="px-5 py-3 text-right">
                   {canManage ? (
-                    <button type="button" className="text-xs font-semibold text-primary-700 hover:underline" onClick={() => setBudgetModal(b)}>
+                    <RowBtn type="button" onClick={() => setBudgetModal(b)}>
                       Ubah
-                    </button>
+                    </RowBtn>
                   ) : null}
                 </td>
               </tr>

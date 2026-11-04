@@ -15,6 +15,8 @@ import {
   type ExamRecord,
 } from '@/lib/api';
 
+import { RowBtn } from '@/components/row-btn';
+import { useConfirm } from '@/components/confirm-dialog';
 const RESULT: Record<ExamRecord['result'], { label: string; tone: 'primary' | 'accent' | 'danger' }> = {
   PENDING: { label: 'Belum Dinilai', tone: 'accent' },
   PASSED: { label: 'Lulus', tone: 'primary' },
@@ -22,6 +24,7 @@ const RESULT: Record<ExamRecord['result'], { label: string; tone: 'primary' | 'a
 };
 
 export default function UsPage() {
+  const { confirm, dialog } = useConfirm();
   const [period, setPeriod] = useState<'US1' | 'US2'>('US1');
   const [years, setYears] = useState<AcademicYear[]>([]);
   const [yearId, setYearId] = useState('');
@@ -106,7 +109,7 @@ export default function UsPage() {
         title="Ujian Sekolah (US 1 & 2)"
         subtitle="Rekap hasil Ujian Sekolah per periode dan tahun ajaran"
         actions={
-          <Button size="sm" onClick={() => setModal('new')} disabled={!yearId}>
+          <Button size="sm" onClick={async () => setModal('new')} disabled={!yearId}>
             + Tambah Catatan
           </Button>
         }
@@ -124,11 +127,11 @@ export default function UsPage() {
             <button
               key={p}
               type="button"
-              onClick={() => setPeriod(p)}
+              onClick={async () => setPeriod(p)}
               className={`rounded-lg px-4 py-1.5 text-sm font-semibold transition-colors ${
                 period === p ? 'bg-primary-700 text-white' : 'text-sand-600 hover:bg-sand-100'
               }`}
-            >
+>
               {p === 'US1' ? 'US 1' : 'US 2'}
             </button>
           ))}
@@ -161,7 +164,7 @@ export default function UsPage() {
         loading={loading}
         error={error}
         empty={rows.length === 0 ? 'Belum ada catatan ujian.' : undefined}
-      >
+>
         {rows.map((r) => (
           <tr key={r.id}>
             <td className="px-5 py-3 font-semibold text-sand-900">{r.studentName}</td>
@@ -173,24 +176,12 @@ export default function UsPage() {
             <td className="px-5 py-3 text-xs text-sand-500">{r.notes ?? '—'}</td>
             <td className="px-5 py-3 text-right">
               <span className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  className="text-xs font-semibold text-primary-700 hover:underline"
-                  onClick={() => setModal(r)}
-                >
+                <RowBtn type="button" onClick={async () => setModal(r)}>
                   Ubah
-                </button>
-                <button
-                  type="button"
-                  className="text-xs font-semibold text-red-600 hover:underline"
-                  onClick={() => {
-                    if (confirm(`Hapus catatan ${r.studentName}?`)) {
-                      void run(() => deleteExamRecord(r.id), 'Catatan dihapus.');
-                    }
-                  }}
-                >
+                </RowBtn>
+                <RowBtn tone="danger" type="button" onClick={async () => { if (await confirm(`Hapus catatan ${r.studentName}?`)) { void run(() => deleteExamRecord(r.id), 'Catatan dihapus.'); } }}>
                   Hapus
-                </button>
+                </RowBtn>
               </span>
             </td>
           </tr>
@@ -201,7 +192,7 @@ export default function UsPage() {
         open={modal !== null}
         onClose={() => setModal(null)}
         title={modal === 'new' ? `Catatan ${period === 'US1' ? 'US 1' : 'US 2'}` : 'Ubah Catatan'}
-      >
+>
         <form className="grid gap-4 sm:grid-cols-2" onSubmit={onSubmit}>
           <Field label="Nama Siswa" className="sm:col-span-2">
             <Input name="studentName" required minLength={3} defaultValue={modal !== 'new' ? modal?.studentName : ''} />
@@ -223,11 +214,12 @@ export default function UsPage() {
             <Input name="notes" defaultValue={modal !== 'new' ? modal?.notes ?? '' : ''} />
           </Field>
           <div className="flex justify-end gap-2 sm:col-span-2">
-            <Button type="button" variant="ghost" onClick={() => setModal(null)}>Batal</Button>
+            <Button type="button" variant="ghost" onClick={async () => setModal(null)}>Batal</Button>
             <Button type="submit" disabled={busy}>{busy ? 'Menyimpan…' : 'Simpan'}</Button>
           </div>
         </form>
       </Modal>
-    </Shell>
+          {dialog}
+      </Shell>
   );
 }

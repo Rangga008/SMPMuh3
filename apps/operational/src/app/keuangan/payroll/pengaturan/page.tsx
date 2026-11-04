@@ -49,6 +49,8 @@ import {
   type PensionSummaryRow,
 } from '@/lib/api';
 
+import { RowBtn } from '@/components/row-btn';
+import { useConfirm } from '@/components/confirm-dialog';
 const rupiah = (n: number) => `Rp${n.toLocaleString('id-ID')}`;
 const PERIOD_LABEL: Record<string, string> = {
   MONTHLY: 'Per bulan',
@@ -65,6 +67,7 @@ const TABS = ['Pegawai', 'Golongan', 'Honor', 'Potongan', 'Pinjaman', 'Pensiun &
 type Tab = (typeof TABS)[number];
 
 export default function PayrollPengaturanPage() {
+  const { confirm, dialog } = useConfirm();
   const [tab, setTab] = useState<Tab>('Pegawai');
   const [canManage, setCanManage] = useState(false);
   const [employees, setEmployees] = useState<EmployeePayroll[]>([]);
@@ -151,11 +154,11 @@ export default function PayrollPengaturanPage() {
           <button
             key={t}
             type="button"
-            onClick={() => setTab(t)}
+            onClick={async () => setTab(t)}
             className={`rounded-full px-4 py-1.5 text-sm font-semibold transition ${
               tab === t ? 'bg-primary-600 text-white' : 'bg-sand-100 text-sand-600 hover:bg-sand-200'
             }`}
-          >
+>
             {t}
           </button>
         ))}
@@ -168,7 +171,7 @@ export default function PayrollPengaturanPage() {
             loading={false}
             error={null}
             empty={employees.length === 0 ? 'Belum ada pegawai.' : undefined}
-          >
+>
             {employees.map((e) => (
               <tr key={e.id}>
                 <td className="px-5 py-3">
@@ -187,7 +190,7 @@ export default function PayrollPengaturanPage() {
                 <td className="px-5 py-3">{e.isCertified ? <Badge tone="primary">Sertifikasi</Badge> : <span className="text-sand-400">—</span>}</td>
                 {canManage ? (
                   <td className="whitespace-nowrap px-5 py-3 text-right">
-                    <button type="button" className="text-xs font-semibold text-primary-700 hover:underline" onClick={() => setEmpModal(e)}>Atur</button>
+                    <RowBtn type="button" onClick={async () => setEmpModal(e)}>Atur</RowBtn>
                   </td>
                 ) : null}
               </tr>
@@ -199,8 +202,8 @@ export default function PayrollPengaturanPage() {
       {tab === 'Golongan' ? (
         <Widget
           title="Golongan Masa Kerja"
-          action={canManage ? <Button size="sm" onClick={() => setScaleModal({} as PayScaleView)}>+ Golongan</Button> : undefined}
-        >
+          action={canManage ? <Button size="sm" onClick={async () => setScaleModal({} as PayScaleView)}>+ Golongan</Button> : undefined}
+>
           <DataTable head={['Nama', 'Masa kerja', 'Tarif/jam', 'Transport/jam', 'Pegawai', 'Status', ...(canManage ? [''] : [])]} loading={false} error={null} empty={scales.length === 0 ? 'Belum ada golongan.' : undefined}>
             {scales.map((s) => (
               <tr key={s.id}>
@@ -213,8 +216,8 @@ export default function PayrollPengaturanPage() {
                 {canManage ? (
                   <td className="whitespace-nowrap px-5 py-3 text-right">
                     <span className="flex justify-end gap-2">
-                      <button type="button" className="text-xs font-semibold text-primary-700 hover:underline" onClick={() => setScaleModal(s)}>Edit</button>
-                      <button type="button" className="text-xs font-semibold text-red-600 hover:underline" onClick={() => { if (window.confirm('Hapus golongan?')) void run(() => deletePayScale(s.id), 'Golongan dihapus.'); }}>Hapus</button>
+                      <RowBtn type="button" onClick={async () => setScaleModal(s)}>Edit</RowBtn>
+                      <RowBtn tone="danger" type="button" onClick={async () => { if (await confirm('Hapus golongan?')) void run(() => deletePayScale(s.id), 'Golongan dihapus.'); }}>Hapus</RowBtn>
                     </span>
                   </td>
                 ) : null}
@@ -228,8 +231,8 @@ export default function PayrollPengaturanPage() {
         <div className="grid gap-5">
           <Widget
             title="Tipe Honor"
-            action={canManage ? <Button size="sm" onClick={() => setHonorTypeModal(true)}>+ Tipe</Button> : undefined}
-          >
+            action={canManage ? <Button size="sm" onClick={async () => setHonorTypeModal(true)}>+ Tipe</Button> : undefined}
+>
             <DataTable head={['Nama', 'Periode', 'Default', 'Dipakai', ...(canManage ? [''] : [])]} loading={false} error={null} empty={honorTypes.length === 0 ? '—' : undefined}>
               {honorTypes.map((t) => (
                 <tr key={t.id}>
@@ -239,7 +242,7 @@ export default function PayrollPengaturanPage() {
                   <td className="px-5 py-3 text-sand-600">{t._count?.honors ?? 0}</td>
                   {canManage ? (
                     <td className="px-5 py-3 text-right">
-                      <button type="button" className="text-xs font-semibold text-red-600 hover:underline" onClick={() => { if (window.confirm('Hapus tipe?')) void run(() => deleteHonorType(t.id), 'Tipe dihapus.'); }}>Hapus</button>
+                      <RowBtn tone="danger" type="button" onClick={async () => { if (await confirm('Hapus tipe?')) void run(() => deleteHonorType(t.id), 'Tipe dihapus.'); }}>Hapus</RowBtn>
                     </td>
                   ) : null}
                 </tr>
@@ -248,8 +251,8 @@ export default function PayrollPengaturanPage() {
           </Widget>
           <Widget
             title="Honor Pegawai"
-            action={canManage ? <Button size="sm" onClick={() => setHonorModal(true)}>+ Honor Pegawai</Button> : undefined}
-          >
+            action={canManage ? <Button size="sm" onClick={async () => setHonorModal(true)}>+ Honor Pegawai</Button> : undefined}
+>
             <DataTable head={['Pegawai', 'Tipe', 'Nominal', 'Berlaku', 'Status', ...(canManage ? [''] : [])]} loading={false} error={null} empty={honors.length === 0 ? 'Belum ada honor.' : undefined}>
               {honors.map((h) => (
                 <tr key={h.id}>
@@ -267,8 +270,8 @@ export default function PayrollPengaturanPage() {
                   {canManage ? (
                     <td className="px-5 py-3 text-right">
                       <span className="flex justify-end gap-2">
-                        <button type="button" className="text-xs font-semibold text-sand-600 hover:underline" onClick={() => void run(() => updateEmployeeHonor(h.id, { isActive: !h.isActive }), 'Diperbarui.')}>{h.isActive ? 'Nonaktifkan' : 'Aktifkan'}</button>
-                        <button type="button" className="text-xs font-semibold text-red-600 hover:underline" onClick={() => { if (window.confirm('Hapus honor?')) void run(() => deleteEmployeeHonor(h.id), 'Honor dihapus.'); }}>Hapus</button>
+                        <RowBtn tone="neutral" type="button" onClick={async () => void run(() => updateEmployeeHonor(h.id, { isActive: !h.isActive }), 'Diperbarui.')}>{h.isActive ? 'Nonaktifkan' : 'Aktifkan'}</RowBtn>
+                        <RowBtn tone="danger" type="button" onClick={async () => { if (await confirm('Hapus honor?')) void run(() => deleteEmployeeHonor(h.id), 'Honor dihapus.'); }}>Hapus</RowBtn>
                       </span>
                     </td>
                   ) : null}
@@ -283,8 +286,8 @@ export default function PayrollPengaturanPage() {
         <div className="grid gap-5">
           <Widget
             title="Tipe Potongan"
-            action={canManage ? <Button size="sm" onClick={() => setDedTypeModal(true)}>+ Tipe</Button> : undefined}
-          >
+            action={canManage ? <Button size="sm" onClick={async () => setDedTypeModal(true)}>+ Tipe</Button> : undefined}
+>
             <DataTable head={['Nama', 'Default', 'Berulang']} loading={false} error={null} empty={dedTypes.length === 0 ? '—' : undefined}>
               {dedTypes.map((t) => (
                 <tr key={t.id}>
@@ -297,8 +300,8 @@ export default function PayrollPengaturanPage() {
           </Widget>
           <Widget
             title="Potongan Pegawai"
-            action={canManage ? <Button size="sm" onClick={() => setDedModal(true)}>+ Potongan Pegawai</Button> : undefined}
-          >
+            action={canManage ? <Button size="sm" onClick={async () => setDedModal(true)}>+ Potongan Pegawai</Button> : undefined}
+>
             <DataTable head={['Pegawai', 'Tipe', 'Nominal', 'Bulan', 'Status', ...(canManage ? [''] : [])]} loading={false} error={null} empty={deductions.length === 0 ? 'Belum ada potongan.' : undefined}>
               {deductions.map((d) => (
                 <tr key={d.id}>
@@ -310,8 +313,8 @@ export default function PayrollPengaturanPage() {
                   {canManage ? (
                     <td className="px-5 py-3 text-right">
                       <span className="flex justify-end gap-2">
-                        <button type="button" className="text-xs font-semibold text-sand-600 hover:underline" onClick={() => void run(() => updateEmployeeDeduction(d.id, { isActive: !d.isActive }), 'Diperbarui.')}>{d.isActive ? 'Nonaktifkan' : 'Aktifkan'}</button>
-                        <button type="button" className="text-xs font-semibold text-red-600 hover:underline" onClick={() => { if (window.confirm('Hapus potongan?')) void run(() => deleteEmployeeDeduction(d.id), 'Potongan dihapus.'); }}>Hapus</button>
+                        <RowBtn tone="neutral" type="button" onClick={async () => void run(() => updateEmployeeDeduction(d.id, { isActive: !d.isActive }), 'Diperbarui.')}>{d.isActive ? 'Nonaktifkan' : 'Aktifkan'}</RowBtn>
+                        <RowBtn tone="danger" type="button" onClick={async () => { if (await confirm('Hapus potongan?')) void run(() => deleteEmployeeDeduction(d.id), 'Potongan dihapus.'); }}>Hapus</RowBtn>
                       </span>
                     </td>
                   ) : null}
@@ -325,8 +328,8 @@ export default function PayrollPengaturanPage() {
       {tab === 'Pinjaman' ? (
         <Widget
           title="Pinjaman & Koperasi"
-          action={canManage ? <Button size="sm" onClick={() => setLoanModal(true)}>+ Pinjaman</Button> : undefined}
-        >
+          action={canManage ? <Button size="sm" onClick={async () => setLoanModal(true)}>+ Pinjaman</Button> : undefined}
+>
           <DataTable head={['Pegawai', 'Sumber', 'Pokok', 'Jasa', 'Angsuran/bln', 'Sisa', 'Status', ...(canManage ? [''] : [])]} loading={false} error={null} empty={loans.length === 0 ? 'Belum ada pinjaman.' : undefined}>
             {loans.map((l) => (
               <tr key={l.id}>
@@ -344,7 +347,7 @@ export default function PayrollPengaturanPage() {
                 {canManage ? (
                   <td className="px-5 py-3 text-right">
                     {l.status === 'ACTIVE' ? (
-                      <button type="button" className="text-xs font-semibold text-primary-700 hover:underline" onClick={() => setLoanEdit(l)}>Ubah</button>
+                      <RowBtn type="button" onClick={async () => setLoanEdit(l)}>Ubah</RowBtn>
                     ) : null}
                   </td>
                 ) : null}
@@ -363,13 +366,9 @@ export default function PayrollPengaturanPage() {
                   <td className="px-5 py-3 font-medium text-sand-900">{p.employee.name}</td>
                   <td className="whitespace-nowrap px-5 py-3 font-semibold text-sand-900">{rupiah(p.total)}</td>
                   <td className="px-5 py-3 text-right">
-                    <button
-                      type="button"
-                      className="text-xs font-semibold text-primary-700 hover:underline"
-                      onClick={() => getPensionLedger(p.employee.id).then((l) => setLedger({ name: l.employee.name, entries: l.entries.map((e) => ({ month: e.month, amount: e.amount, note: e.note ?? null })), total: l.total })).catch(() => undefined)}
-                    >
+                    <RowBtn type="button" onClick={async () => getPensionLedger(p.employee.id).then((l) => setLedger({ name: l.employee.name, entries: l.entries.map((e) => ({ month: e.month, amount: e.amount, note: e.note ?? null })), total: l.total })).catch(() => undefined)}>
                       Buku
-                    </button>
+                    </RowBtn>
                   </td>
                 </tr>
               ))}
@@ -377,8 +376,8 @@ export default function PayrollPengaturanPage() {
           </Widget>
           <Widget
             title="Honor BOS dari Dinas"
-            action={canManage ? <Button size="sm" onClick={() => setBosModal(true)}>+ Catat Honor BOS</Button> : undefined}
-          >
+            action={canManage ? <Button size="sm" onClick={async () => setBosModal(true)}>+ Catat Honor BOS</Button> : undefined}
+>
             <p className="mb-3 text-xs text-sand-500">
               Sertifikasi = pencatatan saja (uang diterima langsung dari dinas, tidak lewat kas sekolah).
               Non-sertifikasi = dibayar sekolah — otomatis masuk slip gaji bulan itu.
@@ -392,7 +391,7 @@ export default function PayrollPengaturanPage() {
                   <td className="px-5 py-3">{b.certified ? <Badge tone="neutral">Sertifikasi — catatan</Badge> : <Badge tone="accent">Non-sertifikasi — dibayar</Badge>}</td>
                   {canManage ? (
                     <td className="px-5 py-3 text-right">
-                      <button type="button" className="text-xs font-semibold text-red-600 hover:underline" onClick={() => { if (window.confirm('Hapus catatan?')) void run(() => deleteBosHonor(b.id), 'Catatan dihapus.'); }}>Hapus</button>
+                      <RowBtn tone="danger" type="button" onClick={async () => { if (await confirm('Hapus catatan?')) void run(() => deleteBosHonor(b.id), 'Catatan dihapus.'); }}>Hapus</RowBtn>
                     </td>
                   ) : null}
                 </tr>
@@ -425,7 +424,7 @@ export default function PayrollPengaturanPage() {
                 'Pengaturan disimpan.',
               ).then((ok) => { if (ok) setEmpModal(null); });
             }}
-          >
+>
             <Field label="Golongan Masa Kerja" hint="Kosongkan untuk auto dari tanggal mulai kerja">
               <Select name="payScaleId" defaultValue={empModal.payScaleId ?? ''}>
                 <option value="">— Auto dari masa kerja —</option>
@@ -453,7 +452,7 @@ export default function PayrollPengaturanPage() {
               Guru sertifikasi (honor BOS dicatat saja, tidak dibayar sekolah)
             </label>
             <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="ghost" onClick={() => setEmpModal(null)}>Batal</Button>
+              <Button type="button" variant="ghost" onClick={async () => setEmpModal(null)}>Batal</Button>
               <Button type="submit" disabled={busy}>Simpan</Button>
             </div>
           </form>
@@ -481,7 +480,7 @@ export default function PayrollPengaturanPage() {
                 'Golongan disimpan.',
               ).then((ok) => { if (ok) setScaleModal(false); });
             }}
-          >
+>
             <Field label="Nama"><Input name="name" required defaultValue={(scaleModal as PayScaleView).name ?? ''} placeholder="0–4 tahun" /></Field>
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Min. tahun"><Input name="minYears" type="number" min={0} required defaultValue={(scaleModal as PayScaleView).minYears ?? 0} /></Field>
@@ -492,7 +491,7 @@ export default function PayrollPengaturanPage() {
               <Field label="Tarif transport/jam"><Input name="transportRate" type="number" min={0} required defaultValue={(scaleModal as PayScaleView).transportRate ?? ''} /></Field>
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="ghost" onClick={() => setScaleModal(false)}>Batal</Button>
+              <Button type="button" variant="ghost" onClick={async () => setScaleModal(false)}>Batal</Button>
               <Button type="submit" disabled={busy}>Simpan</Button>
             </div>
           </form>
@@ -516,7 +515,7 @@ export default function PayrollPengaturanPage() {
               'Tipe honor ditambahkan.',
             ).then((ok) => { if (ok) setHonorTypeModal(false); });
           }}
-        >
+>
           <Field label="Nama"><Input name="name" required placeholder="Tunjangan Wali Kelas" /></Field>
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Periode">
@@ -529,7 +528,7 @@ export default function PayrollPengaturanPage() {
             <Field label="Nominal default"><Input name="defaultAmount" type="number" min={0} defaultValue={0} /></Field>
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="ghost" onClick={() => setHonorTypeModal(false)}>Batal</Button>
+            <Button type="button" variant="ghost" onClick={async () => setHonorTypeModal(false)}>Batal</Button>
             <Button type="submit" disabled={busy}>Simpan</Button>
           </div>
         </form>
@@ -558,7 +557,7 @@ export default function PayrollPengaturanPage() {
               'Honor ditambahkan.',
             ).then((ok) => { if (ok) setHonorModal(false); });
           }}
-        >
+>
           <Field label="Pegawai"><SearchSelect name="employeeId" required load={loadEmp} label={empLabel} sub={empSub} placeholder="Ketik nama pegawai…" /></Field>
           <Field label="Tipe Honor">
             <Select name="honorTypeId" required>
@@ -581,7 +580,7 @@ export default function PayrollPengaturanPage() {
             <Field label="Berlaku sampai"><Input name="validTo" placeholder="kosong = terus" /></Field>
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="ghost" onClick={() => setHonorModal(false)}>Batal</Button>
+            <Button type="button" variant="ghost" onClick={async () => setHonorModal(false)}>Batal</Button>
             <Button type="submit" disabled={busy}>Simpan</Button>
           </div>
         </form>
@@ -604,7 +603,7 @@ export default function PayrollPengaturanPage() {
               'Tipe potongan ditambahkan.',
             ).then((ok) => { if (ok) setDedTypeModal(false); });
           }}
-        >
+>
           <Field label="Nama"><Input name="name" required placeholder="Infak Jumat" /></Field>
           <Field label="Nominal default"><Input name="defaultAmount" type="number" min={0} defaultValue={0} /></Field>
           <label className="flex items-center gap-2 text-sm">
@@ -612,7 +611,7 @@ export default function PayrollPengaturanPage() {
             Berulang tiap bulan
           </label>
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="ghost" onClick={() => setDedTypeModal(false)}>Batal</Button>
+            <Button type="button" variant="ghost" onClick={async () => setDedTypeModal(false)}>Batal</Button>
             <Button type="submit" disabled={busy}>Simpan</Button>
           </div>
         </form>
@@ -637,7 +636,7 @@ export default function PayrollPengaturanPage() {
               'Potongan ditambahkan.',
             ).then((ok) => { if (ok) setDedModal(false); });
           }}
-        >
+>
           <Field label="Pegawai"><SearchSelect name="employeeId" required load={loadEmp} label={empLabel} sub={empSub} placeholder="Ketik nama pegawai…" /></Field>
           <Field label="Tipe Potongan">
             <Select name="deductionTypeId" required>
@@ -652,7 +651,7 @@ export default function PayrollPengaturanPage() {
             <Field label="Bulan (kosong = tiap bulan)"><Input name="month" type="month" /></Field>
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="ghost" onClick={() => setDedModal(false)}>Batal</Button>
+            <Button type="button" variant="ghost" onClick={async () => setDedModal(false)}>Batal</Button>
             <Button type="submit" disabled={busy}>Simpan</Button>
           </div>
         </form>
@@ -680,7 +679,7 @@ export default function PayrollPengaturanPage() {
               'Pinjaman dicatat.',
             ).then((ok) => { if (ok) setLoanModal(false); });
           }}
-        >
+>
           <Field label="Pegawai"><SearchSelect name="employeeId" required load={loadEmp} label={empLabel} sub={empSub} placeholder="Ketik nama pegawai…" /></Field>
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Sumber">
@@ -707,7 +706,7 @@ export default function PayrollPengaturanPage() {
           <Field label="Mulai dipotong"><Input name="startMonth" type="month" required defaultValue={new Date().toISOString().slice(0, 7)} /></Field>
           <Field label="Catatan"><Input name="note" placeholder="opsional" /></Field>
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="ghost" onClick={() => setLoanModal(false)}>Batal</Button>
+            <Button type="button" variant="ghost" onClick={async () => setLoanModal(false)}>Batal</Button>
             <Button type="submit" disabled={busy}>Simpan</Button>
           </div>
         </form>
@@ -732,7 +731,7 @@ export default function PayrollPengaturanPage() {
                 'Pinjaman diperbarui.',
               ).then((ok) => { if (ok) setLoanEdit(null); });
             }}
-          >
+>
             <p className="text-sm text-sand-600">
               {LOAN_LABEL[loanEdit.source]} · pokok {rupiah(loanEdit.principal)}
               {loanEdit.fee > 0 ? ` + jasa ${rupiah(loanEdit.fee)}` : ''}
@@ -750,7 +749,7 @@ export default function PayrollPengaturanPage() {
             </Field>
             <Field label="Catatan"><Input name="note" defaultValue={loanEdit.note ?? ''} /></Field>
             <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="ghost" onClick={() => setLoanEdit(null)}>Batal</Button>
+              <Button type="button" variant="ghost" onClick={async () => setLoanEdit(null)}>Batal</Button>
               <Button type="submit" disabled={busy}>Simpan</Button>
             </div>
           </form>
@@ -776,7 +775,7 @@ export default function PayrollPengaturanPage() {
               'Honor BOS dicatat.',
             ).then((ok) => { if (ok) setBosModal(false); });
           }}
-        >
+>
           <Field label="Pegawai"><SearchSelect name="employeeId" required load={loadEmp} label={empLabel} sub={empSub} placeholder="Ketik nama pegawai…" /></Field>
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Bulan"><Input name="month" type="month" required defaultValue={new Date().toISOString().slice(0, 7)} /></Field>
@@ -788,7 +787,7 @@ export default function PayrollPengaturanPage() {
           </label>
           <Field label="Catatan"><Input name="note" placeholder="opsional" /></Field>
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="ghost" onClick={() => setBosModal(false)}>Batal</Button>
+            <Button type="button" variant="ghost" onClick={async () => setBosModal(false)}>Batal</Button>
             <Button type="submit" disabled={busy}>Simpan</Button>
           </div>
         </form>
@@ -811,6 +810,7 @@ export default function PayrollPengaturanPage() {
           </div>
         ) : null}
       </Modal>
-    </Shell>
+          {dialog}
+      </Shell>
   );
 }

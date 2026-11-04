@@ -19,8 +19,25 @@ export const textareaClasses = cn(
     'motion-reduce:transition-none',
 );
 
-export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
-  return <input className={cn(inputClasses, className)} {...props} />;
+/** File picker — tombol ::file-selector-button distyle agar sejajar input lain. */
+export const fileInputClasses =
+  'w-full cursor-pointer rounded-xl border border-sand-300 bg-white text-sm ' +
+  'text-sand-600 shadow-xs transition-colors ' +
+  'file:mr-4 file:cursor-pointer file:border-0 file:bg-primary-50 file:px-4 ' +
+  'file:py-2.5 file:text-sm file:font-semibold file:text-primary-800 ' +
+  'file:transition-colors hover:file:bg-primary-100 ' +
+  'focus:border-primary-600 focus-visible:focus-ring ' +
+  'disabled:cursor-not-allowed disabled:bg-sand-100 disabled:text-sand-500 ' +
+  'motion-reduce:transition-none';
+
+export function Input({ className, type, ...props }: InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <input
+      type={type}
+      className={cn(type === 'file' ? fileInputClasses : inputClasses, className)}
+      {...props}
+    />
+  );
 }
 
 export function Select({ className, children, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {

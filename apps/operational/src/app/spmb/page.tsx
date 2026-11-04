@@ -11,6 +11,7 @@ import {
 } from '@smpmuh3/types';
 import { Badge, Button, Input, Select } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
+import { useConfirm } from '@/components/confirm-dialog';
 import { DataTable } from '@/components/data-table';
 import { PageTitle } from '@/components/widgets';
 import {
@@ -65,6 +66,7 @@ function SpmbList() {
   const [bulkStatus, setBulkStatus] = useState<RegistrationStatus>('ACCEPTED');
   const [bulkNote, setBulkNote] = useState('');
   const [busy, setBusy] = useState(false);
+  const { confirm, dialog } = useConfirm();
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(
@@ -308,12 +310,25 @@ function SpmbList() {
           <Button
             size="sm"
             disabled={busy}
-            onClick={() =>
-              void runBulk(
-                () => bulkTransition([...selected], bulkStatus, bulkNote || undefined),
-                `Transisi ke ${REGISTRATION_STATUS_LABELS[bulkStatus]}`,
+            onClick={async () => {
+              if (
+                await confirm({
+                  title: `Ubah status ${selected.size} pendaftar menjadi "${REGISTRATION_STATUS_LABELS[bulkStatus]}"?`,
+                  body:
+                    bulkStatus === 'ACCEPTED'
+                      ? 'Pendaftar dinyatakan diterima — tagihan pelunasan diterbitkan untuk masing-masing.'
+                      : bulkStatus === 'REJECTED'
+                        ? 'Pendaftar akan ditolak secara massal. Keputusan ini dicatat dan sulit dibatalkan.'
+                        : undefined,
+                  confirmLabel: 'Ya, terapkan',
+                  danger: bulkStatus === 'REJECTED',
+                })
               )
-            }
+                void runBulk(
+                  () => bulkTransition([...selected], bulkStatus, bulkNote || undefined),
+                  `Transisi ke ${REGISTRATION_STATUS_LABELS[bulkStatus]}`,
+                );
+            }}
           >
             Terapkan Status
           </Button>
@@ -321,9 +336,17 @@ function SpmbList() {
             size="sm"
             variant="outline"
             disabled={busy}
-            onClick={() =>
-              void runBulk(() => bulkPromote([...selected]), 'Jadikan Murid')
-            }
+            onClick={async () => {
+              if (
+                await confirm({
+                  title: `Jadikan ${selected.size} pendaftar sebagai murid?`,
+                  body: 'Data siswa baru akan dibuat di Kesiswaan untuk tiap pendaftar diterima. Aksi ini tidak bisa dibatalkan otomatis.',
+                  confirmLabel: 'Ya, jadikan murid',
+                  danger: false,
+                })
+              )
+                void runBulk(() => bulkPromote([...selected]), 'Jadikan Murid');
+            }}
           >
             Jadikan Murid
           </Button>
@@ -424,6 +447,7 @@ function SpmbList() {
           </tr>
         ))}
       </DataTable>
+      {dialog}
     </Shell>
   );
 }

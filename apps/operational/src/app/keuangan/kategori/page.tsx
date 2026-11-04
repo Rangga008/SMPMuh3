@@ -15,6 +15,7 @@ import {
 } from '@/lib/api';
 import { PERMISSIONS } from '@smpmuh3/types';
 
+import { RowBtn } from '@/components/row-btn';
 const STD: Record<string, string> = {
   ISI: 'Standar Isi', PROSES: 'Standar Proses', KELULUSAN: 'Standar Kelulusan',
   TENAGA: 'Standar Tenaga', SARANA: 'Standar Sarana', PENGELOLAAN: 'Standar Pengelolaan',
@@ -103,7 +104,7 @@ export default function KategoriPage() {
             <option value="EXPENSE">Pengeluaran</option>
           </Select>
         }
-      >
+>
         <DataTable head={['Nama', 'Jenis', 'Standar', 'Status', '']} loading={false} error={null}
           empty={rows.length === 0 ? 'Belum ada kategori.' : undefined}>
           {rows.map((c) => (
@@ -122,18 +123,9 @@ export default function KategoriPage() {
               </td>
               <td className="px-5 py-3 text-right">
                 {canManage ? (
-                  <button
-                    type="button"
-                    className="text-xs font-semibold text-primary-700 hover:underline"
-                    onClick={() =>
-                      void run(
-                        () => updateFinanceCategory(c.id, { isActive: c.isActive === false }),
-                        c.isActive === false ? 'Kategori diaktifkan.' : 'Kategori dinonaktifkan.',
-                      )
-                    }
-                  >
+                  <RowBtn type="button" onClick={() => void run( () => updateFinanceCategory(c.id, { isActive: c.isActive === false }), c.isActive === false ? 'Kategori diaktifkan.' : 'Kategori dinonaktifkan.', ) }>
                     {c.isActive === false ? 'Aktifkan' : 'Nonaktifkan'}
-                  </button>
+                  </RowBtn>
                 ) : null}
               </td>
             </tr>

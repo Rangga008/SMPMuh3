@@ -7,6 +7,7 @@ import { Shell } from '@/components/shell';
 import { PageTitle, StatCard, Widget } from '@/components/widgets';
 import { Donut, TrendChart } from '@/components/finance-charts';
 import { printEl } from '@/components/payroll-slip';
+import { rowActionClasses } from '@/components/row-btn';
 import {
   getFinanceSummary,
   getSchool,
@@ -115,14 +116,24 @@ export default function KeuanganPage() {
             <div ref={chartRef}>
               {/* Kepala cetak — kelas 'hidden' tak berlaku di jendela print */}
               <div className="hidden">
-                <div className="ctr b2" style={{ paddingBottom: 8 }}>
-                  <div className="b" style={{ fontSize: 16 }}>{school?.name ?? 'Sekolah'}</div>
-                  <div className="xs">{school?.address ?? ''}</div>
+                <div className="b2" style={{ display: 'flex', alignItems: 'center', gap: 12, paddingBottom: 8 }}>
+                  {school?.logoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src="/logo.png" alt="" style={{ width: 48, height: 48, objectFit: 'contain' }} />
+                  ) : null}
+                  <div className="ctr" style={{ flex: 1 }}>
+                    <div className="b" style={{ fontSize: 16 }}>{school?.name ?? 'Sekolah'}</div>
+                    <div className="xs">
+                      {school?.address ?? ''}
+                      {school?.phone ? ` · Telp ${school.phone}` : ''}
+                    </div>
                   <div className="up mt2">Grafik Keuangan</div>
                   <div className="xs">
                     Pemasukan {rupiah(summary.income)} · Pengeluaran {rupiah(summary.expense)} · Saldo {rupiah(summary.balance)}
                     {' '}· Digenerate {new Date().toLocaleString('id-ID')}
                   </div>
+                  </div>
+                  {school?.logoUrl ? <span style={{ width: 48 }} /> : null}
                 </div>
               </div>
 
@@ -165,7 +176,7 @@ export default function KeuanganPage() {
 
           <div className="grid items-start gap-5 lg:grid-cols-3">
             <Widget title="Saldo per Kas" className="lg:col-span-1"
-              action={<Link href="/keuangan/kas" className="text-xs font-semibold text-primary-700 hover:underline">Kelola →</Link>}>
+              action={<Link href="/keuangan/kas" className={rowActionClasses()}>Kelola →</Link>}>
               <ul className="space-y-2.5">
                 {accounts.map((a) => (
                   <li key={a.id} className="flex items-center justify-between gap-2 text-sm">
@@ -182,7 +193,7 @@ export default function KeuanganPage() {
             </Widget>
 
             <Widget title="Transaksi Terbaru" className="lg:col-span-2"
-              action={<Link href="/keuangan/harian" className="text-xs font-semibold text-primary-700 hover:underline">Semua →</Link>}>
+              action={<Link href="/keuangan/harian" className={rowActionClasses()}>Semua →</Link>}>
               {recent.length === 0 ? (
                 <p className="py-4 text-sm text-sand-500">Belum ada transaksi pada periode ini.</p>
               ) : (

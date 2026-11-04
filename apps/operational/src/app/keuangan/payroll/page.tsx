@@ -14,6 +14,7 @@ import {
   type PayrollRunView,
 } from '@/lib/api';
 import { monthLabel, RUN_LABEL, RUN_TONE, rupiah } from '@/components/payroll-slip';
+import { rowActionClasses } from '@/components/row-btn';
 
 export default function PayrollPage() {
   const [canManage, setCanManage] = useState(false);
@@ -74,7 +75,7 @@ export default function PayrollPage() {
                 <Badge tone={RUN_TONE[r.status] ?? 'neutral'}>{RUN_LABEL[r.status] ?? r.status}</Badge>
               </td>
               <td className="whitespace-nowrap px-5 py-3 text-right">
-                <Link href={`/keuangan/payroll/${r.id}`} className="text-xs font-semibold text-primary-700 hover:underline">
+                <Link href={`/keuangan/payroll/${r.id}`} className={rowActionClasses()}>
                   Detail
                 </Link>
               </td>

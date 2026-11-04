@@ -27,6 +27,8 @@ import {
   type FundUsageRow,
 } from '@/lib/api';
 
+import { RowBtn } from '@/components/row-btn';
+import { useConfirm } from '@/components/confirm-dialog';
 const rupiah = (n: number) => `Rp${n.toLocaleString('id-ID')}`;
 const fmtDate = (iso?: string | null) =>
   iso ? new Date(iso).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
@@ -87,7 +89,7 @@ function AllocRows({
               emit(rows.map((r, j) => (j === i ? { cashAccountId: e.target.value, amount: r.amount } : r)));
             }}
             required
-          >
+>
             <option value="">— Pilih kas —</option>
             {accounts.map((a) => (
               <option key={a.id} value={a.id}>{a.name}</option>
@@ -110,21 +112,17 @@ function AllocRows({
               type="button"
               className="px-2 pb-2 text-lg font-bold leading-none text-red-500"
               aria-label="Hapus baris"
-              onClick={() => emit(rows.filter((_, j) => j !== i))}
-            >
+              onClick={async () => emit(rows.filter((_, j) => j !== i))}
+>
               ×
             </button>
           ) : null}
         </div>
       ))}
       <div className="flex items-center justify-between">
-        <button
-          type="button"
-          className="text-xs font-semibold text-primary-700 hover:underline"
-          onClick={() => emit([...rows, { cashAccountId: '', amount: '' }])}
-        >
+        <RowBtn type="button" onClick={async () => emit([...rows, { cashAccountId: '', amount: '' }])}>
           + Tambah sumber kas lain
-        </button>
+        </RowBtn>
         <p className="text-sm font-bold text-sand-900">Total: {rupiah(total)}</p>
       </div>
       <p className="text-[11px] text-sand-400">
@@ -136,6 +134,7 @@ function AllocRows({
 }
 
 export default function PengeluaranPage() {
+  const { confirm, dialog } = useConfirm();
   const [canManage, setCanManage] = useState(false);
   const [years, setYears] = useState<AcademicYear[]>([]);
   const [accounts, setAccounts] = useState<CashAccountView[]>([]);
@@ -185,14 +184,19 @@ export default function PengeluaranPage() {
   }, [yearId, categoryId, stdGroup, accountId, from, to, search]);
 
   const loadUsage = useCallback(() => {
+    if (!accountId) {
+      setUsage([]);
+      return;
+    }
     getFundUsage({
       ...(yearId ? { academicYearId: yearId } : {}),
+      cashAccountId: accountId,
       ...(from ? { from } : {}),
       ...(to ? { to } : {}),
     })
       .then(setUsage)
       .catch(() => setUsage([]));
-  }, [yearId, from, to]);
+  }, [yearId, accountId, from, to]);
 
   useEffect(() => {
     Promise.all([listAcademicYears(), listCashAccounts(), listFinanceCategories()])
@@ -265,16 +269,16 @@ export default function PengeluaranPage() {
         actions={
           canManage ? (
             <>
-              <Button variant="outline" size="sm" onClick={() => setCatModal(true)}>
+              <Button variant="outline" size="sm" onClick={async () => setCatModal(true)}>
                 Kelola Kategori
               </Button>
               <Button
                 size="sm"
-                onClick={() => {
+                onClick={async () => {
                   setAllocState([]);
                   setModal('create');
                 }}
-              >
+>
                 + Pengeluaran Baru
               </Button>
             </>
@@ -378,7 +382,7 @@ export default function PengeluaranPage() {
           loading={loading}
           error={null}
           empty={rows.length === 0 ? 'Belum ada pengeluaran.' : undefined}
-        >
+>
           {rows.map((e) => (
             <tr key={e.id}>
               <td className="whitespace-nowrap px-5 py-3 text-xs text-sand-500">{e.number}</td>
@@ -404,44 +408,15 @@ export default function PengeluaranPage() {
               {canManage ? (
                 <td className="whitespace-nowrap px-5 py-3 text-right">
                   <span className="flex justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        getExpense(e.id).then(setDetail).catch(() => undefined);
-                      }}
-                      className="text-xs font-semibold text-primary-700 hover:underline"
-                    >
+                    <RowBtn type="button" onClick={async () => { getExpense(e.id).then(setDetail).catch(() => undefined); }}>
                       Detail
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        getExpense(e.id)
-                          .then((full) => {
-                            setAllocState(
-                              (full.allocations ?? []).map((a) => ({
-                                cashAccountId: a.cashAccountId,
-                                amount: String(a.amount),
-                              })),
-                            );
-                            setModal(full);
-                          })
-                          .catch(() => undefined);
-                      }}
-                      className="text-xs font-semibold text-sand-600 hover:underline"
-                    >
+                    </RowBtn>
+                    <RowBtn tone="neutral" type="button" onClick={async () => { getExpense(e.id) .then((full) => { setAllocState( (full.allocations ?? []).map((a) => ({ cashAccountId: a.cashAccountId, amount: String(a.amount), })), ); setModal(full); }) .catch(() => undefined); }}>
                       Edit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (window.confirm(`Batalkan ${e.number}? Gerakan kas ikut ditarik.`))
-                          void run(() => voidExpense(e.id), 'Pengeluaran dibatalkan.');
-                      }}
-                      className="text-xs font-semibold text-red-600 hover:underline"
-                    >
+                    </RowBtn>
+                    <RowBtn tone="danger" type="button" onClick={async () => { if (await confirm(`Batalkan ${e.number}? Gerakan kas ikut ditarik.`)) void run(() => voidExpense(e.id), 'Pengeluaran dibatalkan.'); }}>
                       Void
-                    </button>
+                    </RowBtn>
                   </span>
                 </td>
               ) : null}
@@ -455,7 +430,7 @@ export default function PengeluaranPage() {
         open={modal !== false}
         onClose={() => setModal(false)}
         title={modal === 'create' ? 'Pengeluaran Baru' : `Edit ${modal ? modal.number : ''}`}
-      >
+>
         {modal !== false ? (
           <form
             onSubmit={(ev) => {
@@ -471,13 +446,13 @@ export default function PengeluaranPage() {
               });
             }}
             className="grid gap-3"
-          >
+>
             <Field label="Kategori" hint="Kelompok standar nasional diatur di Kelola Kategori">
               <Select
                 name="categoryId"
                 required
                 defaultValue={modal === 'create' ? '' : modal.categoryId}
-              >
+>
                 <option value="">— Pilih kategori —</option>
                 {expenseCats
                   .filter((c) => c.isActive !== false)
@@ -537,7 +512,7 @@ export default function PengeluaranPage() {
               <Input name="note" defaultValue={modal === 'create' ? '' : modal.note ?? ''} placeholder="opsional" />
             </Field>
             <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="ghost" onClick={() => setModal(false)}>Batal</Button>
+              <Button type="button" variant="ghost" onClick={async () => setModal(false)}>Batal</Button>
               <Button type="submit" disabled={busy}>Simpan</Button>
             </div>
           </form>
@@ -604,29 +579,16 @@ export default function PengeluaranPage() {
                       'Standar kategori diperbarui.',
                     )
                   }
-                >
+>
                   <option value="">— Tanpa standar —</option>
                   {STANDARDS.map((s) => (
                     <option key={s} value={s}>{STD_FULL[s]}</option>
                   ))}
                 </Select>
                 {canManage ? (
-                  <button
-                    type="button"
-                    className="text-xs font-semibold text-primary-700 hover:underline"
-                    onClick={() =>
-                      void run(
-                        () =>
-                          updateFinanceCategory(c.id, { isActive: c.isActive === false }).then((u) => {
-                            setCategories((cs) => cs.map((x) => (x.id === u.id ? u : x)));
-                            return u;
-                          }),
-                        c.isActive === false ? 'Kategori diaktifkan.' : 'Kategori dinonaktifkan.',
-                      )
-                    }
-                  >
+                  <RowBtn type="button" onClick={async () => void run( () => updateFinanceCategory(c.id, { isActive: c.isActive === false }).then((u) => { setCategories((cs) => cs.map((x) => (x.id === u.id ? u : x))); return u; }), c.isActive === false ? 'Kategori diaktifkan.' : 'Kategori dinonaktifkan.', ) }>
                     {c.isActive === false ? 'Aktifkan' : 'Nonaktifkan'}
-                  </button>
+                  </RowBtn>
                 ) : null}
               </li>
             ))}
@@ -651,7 +613,7 @@ export default function PengeluaranPage() {
                   'Kategori ditambahkan.',
                 );
               }}
-            >
+>
               <p className="text-xs font-bold uppercase tracking-wider text-sand-500">Kategori Baru</p>
               <Input name="newName" required minLength={2} placeholder="Mis. Honor Pengawas Ujian" />
               <Button type="submit" size="sm" disabled={busy}>Tambah</Button>
@@ -659,6 +621,7 @@ export default function PengeluaranPage() {
           ) : null}
         </div>
       </Modal>
-    </Shell>
+          {dialog}
+      </Shell>
   );
 }

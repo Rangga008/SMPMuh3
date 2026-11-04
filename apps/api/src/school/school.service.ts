@@ -12,6 +12,8 @@ export interface UpdateSchoolInput {
   phone?: string | null;
   whatsapp?: string | null;
   email?: string | null;
+  headmaster?: string | null;
+  headmasterNip?: string | null;
 }
 
 @Injectable()
@@ -60,6 +62,10 @@ export class SchoolService {
         ...(input.phone !== undefined ? { phone: input.phone } : {}),
         ...(input.whatsapp !== undefined ? { whatsapp: input.whatsapp } : {}),
         ...(input.email !== undefined ? { email: input.email } : {}),
+        ...(input.headmaster !== undefined ? { headmaster: input.headmaster } : {}),
+        ...(input.headmasterNip !== undefined
+          ? { headmasterNip: input.headmasterNip }
+          : {}),
       },
     });
   }
@@ -78,17 +84,46 @@ export class SchoolService {
   }
 
   async getLogo() {
+    return this.getImage('logo');
+  }
+
+  /** TTD kepala sekolah — dipakai di kop cetakan bila diset. */
+  async uploadSignature(file: Express.Multer.File) {
+    const ext =
+      file.mimetype === 'image/png' ? 'png' : file.mimetype === 'image/jpeg' ? 'jpg' : 'png';
+    const key = `school/signature.${ext}`;
+    await this.storage.putObject(key, file.buffer, file.mimetype);
     const school = await this.get();
-    if (!school.logoUrl) throw new NotFoundException('Logo belum diunggah');
-    const ext = school.logoUrl.split('.').pop() ?? 'png';
+    return this.prisma.school.update({
+      where: { id: school.id },
+      data: { headmasterSignatureUrl: key },
+    });
+  }
+
+  async getSignature() {
+    return this.getImage('signature');
+  }
+
+  /** Stream gambar tersimpan (logo / signature) dengan fallback 404 rapi. */
+  private async getImage(kind: 'logo' | 'signature') {
+    const school = await this.get();
+    const url = kind === 'logo' ? school.logoUrl : school.headmasterSignatureUrl;
+    if (!url) {
+      throw new NotFoundException(
+        kind === 'logo' ? 'Logo belum diunggah' : 'Tanda tangan belum diunggah',
+      );
+    }
+    const ext = url.split('.').pop() ?? 'png';
     const mime = ext === 'jpg' ? 'image/jpeg' : `image/${ext}`;
     // Object storage bisa hilang/reset di lingkungan dev — 404, bukan 500,
-    // supaya proxy /logo.png di frontend jatuh ke fallback dengan rapi.
+    // supaya proxy gambar di frontend jatuh ke fallback dengan rapi.
     try {
-      const buf = await this.storage.getObjectBuffer(school.logoUrl);
+      const buf = await this.storage.getObjectBuffer(url);
       return { buf, mime };
     } catch {
-      throw new NotFoundException('Berkas logo tidak ditemukan di storage');
+      throw new NotFoundException(
+        `Berkas ${kind === 'logo' ? 'logo' : 'tanda tangan'} tidak ditemukan di storage`,
+      );
     }
   }
 }

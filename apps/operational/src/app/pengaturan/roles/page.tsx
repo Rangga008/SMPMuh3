@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Badge, Button, Field, Input, Modal } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { PageTitle } from '@/components/widgets';
+import { useConfirm } from '@/components/confirm-dialog';
 import {
   createRole,
   deleteRole,
@@ -25,6 +26,7 @@ const GROUPS: { label: string; match: string[] }[] = [
 ];
 
 export default function RolesPage() {
+  const { confirm, dialog } = useConfirm();
   const [roles, setRoles] = useState<RoleOption[]>([]);
   const [perms, setPerms] = useState<{ key: string; description?: string | null }[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -104,7 +106,7 @@ export default function RolesPage() {
   }
 
   async function remove(r: RoleOption) {
-    if (!confirm(`Hapus role "${r.name}"?`)) return;
+    if (!(await confirm(`Hapus role "${r.name}"?`))) return;
     setBusy(true);
     try {
       await deleteRole(r.id);
@@ -124,7 +126,7 @@ export default function RolesPage() {
         title="Role & Akses"
         subtitle="Role menentukan bidang pekerjaan yang bisa diakses akun — SPMB, kesiswaan, keuangan, dst."
         actions={
-          <Button size="sm" variant={showNew ? 'ghost' : 'primary'} onClick={() => { setShowNew((v) => !v); setEditing(null); setPicked(new Set()); }}>
+          <Button size="sm" variant={showNew ? 'ghost' : 'primary'} onClick={async () => { setShowNew((v) => !v); setEditing(null); setPicked(new Set()); }}>
             {showNew ? 'Tutup' : '+ Role Baru'}
           </Button>
         }
@@ -155,11 +157,11 @@ export default function RolesPage() {
                   : 'Tanpa izin khusus'}
               </p>
               <div className="mt-3 flex gap-2">
-                <Button size="sm" variant="outline" onClick={() => openEdit(r)}>
+                <Button size="sm" variant="outline" onClick={async () => openEdit(r)}>
                   Atur Akses
                 </Button>
                 {!['superadmin', 'spmb_parent'].includes(r.key) ? (
-                  <Button size="sm" variant="danger" onClick={() => void remove(r)} disabled={busy}>
+                  <Button size="sm" variant="danger" onClick={async () => void remove(r)} disabled={busy}>
                     Hapus
                   </Button>
                 ) : null}
@@ -209,15 +211,16 @@ export default function RolesPage() {
       >
         <PermissionPicker perms={perms} picked={picked} toggle={toggle} />
         <div className="mt-4 flex gap-2">
-          <Button onClick={() => void saveEdit()} disabled={busy}>
+          <Button onClick={async () => void saveEdit()} disabled={busy}>
             {busy ? 'Menyimpan…' : 'Simpan Akses'}
           </Button>
-          <Button variant="ghost" onClick={() => setEditing(null)}>
+          <Button variant="ghost" onClick={async () => setEditing(null)}>
             Batal
           </Button>
         </div>
       </Modal>
-    </Shell>
+          {dialog}
+      </Shell>
   );
 }
 

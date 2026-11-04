@@ -1,17 +1,22 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import type { StudentDto } from '@smpmuh3/types';
 import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
 import { DataTable } from '@/components/data-table';
+import { SearchSelect } from '@/components/search-select';
 import { PageTitle } from '@/components/widgets';
 import {
   createMutation,
   deleteMutation,
   listMutations,
+  listStudents,
   updateMutation,
   type StudentMutation,
 } from '@/lib/api';
 
+import { RowBtn } from '@/components/row-btn';
+import { useConfirm } from '@/components/confirm-dialog';
 const STATUS: Record<StudentMutation['status'], { label: string; tone: 'primary' | 'accent' | 'neutral' }> = {
   PROCESS: { label: 'Diproses', tone: 'accent' },
   DONE: { label: 'Selesai', tone: 'primary' },
@@ -23,6 +28,7 @@ const fmtDate = (iso: string) =>
 
 /** Register mutasi siswa — dipakai halaman Mutasi Masuk & Mutasi Keluar. */
 export function MutasiView({ direction }: { direction: 'IN' | 'OUT' }) {
+  const { confirm, dialog } = useConfirm();
   const isIn = direction === 'IN';
   const title = isIn ? 'Mutasi Masuk' : 'Mutasi Keluar';
   const schoolLabel = isIn ? 'Asal Sekolah' : 'Tujuan Sekolah';
@@ -34,6 +40,8 @@ export function MutasiView({ direction }: { direction: 'IN' | 'OUT' }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [modal, setModal] = useState<StudentMutation | 'new' | null>(null);
+  // Mutasi keluar: pilih siswa dari sistem → nama/NISN terisi otomatis.
+  const [picked, setPicked] = useState<StudentDto | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -73,8 +81,8 @@ export function MutasiView({ direction }: { direction: 'IN' | 'OUT' }) {
     const f = new FormData(e.currentTarget);
     const val = (k: string) => String(f.get(k) ?? '').trim() || undefined;
     const dto = {
-      studentName: val('studentName'),
-      nisn: val('nisn') ?? null,
+      studentName: picked?.name ?? val('studentName'),
+      nisn: val('nisn') ?? picked?.nisn ?? null,
       date: val('date'),
       school: val('school') ?? null,
       letterNumber: val('letterNumber') ?? null,
@@ -86,6 +94,7 @@ export function MutasiView({ direction }: { direction: 'IN' | 'OUT' }) {
     } else if (modal) {
       await run(() => updateMutation(modal.id, dto), 'Mutasi diperbarui.');
     }
+    setPicked(null);
   }
 
   return (
@@ -97,7 +106,7 @@ export function MutasiView({ direction }: { direction: 'IN' | 'OUT' }) {
             ? 'Siswa pindah dari sekolah lain ke sekolah ini'
             : 'Siswa pindah dari sekolah ini ke sekolah lain'
         }
-        actions={<Button size="sm" onClick={() => setModal('new')}>+ Catat Mutasi</Button>}
+        actions={<Button size="sm" onClick={async () => setModal('new')}>+ Catat Mutasi</Button>}
       />
       {error ? (
         <p role="alert" className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</p>
@@ -121,7 +130,7 @@ export function MutasiView({ direction }: { direction: 'IN' | 'OUT' }) {
         loading={loading}
         error={error}
         empty={rows.length === 0 ? 'Belum ada mutasi.' : undefined}
-      >
+>
         {rows.map((m) => (
           <tr key={m.id}>
             <td className="px-5 py-3 font-semibold text-sand-900">{m.studentName}</td>
@@ -134,35 +143,17 @@ export function MutasiView({ direction }: { direction: 'IN' | 'OUT' }) {
             </td>
             <td className="px-5 py-3 text-right">
               <span className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  className="text-xs font-semibold text-primary-700 hover:underline"
-                  onClick={() => setModal(m)}
-                >
+                <RowBtn type="button" onClick={async () => setModal(m)}>
                   Ubah
-                </button>
+                </RowBtn>
                 {m.status === 'PROCESS' ? (
-                  <button
-                    type="button"
-                    className="text-xs font-semibold text-emerald-700 hover:underline"
-                    onClick={() =>
-                      void run(() => updateMutation(m.id, { status: 'DONE' }), 'Mutasi ditandai selesai.')
-                    }
-                  >
+                  <RowBtn tone="success" type="button" onClick={async () => void run(() => updateMutation(m.id, { status: 'DONE' }), 'Mutasi ditandai selesai.') }>
                     Tandai Selesai
-                  </button>
+                  </RowBtn>
                 ) : null}
-                <button
-                  type="button"
-                  className="text-xs font-semibold text-red-600 hover:underline"
-                  onClick={() => {
-                    if (confirm(`Hapus mutasi ${m.studentName}?`)) {
-                      void run(() => deleteMutation(m.id), 'Mutasi dihapus.');
-                    }
-                  }}
-                >
+                <RowBtn tone="danger" type="button" onClick={async () => { if (await confirm(`Hapus mutasi ${m.studentName}?`)) { void run(() => deleteMutation(m.id), 'Mutasi dihapus.'); } }}>
                   Hapus
-                </button>
+                </RowBtn>
               </span>
             </td>
           </tr>
@@ -173,13 +164,31 @@ export function MutasiView({ direction }: { direction: 'IN' | 'OUT' }) {
         open={modal !== null}
         onClose={() => setModal(null)}
         title={modal === 'new' ? `Catat ${title}` : 'Ubah Mutasi'}
-      >
+>
         <form className="grid gap-4 sm:grid-cols-2" onSubmit={onSubmit}>
-          <Field label="Nama Siswa" className="sm:col-span-2">
-            <Input name="studentName" required minLength={3} defaultValue={modal !== 'new' ? modal?.studentName : ''} />
-          </Field>
+          {!isIn && modal === 'new' ? (
+            <Field label="Siswa (cari nama/NIS)" className="sm:col-span-2" hint="Opsional — isi manual bila belum terdata">
+              <SearchSelect
+                placeholder="Ketik nama atau NIS siswa…"
+                value={picked}
+                onPick={setPicked}
+                load={(q) => listStudents({ search: q, status: 'ACTIVE' }).then((r) => r.slice(0, 8))}
+                label={(st) => st.name}
+                sub={(st) => [st.nis && `NIS ${st.nis}`, st.nisn && `NISN ${st.nisn}`].filter(Boolean).join(' · ') || null}
+              />
+            </Field>
+          ) : null}
+          {picked ? null : (
+            <Field label="Nama Siswa" className="sm:col-span-2">
+              <Input name="studentName" required={!picked} minLength={3} defaultValue={modal !== 'new' ? modal?.studentName : ''} />
+            </Field>
+          )}
           <Field label="NISN">
-            <Input name="nisn" defaultValue={modal !== 'new' ? modal?.nisn ?? '' : ''} />
+            <Input
+              key={picked?.id ?? 'manual'}
+              name="nisn"
+              defaultValue={modal !== 'new' ? modal?.nisn ?? '' : picked?.nisn ?? ''}
+            />
           </Field>
           <Field label="Tanggal Mutasi">
             <Input
@@ -208,11 +217,12 @@ export function MutasiView({ direction }: { direction: 'IN' | 'OUT' }) {
             <Input name="notes" defaultValue={modal !== 'new' ? modal?.notes ?? '' : ''} />
           </Field>
           <div className="flex justify-end gap-2 sm:col-span-2">
-            <Button type="button" variant="ghost" onClick={() => setModal(null)}>Batal</Button>
+            <Button type="button" variant="ghost" onClick={async () => setModal(null)}>Batal</Button>
             <Button type="submit" disabled={busy}>{busy ? 'Menyimpan…' : 'Simpan'}</Button>
           </div>
         </form>
       </Modal>
-    </>
+          {dialog}
+      </>
   );
 }

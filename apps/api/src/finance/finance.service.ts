@@ -986,7 +986,9 @@ export class FinanceService {
     if (ids.length === 0) return new Map<string, number>();
     const groups = await this.prisma.paymentAllocation.groupBy({
       by: ['invoiceId'],
-      where: { invoiceId: { in: ids } },
+      // Hanya pembayaran yang benar-benar terlunasi — alokasi dari payment
+      // pending/gagal tidak menghitung, supaya tagihan masih bisa dibatalkan.
+      where: { invoiceId: { in: ids }, payment: { status: 'SETTLED' } },
       _sum: { amount: true },
     });
     return new Map(groups.map((g) => [g.invoiceId, g._sum.amount ?? 0]));
@@ -1019,7 +1021,14 @@ export class FinanceService {
       ...(q.academicYearId ? { academicYearId: q.academicYearId } : {}),
       ...(q.semesterId ? { semesterId: q.semesterId } : {}),
       ...(q.kind ? { kind: q.kind } : {}),
-      ...(q.status ? { status: q.status as InvoiceStatus } : {}),
+      // Alias praktis: active = tagihan berjalan; history = selesai/dibatalkan.
+      ...(q.status === 'active'
+        ? { status: { in: ['OPEN', 'PARTIAL'] as InvoiceStatus[] } }
+        : q.status === 'history'
+          ? { status: { in: ['PAID', 'CANCELLED', 'EXPIRED'] as InvoiceStatus[] } }
+          : q.status
+            ? { status: q.status as InvoiceStatus }
+            : {}),
       ...(q.gradeLevel ? { class: { gradeLevel: q.gradeLevel } } : {}),
       ...(q.search
         ? {
@@ -1088,7 +1097,11 @@ export class FinanceService {
     const paidMap = await this.invoicePaidMap([id]);
     const itemPaid = await this.prisma.paymentAllocation.groupBy({
       by: ['itemId'],
-      where: { invoiceId: id, itemId: { not: null } },
+      where: {
+        invoiceId: id,
+        itemId: { not: null },
+        payment: { status: 'SETTLED' },
+      },
       _sum: { amount: true },
     });
     const itemMap = new Map(itemPaid.map((g) => [g.itemId, g._sum.amount ?? 0]));
@@ -1195,16 +1208,34 @@ export class FinanceService {
   /** Generator tagihan massal per kelas/jenjang/seluruh siswa aktif. */
   async generateBilling(dto: GenerateBillingDto, actorId: string) {
     const sourceYearId = dto.sourceAcademicYearId ?? dto.academicYearId;
-    const enrollments = await this.prisma.enrollment.findMany({
-      where: {
-        academicYearId: sourceYearId,
-        ...(dto.classId ? { classId: dto.classId } : {}),
-        ...(dto.gradeLevel ? { class: { gradeLevel: dto.gradeLevel } } : {}),
-        student: { status: 'ACTIVE', deletedAt: null },
+    // Semua siswa aktif ikut — termasuk yang belum punya rombel
+    // (siswa baru hasil SPMB/mutasi belum di-enroll). Enrollment
+    // hanya dipakai untuk memetakan kelas & menyaring filter.
+    const students = await this.prisma.student.findMany({
+      where: { status: 'ACTIVE', deletedAt: null },
+      select: {
+        id: true,
+        enrollments: {
+          where: {
+            academicYearId: sourceYearId,
+            ...(dto.classId ? { classId: dto.classId } : {}),
+            ...(dto.gradeLevel ? { class: { gradeLevel: dto.gradeLevel } } : {}),
+          },
+          select: { classId: true },
+          take: 1,
+        },
       },
-      select: { studentId: true, classId: true },
-      distinct: ['studentId'],
     });
+    // Filter kelas/jenjang → hanya siswa dengan enrollment cocok; tanpa
+    // filter, siswa tanpa rombel tetap ikut (classId null).
+    const scoped =
+      dto.classId || dto.gradeLevel
+        ? students.filter((s) => s.enrollments.length > 0)
+        : students;
+    const enrollments = scoped.map((s) => ({
+      studentId: s.id,
+      classId: s.enrollments[0]?.classId ?? null,
+    }));
     if (enrollments.length === 0) {
       throw new BadRequestException(
         'Tidak ada siswa aktif pada cakupan yang dipilih',
@@ -1223,6 +1254,11 @@ export class FinanceService {
     });
     const skip = new Set(existing.map((e) => e.studentId));
     const targets = enrollments.filter((e) => !skip.has(e.studentId));
+    if (targets.length === 0) {
+      throw new BadRequestException(
+        `Semua ${enrollments.length} siswa pada cakupan ini sudah memiliki tagihan serupa — tidak ada yang dibuat.`,
+      );
+    }
 
     const batch = await this.prisma.billingBatch.create({
       data: {
@@ -1286,13 +1322,19 @@ export class FinanceService {
       include: { invoices: { select: { id: true, status: true } } },
     });
     if (!batch) throw new NotFoundException('Batch tidak ditemukan');
+    if (batch.invoices.length === 0) {
+      throw new BadRequestException('Batch ini tidak memiliki tagihan.');
+    }
     const paidMap = await this.invoicePaidMap(batch.invoices.map((i) => i.id));
     const cancellable = batch.invoices.filter(
       (i) => (paidMap.get(i.id) ?? 0) === 0 && i.status !== 'CANCELLED',
     );
     if (cancellable.length === 0) {
+      const allCancelled = batch.invoices.every((i) => i.status === 'CANCELLED');
       throw new BadRequestException(
-        'Semua tagihan dalam batch ini sudah ada pembayaran',
+        allCancelled
+          ? 'Semua tagihan dalam batch ini sudah dibatalkan.'
+          : 'Tidak ada tagihan yang bisa dibatalkan — semua sudah ada pembayaran.',
       );
     }
     await this.prisma.invoice.updateMany({
@@ -1439,6 +1481,29 @@ export class FinanceService {
           });
         }
       }
+      // Kwitansi otomatis per pembayaran — bisa dicetak dari detail siswa.
+      const rcpNumber = await this.nextReceiptNumber(tx);
+      const allocDesc = allocs
+        .map((a) => `${a.item?.label ?? a.invoice.title} Rp${a.amount.toLocaleString('id-ID')}`)
+        .join(', ');
+      await tx.receipt.create({
+        data: {
+          number: rcpNumber,
+          paymentId: p.id,
+          channel: 'print',
+          recipient: primary.student?.parent?.phone ?? '-',
+          status: 'ISSUED',
+          sentAt: new Date(),
+          body: [
+            'KWITANSI PEMBAYARAN',
+            `No: ${rcpNumber}`,
+            `Siswa: ${primary.student?.name ?? '-'}`,
+            `Rincian: ${allocDesc}`,
+            `Jumlah: Rp ${total.toLocaleString('id-ID')}`,
+            `Metode: ${dto.method ?? 'cash'}`,
+          ].join('\n'),
+        },
+      });
       return p;
     });
 
@@ -1450,6 +1515,20 @@ export class FinanceService {
       metadata: { amount: total, invoiceId: dto.invoiceId, allocations: dto.allocations.length },
     });
     return this.getBillingReceipt(payment.id);
+  }
+
+  /** Nomor kwitansi unik KWT-<tahun>-<6 digit> — dalam tx agar atomik. */
+  private async nextReceiptNumber(tx: Prisma.TransactionClient) {
+    const prefix = `KWT-${new Date().getFullYear()}-`;
+    for (let i = 0; i < 10; i++) {
+      const number = `${prefix}${String(randomInt(0, 1_000_000)).padStart(6, '0')}`;
+      const clash = await tx.receipt.findUnique({
+        where: { number },
+        select: { id: true },
+      });
+      if (!clash) return number;
+    }
+    throw new Error('Could not allocate receipt number');
   }
 
   /** Data kwitansi pembayaran siswa — rincian alokasi + tautan WA. */
@@ -1470,6 +1549,10 @@ export class FinanceService {
           },
         },
         cashAccount: { select: { name: true } },
+        receipts: {
+          orderBy: { createdAt: 'desc' },
+          select: { id: true, number: true, createdAt: true },
+        },
         allocations: {
           include: {
             invoice: { select: { number: true, title: true } },
@@ -1479,7 +1562,25 @@ export class FinanceService {
       },
     });
     if (!payment) throw new NotFoundException('Pembayaran tidak ditemukan');
-    return payment;
+    const cashier = payment.verifiedBy
+      ? await this.prisma.user.findUnique({
+          where: { id: payment.verifiedBy },
+          select: { name: true },
+        })
+      : null;
+    const school = await this.prisma.school.findFirst({
+      select: {
+        name: true,
+        address: true,
+        phone: true,
+        whatsapp: true,
+        headmaster: true,
+        headmasterNip: true,
+        headmasterSignatureUrl: true,
+        logoUrl: true,
+      },
+    });
+    return { ...payment, cashierName: cashier?.name ?? null, school };
   }
 
   /** Kartu piutang + tabungan satu siswa. */
@@ -1514,9 +1615,31 @@ export class FinanceService {
     });
     const paidMap = await this.invoicePaidMap(invoices.map((i) => i.id));
     const bills = invoices.map((i) => this.invoiceWithPaid(i, paidMap));
+    // Riwayat pembayaran + kwitansi — satu pembayaran bisa menyetor
+    // ke beberapa tagihan (alokasi).
+    const payments = await this.prisma.payment.findMany({
+      where: { invoice: { studentId } },
+      include: {
+        receipts: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: { number: true },
+        },
+        allocations: {
+          include: {
+            invoice: { select: { number: true, title: true } },
+            item: { select: { label: true } },
+          },
+        },
+        cashAccount: { select: { name: true } },
+      },
+      orderBy: { paidAt: 'desc' },
+      take: 100,
+    });
     return {
       student,
       bills,
+      payments,
       savings: await this.studentSavingsBalance(studentId),
     };
   }
@@ -2057,12 +2180,14 @@ export class FinanceService {
    */
   async fundUsage(q: {
     academicYearId?: string | undefined;
+    cashAccountId?: string | undefined;
     from?: Date | undefined;
     to?: Date | undefined;
   }) {
     const groups = await this.prisma.expenseAllocation.groupBy({
       by: ['cashAccountId'],
       where: {
+        ...(q.cashAccountId ? { cashAccountId: q.cashAccountId } : {}),
         expense: {
           status: 'POSTED',
           ...(q.academicYearId ? { academicYearId: q.academicYearId } : {}),
@@ -2080,6 +2205,7 @@ export class FinanceService {
     });
     const perCat = await this.prisma.expenseAllocation.findMany({
       where: {
+        ...(q.cashAccountId ? { cashAccountId: q.cashAccountId } : {}),
         expense: {
           status: 'POSTED',
           ...(q.academicYearId ? { academicYearId: q.academicYearId } : {}),

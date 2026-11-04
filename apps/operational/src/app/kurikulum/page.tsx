@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Button, Field, Input, Select } from '@smpmuh3/ui';
+import { Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { PageTitle, Widget } from '@/components/widgets';
 import {
@@ -19,6 +19,7 @@ export default function AcademicPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [modal, setModal] = useState(false);
 
   const refresh = useCallback(async (yearId?: string) => {
     setClasses(await listClasses(yearId));
@@ -43,8 +44,10 @@ export default function AcademicPage() {
       await refresh(year?.id);
       form?.reset();
       setNotice(ok);
+      return true;
     } catch {
       setError('Aksi gagal — periksa data yang diisi.');
+      return false;
     } finally {
       setBusy(false);
     }
@@ -55,6 +58,7 @@ export default function AcademicPage() {
       <PageTitle
         title="Kurikulum"
         subtitle={`Rombel / kelas${year ? ` — TA ${year.name}` : ''}`}
+        actions={<Button size="sm" onClick={() => setModal(true)}>+ Rombel Baru</Button>}
       />
 
       {error ? (
@@ -73,33 +77,6 @@ export default function AcademicPage() {
       </p>
 
       <Widget title={`Rombel (${classes.length})`}>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            const f = new FormData(e.currentTarget);
-            run(
-              () =>
-                createClass({
-                  name: String(f.get('name')),
-                  gradeLevel: Number(f.get('gradeLevel')),
-                  academicYearId: year?.id,
-                }),
-              'Rombel ditambahkan.',
-              e.currentTarget,
-            );
-          }}
-          className="mb-4 grid gap-3 rounded-2xl border border-sand-200 bg-sand-50 p-4 sm:grid-cols-[1fr_120px_auto] sm:items-end"
-        >
-          <Field label="Nama Rombel"><Input name="name" required placeholder="7A" /></Field>
-          <Field label="Tingkat">
-            <Select name="gradeLevel" required defaultValue="7">
-              <option value="7">7</option>
-              <option value="8">8</option>
-              <option value="9">9</option>
-            </Select>
-          </Field>
-          <Button type="submit" disabled={busy} variant="outline">Tambah</Button>
-        </form>
         <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {classes.map((c) => (
             <li key={c.id} className="rounded-xl border border-sand-200 bg-sand-50 px-4 py-3">
@@ -115,6 +92,38 @@ export default function AcademicPage() {
           ) : null}
         </ul>
       </Widget>
+
+      <Modal open={modal} onClose={() => setModal(false)} title={`Rombel Baru — TA ${year?.name ?? ''}`}>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const f = new FormData(e.currentTarget);
+            void run(
+              () =>
+                createClass({
+                  name: String(f.get('name')),
+                  gradeLevel: Number(f.get('gradeLevel')),
+                  academicYearId: year?.id,
+                }),
+              'Rombel ditambahkan.',
+            ).then((ok) => ok && setModal(false));
+          }}
+          className="grid gap-4"
+        >
+          <Field label="Nama Rombel"><Input name="name" required placeholder="7A" /></Field>
+          <Field label="Tingkat">
+            <Select name="gradeLevel" required defaultValue="7">
+              <option value="7">7</option>
+              <option value="8">8</option>
+              <option value="9">9</option>
+            </Select>
+          </Field>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={() => setModal(false)}>Batal</Button>
+            <Button type="submit" disabled={busy}>Simpan</Button>
+          </div>
+        </form>
+      </Modal>
     </Shell>
   );
 }

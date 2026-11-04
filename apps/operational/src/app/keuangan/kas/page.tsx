@@ -18,6 +18,7 @@ import {
   type FinanceCategory,
 } from '@/lib/api';
 
+import { RowBtn, rowActionClasses } from '@/components/row-btn';
 const rupiah = (n: number) => `Rp${n.toLocaleString('id-ID')}`;
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -108,7 +109,7 @@ export default function KasPage() {
           loading={loading}
           error={null}
           empty={accounts.length === 0 ? 'Belum ada akun kas.' : undefined}
-        >
+>
           {accounts.map((a) => (
             <tr key={a.id}>
               <td className="px-5 py-3">
@@ -132,16 +133,12 @@ export default function KasPage() {
               </td>
               <td className="whitespace-nowrap px-5 py-3 text-right">
                 <span className="flex justify-end gap-2">
-                  <Link href={`/keuangan/kas/${a.id}`} className="text-xs font-semibold text-primary-700 hover:underline">
+                  <Link href={`/keuangan/kas/${a.id}`} className={rowActionClasses()}>
                     Buku Kas
                   </Link>
-                  <button
-                    type="button"
-                    onClick={() => setAccModal(a)}
-                    className="text-xs font-semibold text-sand-600 hover:underline"
-                  >
+                  <RowBtn tone="neutral" type="button" onClick={() => setAccModal(a)}>
                     Edit
-                  </button>
+                  </RowBtn>
                 </span>
               </td>
             </tr>
@@ -179,7 +176,7 @@ export default function KasPage() {
           loading={loading}
           error={null}
           empty={bankFiltered.length === 0 ? 'Belum ada transfer masuk.' : undefined}
-        >
+>
           {bankFiltered.map((b) => (
             <tr key={b.id}>
               <td className="whitespace-nowrap px-5 py-3 text-xs text-sand-500">{fmtDate(b.receivedAt)}</td>
@@ -223,7 +220,7 @@ export default function KasPage() {
             });
           }}
           className="grid gap-4"
-        >
+>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Ke Bank">
               <Select name="cashAccountId" required>
@@ -268,7 +265,7 @@ export default function KasPage() {
         open={accModal !== null}
         onClose={() => setAccModal(null)}
         title={editingAcc ? `Edit Akun ${editingAcc.name}` : 'Tambah Akun Kas'}
-      >
+>
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -293,7 +290,7 @@ export default function KasPage() {
             });
           }}
           className="grid gap-3"
-        >
+>
           <Field label="Nama Akun">
             <Input name="name" required defaultValue={editingAcc?.name ?? ''} placeholder="Kas Koperasi" />
           </Field>

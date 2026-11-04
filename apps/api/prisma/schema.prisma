@@ -117,17 +117,20 @@ model RefreshToken {
 // ---------- School core ----------
 
 model School {
-  id        String   @id @default(uuid()) @db.Uuid
-  name      String
-  code      String?  @unique
-  tagline   String?
-  address   String?
-  phone     String?
-  whatsapp  String?
-  email     String?
-  logoUrl   String?  @map("logo_url")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id            String   @id @default(uuid()) @db.Uuid
+  name          String
+  code          String?  @unique
+  tagline       String?
+  address       String?
+  phone         String?
+  whatsapp      String?
+  email         String?
+  headmaster    String?
+  headmasterNip String?  @map("headmaster_nip")
+  headmasterSignatureUrl String? @map("headmaster_signature_url")
+  logoUrl       String?  @map("logo_url")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
   @@map("schools")
 }
@@ -1317,9 +1320,11 @@ model Achievement {
   level       String? // e.g. "Kota", "Provinsi"
   year        Int?
   description String?
+  evidenceDocumentId String? @map("evidence_document_id") @db.Uuid
   createdAt   DateTime @default(now()) @map("created_at")
 
   student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  evidenceDocument Document? @relation("AchievementEvidence", fields: [evidenceDocumentId], references: [id], onDelete: SetNull)
 
   @@map("achievements")
 }
@@ -1331,9 +1336,11 @@ model Violation {
   description String?
   points      Int      @default(0)
   date        DateTime @db.Date
+  evidenceDocumentId String? @map("evidence_document_id") @db.Uuid
   createdAt   DateTime @default(now()) @map("created_at")
 
   student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  evidenceDocument Document? @relation("ViolationEvidence", fields: [evidenceDocumentId], references: [id], onDelete: SetNull)
 
   @@map("violations")
 }
@@ -1483,6 +1490,8 @@ model Document {
   registration Registration? @relation(fields: [registrationId], references: [id], onDelete: SetNull)
   student      Student?      @relation(fields: [studentId], references: [id], onDelete: SetNull)
   paymentProofs  Payment[]   @relation("PaymentProof")
+  achievementEvidence Achievement[] @relation("AchievementEvidence")
+  violationEvidence   Violation[]   @relation("ViolationEvidence")
 
   @@index([ownerId])
   @@index([registrationId])

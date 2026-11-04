@@ -15,6 +15,8 @@ import {
   type Letter,
 } from '@/lib/api';
 
+import { RowBtn } from '@/components/row-btn';
+import { useConfirm } from '@/components/confirm-dialog';
 const DIRS = [
   { key: 'IN', label: 'Surat Masuk' },
   { key: 'OUT', label: 'Surat Keluar' },
@@ -24,6 +26,7 @@ const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
 
 export default function SuratPage() {
+  const { confirm, dialog } = useConfirm();
   const [dir, setDir] = useState<'IN' | 'OUT'>('IN');
   const [search, setSearch] = useState('');
   const [rows, setRows] = useState<Letter[]>([]);
@@ -93,7 +96,7 @@ export default function SuratPage() {
         title="Surat Menyurat"
         subtitle="Agenda surat masuk dan keluar Tata Usaha"
         actions={
-          <Button size="sm" onClick={() => setModal('new')}>
+          <Button size="sm" onClick={async () => setModal('new')}>
             + Catat Surat
           </Button>
         }
@@ -111,11 +114,11 @@ export default function SuratPage() {
             <button
               key={d.key}
               type="button"
-              onClick={() => setDir(d.key)}
+              onClick={async () => setDir(d.key)}
               className={`rounded-lg px-4 py-1.5 text-sm font-semibold transition-colors ${
                 dir === d.key ? 'bg-primary-700 text-white' : 'text-sand-600 hover:bg-sand-100'
               }`}
-            >
+>
               {d.label}
             </button>
           ))}
@@ -134,7 +137,7 @@ export default function SuratPage() {
         loading={loading}
         error={error}
         empty={rows.length === 0 ? 'Belum ada surat.' : undefined}
-      >
+>
         {rows.map((l) => (
           <tr key={l.id}>
             <td className="px-5 py-3 font-mono text-xs font-bold text-primary-800">{l.number}</td>
@@ -143,66 +146,42 @@ export default function SuratPage() {
             <td className="px-5 py-3 text-sand-600">{l.party ?? '—'}</td>
             <td className="px-5 py-3">
               {l.fileName ? (
-                <button
-                  type="button"
-                  className="text-xs font-semibold text-primary-700 hover:underline"
-                  onClick={async () => {
-                    try {
-                      const blob = await downloadLetterFile(l.id);
-                      const url = URL.createObjectURL(blob);
-                      window.open(url, '_blank');
-                    } catch {
-                      setError('Gagal membuka lampiran.');
-                    }
-                  }}
-                >
+                <RowBtn type="button" onClick={async () => { try { const blob = await downloadLetterFile(l.id); const url = URL.createObjectURL(blob); window.open(url, '_blank'); } catch { setError('Gagal membuka lampiran.'); } }}>
                   📎 {l.fileName}
-                </button>
+                </RowBtn>
               ) : (
                 <button
                   type="button"
                   className="text-xs font-semibold text-sand-500 hover:text-primary-700"
-                  onClick={() => {
+                  onClick={async () => {
                     setFileTarget(l);
                     fileRef.current?.click();
                   }}
-                >
+>
                   + Lampirkan
                 </button>
               )}
             </td>
             <td className="px-5 py-3 text-right">
               <span className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  className="text-xs font-semibold text-primary-700 hover:underline"
-                  onClick={() => setModal(l)}
-                >
+                <RowBtn type="button" onClick={async () => setModal(l)}>
                   Ubah
-                </button>
+                </RowBtn>
                 {l.fileName ? (
                   <button
                     type="button"
                     className="text-xs font-semibold text-sand-500 hover:text-primary-700"
-                    onClick={() => {
+                    onClick={async () => {
                       setFileTarget(l);
                       fileRef.current?.click();
                     }}
-                  >
+>
                     Ganti File
                   </button>
                 ) : null}
-                <button
-                  type="button"
-                  className="text-xs font-semibold text-red-600 hover:underline"
-                  onClick={() => {
-                    if (confirm(`Hapus surat "${l.number}"?`)) {
-                      void run(() => deleteLetter(l.id), 'Surat dihapus.');
-                    }
-                  }}
-                >
+                <RowBtn tone="danger" type="button" onClick={async () => { if (await confirm(`Hapus surat "${l.number}"?`)) { void run(() => deleteLetter(l.id), 'Surat dihapus.'); } }}>
                   Hapus
-                </button>
+                </RowBtn>
               </span>
             </td>
           </tr>
@@ -227,7 +206,7 @@ export default function SuratPage() {
         open={modal !== null}
         onClose={() => setModal(null)}
         title={modal === 'new' ? `Catat ${dir === 'IN' ? 'Surat Masuk' : 'Surat Keluar'}` : 'Ubah Surat'}
-      >
+>
         <form className="grid gap-4 sm:grid-cols-2" onSubmit={onSubmit}>
           <Field label="Nomor Surat">
             <Input name="number" required defaultValue={modal !== 'new' ? modal?.number : ''} placeholder="001/TU/X/2026" />
@@ -252,11 +231,12 @@ export default function SuratPage() {
             <Input name="description" defaultValue={modal !== 'new' ? modal?.description ?? '' : ''} />
           </Field>
           <div className="flex justify-end gap-2 sm:col-span-2">
-            <Button type="button" variant="ghost" onClick={() => setModal(null)}>Batal</Button>
+            <Button type="button" variant="ghost" onClick={async () => setModal(null)}>Batal</Button>
             <Button type="submit" disabled={busy}>{busy ? 'Menyimpan…' : 'Simpan'}</Button>
           </div>
         </form>
       </Modal>
-    </Shell>
+          {dialog}
+      </Shell>
   );
 }

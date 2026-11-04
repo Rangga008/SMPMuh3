@@ -9,10 +9,16 @@ import { PageTitle, Widget } from '@/components/widgets';
 import { SearchSelect } from '@/components/search-select';
 import { PERMISSIONS, type StudentDto } from '@smpmuh3/types';
 import {
+  InvoiceDetail,
+  KINDS,
+  STATUS_LABEL,
+  STATUS_TONE,
+  kindLabel,
+} from '@/components/invoice-detail';
+import {
   createStudentInvoice,
   generateBilling,
   getStudentBills,
-  getStudentInvoice,
   listAcademicYears,
   listBillingBatches,
   listCashAccounts,
@@ -32,34 +38,11 @@ import {
   type StudentInvoice,
 } from '@/lib/api';
 
+import { RowBtn, rowActionClasses } from '@/components/row-btn';
+import { useConfirm } from '@/components/confirm-dialog';
 const rupiah = (n: number) => `Rp${n.toLocaleString('id-ID')}`;
 const fmtDate = (iso?: string | null) =>
   iso ? new Date(iso).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
-
-const KINDS = [
-  { key: 'spp', label: 'SPP Bulanan' },
-  { key: 'daftar_ulang', label: 'Daftar Ulang' },
-  { key: 'dsp', label: 'DSP' },
-  { key: 'seragam', label: 'Seragam' },
-  { key: 'kat', label: 'KAT (Kegiatan Akhir Tahun)' },
-  { key: 'other', label: 'Lainnya' },
-];
-const kindLabel = (k: string) => KINDS.find((x) => x.key === k)?.label ?? k;
-
-const STATUS_TONE: Record<string, 'primary' | 'accent' | 'neutral' | 'danger'> = {
-  OPEN: 'primary',
-  PARTIAL: 'accent',
-  PAID: 'neutral',
-  EXPIRED: 'neutral',
-  CANCELLED: 'danger',
-};
-const STATUS_LABEL: Record<string, string> = {
-  OPEN: 'Belum dibayar',
-  PARTIAL: 'Sebagian',
-  PAID: 'Lunas',
-  EXPIRED: 'Kedaluwarsa',
-  CANCELLED: 'Dibatalkan',
-};
 
 type PayTarget = { invoiceId: string; itemId?: string; label: string; max: number };
 
@@ -83,6 +66,7 @@ function StudentPicker({
 }
 
 export default function TagihanPage() {
+  const { confirm, dialog } = useConfirm();
   const [canManage, setCanManage] = useState(false);
   const [years, setYears] = useState<AcademicYear[]>([]);
   const [classes, setClasses] = useState<ClassView[]>([]);
@@ -117,6 +101,7 @@ export default function TagihanPage() {
       ...(classId ? { classId } : {}),
       ...(status ? { status } : {}),
       ...(kind ? { kind } : {}),
+      status: status || 'active', // riwayat (lunas/batal) ada di halaman sendiri
       ...(search ? { search } : {}),
       take: '100',
     })
@@ -182,16 +167,21 @@ export default function TagihanPage() {
         title="Tagihan Siswa"
         subtitle="SPP, daftar ulang, DSP, seragam, KAT — satu tagihan bisa multi-komponen, pembayaran bisa dipecah dan dicicil"
         actions={
-          canManage ? (
-            <>
-              <Button variant="outline" size="sm" onClick={() => setGenModal(true)}>
-                + Tagihan Massal
-              </Button>
-              <Button size="sm" onClick={() => setCreateModal(true)}>
-                + Tagihan Baru
-              </Button>
-            </>
-          ) : undefined
+          <>
+            <Link href="/keuangan/tagihan/riwayat" className={rowActionClasses('neutral')}>
+              Riwayat →
+            </Link>
+            {canManage ? (
+              <>
+                <Button variant="outline" size="sm" onClick={async () => setGenModal(true)}>
+                  + Tagihan Massal
+                </Button>
+                <Button size="sm" onClick={async () => setCreateModal(true)}>
+                  + Tagihan Baru
+                </Button>
+              </>
+            ) : null}
+          </>
         }
       />
       {error ? (
@@ -232,11 +222,9 @@ export default function TagihanPage() {
         <label className="flex min-w-32 flex-col gap-1.5">
           <span className="text-xs font-bold uppercase tracking-wider text-sand-500">Status</span>
           <Select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Filter status">
-            <option value="">Semua</option>
+            <option value="">Semua aktif</option>
             <option value="OPEN">Belum dibayar</option>
             <option value="PARTIAL">Sebagian</option>
-            <option value="PAID">Lunas</option>
-            <option value="CANCELLED">Dibatalkan</option>
           </Select>
         </label>
         <label className="flex min-w-40 flex-1 flex-col gap-1.5">
@@ -259,16 +247,9 @@ export default function TagihanPage() {
                 <span className="flex items-center gap-3 text-xs text-sand-500">
                   {b.generatedCount} dibuat{b.skippedCount ? ` · ${b.skippedCount} dilewati` : ''} · {fmtDate(b.createdAt)}
                   {canManage ? (
-                    <button
-                      type="button"
-                      className="font-semibold text-red-600 hover:underline"
-                      onClick={() => {
-                        if (window.confirm('Batalkan semua tagihan batch ini yang belum dibayar?'))
-                          void run(() => voidBillingBatch(b.id), 'Batch dibatalkan.');
-                      }}
-                    >
+                    <RowBtn tone="danger" type="button" onClick={async () => { if (await confirm('Batalkan semua tagihan batch ini yang belum dibayar?')) void run(() => voidBillingBatch(b.id), 'Batch dibatalkan.'); }}>
                       Batalkan
-                    </button>
+                    </RowBtn>
                   ) : null}
                 </span>
               </li>
@@ -283,9 +264,9 @@ export default function TagihanPage() {
           loading={loading}
           error={null}
           empty={rows.length === 0 ? 'Belum ada tagihan siswa.' : undefined}
-        >
+>
           {rows.map((inv) => (
-            <tr key={inv.id} className="cursor-pointer" onClick={() => setDetail(inv)}>
+            <tr key={inv.id} className="cursor-pointer" onClick={async () => setDetail(inv)}>
               <td className="px-5 py-3" onClick={(e) => e.stopPropagation()}>
                 {inv.student?.id ? (
                   <Link href={`/kesiswaan/${inv.student.id}`} className="font-medium text-sand-900 hover:text-primary-700 hover:underline">
@@ -314,28 +295,17 @@ export default function TagihanPage() {
                 <td className="whitespace-nowrap px-5 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                   <span className="flex justify-end gap-2">
                     {inv.status === 'OPEN' || inv.status === 'PARTIAL' ? (
-                      <button
-                        type="button"
-                        onClick={() => setPayTarget(inv)}
-                        className="text-xs font-semibold text-emerald-700 hover:underline"
-                      >
+                      <RowBtn tone="success" type="button" onClick={async () => setPayTarget(inv)}>
                         Bayar
-                      </button>
+                      </RowBtn>
                     ) : null}
-                    <button type="button" onClick={() => setDetail(inv)} className="text-xs font-semibold text-primary-700 hover:underline">
+                    <RowBtn type="button" onClick={async () => setDetail(inv)}>
                       Detail
-                    </button>
-                    {inv.status === 'OPEN' && inv.paidAmount === 0 ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (window.confirm(`Batalkan tagihan ${inv.number}?`))
-                            void run(() => updateStudentInvoice(inv.id, { status: 'CANCELLED' }), 'Tagihan dibatalkan.');
-                        }}
-                        className="text-xs font-semibold text-red-600 hover:underline"
-                      >
+                    </RowBtn>
+                    {(inv.status === 'OPEN' || inv.status === 'PARTIAL') && inv.paidAmount === 0 ? (
+                      <RowBtn tone="danger" type="button" onClick={async () => { if (await confirm(`Batalkan tagihan ${inv.number}? Tagihan batal dipindah ke Riwayat.`)) void run(() => updateStudentInvoice(inv.id, { status: 'CANCELLED' }), 'Tagihan dibatalkan.'); }}>
                         Batal
-                      </button>
+                      </RowBtn>
                     ) : null}
                   </span>
                 </td>
@@ -387,7 +357,7 @@ export default function TagihanPage() {
             });
           }}
           className="grid gap-3"
-        >
+>
           <Field label="Siswa" hint="Tagihan menempel ke siswa — bisa dicicil dan dipecah per komponen">
             <StudentPicker value={createStudent} onPick={setCreateStudent} />
           </Field>
@@ -437,7 +407,7 @@ export default function TagihanPage() {
             <Input name="note" placeholder="opsional" />
           </Field>
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="ghost" onClick={() => setCreateModal(false)}>Batal</Button>
+            <Button type="button" variant="ghost" onClick={async () => setCreateModal(false)}>Batal</Button>
             <Button type="submit" disabled={busy}>Simpan</Button>
           </div>
         </form>
@@ -468,7 +438,7 @@ export default function TagihanPage() {
             });
           }}
           className="grid gap-3"
-        >
+>
           <p className="rounded-xl bg-sand-50 px-3 py-2 text-xs text-sand-600">
             Membuat satu tagihan per siswa aktif pada cakupan yang dipilih. Siswa yang sudah punya
             tagihan serupa otomatis dilewati.
@@ -530,7 +500,7 @@ export default function TagihanPage() {
             <Input name="itemLabel" required placeholder="SPP Bulan November" />
           </Field>
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="ghost" onClick={() => setGenModal(false)}>Batal</Button>
+            <Button type="button" variant="ghost" onClick={async () => setGenModal(false)}>Batal</Button>
             <Button type="submit" disabled={busy}>Buat Tagihan</Button>
           </div>
         </form>
@@ -560,7 +530,8 @@ export default function TagihanPage() {
       <Modal open={receipt !== null} onClose={() => setReceipt(null)} title="Kwitansi Pembayaran">
         {receipt ? <ReceiptView receipt={receipt} /> : null}
       </Modal>
-    </Shell>
+          {dialog}
+      </Shell>
   );
 }
 
@@ -577,7 +548,7 @@ function ItemRows() {
             value={r.k}
             onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, k: e.target.value } : x)))}
             aria-label={`Jenis komponen ${i + 1}`}
-          >
+>
             {KINDS.map((k) => (
               <option key={k.key} value={k.key}>{k.label}</option>
             ))}
@@ -602,16 +573,16 @@ function ItemRows() {
             type="button"
             variant="ghost"
             size="sm"
-            onClick={() => setRows(rows.filter((_, j) => j !== i))}
+            onClick={async () => setRows(rows.filter((_, j) => j !== i))}
             disabled={rows.length === 1}
             aria-label="Hapus komponen"
-          >
+>
             ✕
           </Button>
         </div>
       ))}
       <div className="flex items-center justify-between pt-1">
-        <Button type="button" variant="outline" size="sm" onClick={() => setRows([...rows, { k: 'other', l: '', a: '' }])}>
+        <Button type="button" variant="outline" size="sm" onClick={async () => setRows([...rows, { k: 'other', l: '', a: '' }])}>
           + Komponen
         </Button>
         <p className="text-sm font-bold text-sand-900">Total: {rupiah(total)}</p>
@@ -620,72 +591,9 @@ function ItemRows() {
   );
 }
 
-function InvoiceDetail({ invoice }: { invoice: StudentInvoice }) {
-  const [inv, setInv] = useState<Awaited<ReturnType<typeof getStudentInvoice>> | null>(null);
-  useEffect(() => {
-    getStudentInvoice(invoice.id).then(setInv).catch(() => setInv(invoice));
-  }, [invoice]);
-  const cur = inv ?? invoice;
-  return (
-    <div className="space-y-4 text-sm">
-      <div className="grid gap-2 rounded-2xl bg-sand-50 p-4 sm:grid-cols-2">
-        <div><p className="text-xs text-sand-500">Siswa</p><p className="font-semibold">{cur.student?.name}</p></div>
-        <div><p className="text-xs text-sand-500">Kelas</p><p className="font-semibold">{cur.class?.name ?? '—'}</p></div>
-        <div><p className="text-xs text-sand-500">Judul</p><p className="font-semibold">{cur.title}</p></div>
-        <div><p className="text-xs text-sand-500">Jatuh tempo</p><p className="font-semibold">{fmtDate(cur.dueAt)}</p></div>
-        <div><p className="text-xs text-sand-500">No. Tagihan</p><p className="font-semibold">{cur.number}</p></div>
-        <div>
-          <p className="text-xs text-sand-500">Orang Tua / Wali</p>
-          <p className="font-semibold">
-            {cur.student?.parent
-              ? `${cur.student.parent.name}${cur.student.parent.phone ? ` · ${cur.student.parent.phone}` : ''}`
-              : '—'}
-          </p>
-        </div>
-      </div>
-      <div>
-        <p className="mb-2 text-xs font-bold uppercase tracking-wider text-sand-500">Komponen</p>
-        <ul className="divide-y divide-sand-100 rounded-xl border border-sand-200">
-          {(cur.items ?? []).map((it) => (
-            <li key={it.id} className="flex items-center justify-between px-4 py-2.5">
-              <span>
-                {it.label} <span className="text-xs text-sand-400">({kindLabel(it.kind)})</span>
-                {it.paidAmount ? <span className="ml-1 text-xs text-emerald-700">terbayar {rupiah(it.paidAmount)}</span> : null}
-              </span>
-              <span className="font-semibold">{rupiah(it.amount)}</span>
-            </li>
-          ))}
-          {(cur.items ?? []).length === 0 ? (
-            <li className="px-4 py-2.5 text-sand-500">Tanpa rincian — {rupiah(cur.amount)}</li>
-          ) : null}
-        </ul>
-      </div>
-      {inv?.allocations && inv.allocations.length > 0 ? (
-        <div>
-          <p className="mb-2 text-xs font-bold uppercase tracking-wider text-sand-500">Riwayat Pembayaran</p>
-          <ul className="divide-y divide-sand-100 rounded-xl border border-sand-200">
-            {inv.allocations.map((a) => (
-              <li key={a.id} className="flex items-center justify-between px-4 py-2.5">
-                <span>
-                  {a.item?.label ?? 'Alokasi tagihan'}
-                  <span className="ml-1 text-xs text-sand-400">{a.payment?.method ?? ''}</span>
-                </span>
-                <span className="font-semibold text-emerald-700">{rupiah(a.amount)}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-      <div className="flex items-center justify-between rounded-xl bg-sand-50 px-4 py-3">
-        <span className="text-sand-600">Total {rupiah(cur.amount)} · Terbayar {rupiah(cur.paidAmount)}</span>
-        <span className="font-extrabold text-red-600">Sisa {rupiah(cur.remaining)}</span>
-      </div>
-    </div>
-  );
-}
-
 function ReceiptView({ receipt }: { receipt: PaymentReceipt }) {
   const parent = receipt.invoice.student?.parent;
+  const school = receipt.school;
   const waText = encodeURIComponent(
     `Kwitansi Pembayaran\n${receipt.invoice.number}\na.n. ${receipt.invoice.student?.name ?? ''}\n` +
       receipt.allocations.map((a) => `- ${a.item?.label ?? a.invoice.title}: Rp${a.amount.toLocaleString('id-ID')}`).join('\n') +
@@ -694,8 +602,25 @@ function ReceiptView({ receipt }: { receipt: PaymentReceipt }) {
   return (
     <div className="space-y-4 text-sm">
       <div className="rounded-2xl border border-sand-200 p-4">
+        {/* Kop sekolah — sesuai Pengaturan → Profil & Kontak */}
+        <div className="mb-4 flex items-center gap-3 border-b-2 border-sand-800 pb-3">
+          {school?.logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src="/logo.png" alt="Logo" className="size-12 object-contain" />
+          ) : null}
+          <div className="flex-1 text-center">
+            <p className="text-sm font-extrabold uppercase tracking-wide text-sand-900">{school?.name ?? 'Sekolah'}</p>
+            <p className="text-[11px] text-sand-500">
+              {school?.address ?? ''}
+              {school?.phone ? ` · Telp ${school.phone}` : ''}
+            </p>
+          </div>
+          {school?.logoUrl ? <span className="size-12" /> : null}
+        </div>
         <div className="mb-3 flex items-center justify-between">
-          <p className="font-bold text-sand-900">{receipt.invoice.number}</p>
+          <p className="font-bold text-sand-900">
+            {receipt.receipts?.[0]?.number ?? receipt.invoice.number}
+          </p>
           <p className="text-xs text-sand-500">{fmtDate(receipt.paidAt)}</p>
         </div>
         <p className="mb-3 text-sand-700">
@@ -729,7 +654,7 @@ function ReceiptView({ receipt }: { receipt: PaymentReceipt }) {
           target="_blank"
           rel="noreferrer"
           className="block rounded-xl bg-emerald-600 px-4 py-2.5 text-center text-sm font-bold text-white hover:bg-emerald-700"
-        >
+>
           Kirim Kwitansi via WhatsApp ({parent.phone})
         </a>
       ) : (
@@ -828,7 +753,7 @@ function PayModal({
           });
         }}
         className="grid gap-4"
-      >
+>
         {error ? (
           <p role="alert" className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
         ) : null}
@@ -846,13 +771,9 @@ function PayModal({
                       {t.label}
                       <span className="ml-1 text-xs text-sand-400">maks {rupiah(t.max)}</span>
                     </span>
-                    <button
-                      type="button"
-                      className="text-xs font-semibold text-primary-700 hover:underline"
-                      onClick={() => setAmounts((m) => ({ ...m, [key]: String(t.max) }))}
-                    >
+                    <RowBtn type="button" onClick={async () => setAmounts((m) => ({ ...m, [key]: String(t.max) }))}>
                       Penuh
-                    </button>
+                    </RowBtn>
                     <Input
                       type="number"
                       min={0}

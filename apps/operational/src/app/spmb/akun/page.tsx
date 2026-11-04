@@ -5,6 +5,7 @@ import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { DataTable } from '@/components/data-table';
 import { PageTitle } from '@/components/widgets';
+import { useConfirm } from '@/components/confirm-dialog';
 import {
   deleteParent,
   getParent,
@@ -20,6 +21,7 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 export default function AkunOrtuPage() {
+  const { confirm, dialog } = useConfirm();
   const [rows, setRows] = useState<ParentAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -77,9 +79,9 @@ export default function AkunOrtuPage() {
 
   const remove = async (p: ParentAccount) => {
     if (
-      !confirm(
+      !(await confirm(
         `Hapus akun ${p.name} (${p.phone ?? p.email ?? '-'})?\nSeluruh calon murid & pendaftarannya ikut terhapus.`,
-      )
+      ))
     ) {
       return;
     }
@@ -137,17 +139,17 @@ export default function AkunOrtuPage() {
               <div className="flex flex-wrap gap-2">
                 <Button
                   variant="outline"
-                  onClick={() => {
+                  onClick={async () => {
                     setDetail(null);
                     void getParent(p.id).then(setDetail).catch(() => {});
                   }}
                 >
                   Detail
                 </Button>
-                <Button variant="outline" onClick={() => openEdit(p)}>
+                <Button variant="outline" onClick={async () => openEdit(p)}>
                   Edit
                 </Button>
-                <Button variant="danger" onClick={() => void remove(p)} disabled={busy}>
+                <Button variant="danger" onClick={async () => void remove(p)} disabled={busy}>
                   Hapus
                 </Button>
               </div>
@@ -217,7 +219,7 @@ export default function AkunOrtuPage() {
             )}
           </div>
           <div className="mt-4">
-            <Button variant="ghost" onClick={() => setDetail(null)}>
+            <Button variant="ghost" onClick={async () => setDetail(null)}>
               Tutup
             </Button>
           </div>
@@ -260,15 +262,16 @@ export default function AkunOrtuPage() {
             </Field>
           </div>
           <div className="mt-4 flex gap-2">
-            <Button onClick={() => void saveEdit()} disabled={busy}>
+            <Button onClick={async () => void saveEdit()} disabled={busy}>
               {busy ? 'Menyimpan…' : 'Simpan'}
             </Button>
-            <Button variant="ghost" onClick={() => setEditing(null)}>
+            <Button variant="ghost" onClick={async () => setEditing(null)}>
               Batal
             </Button>
           </div>
         </Modal>
       ) : null}
-    </Shell>
+          {dialog}
+      </Shell>
   );
 }

@@ -15,11 +15,14 @@ import {
   type SemesterView,
 } from '@/lib/api';
 
+import { RowBtn } from '@/components/row-btn';
+import { useConfirm } from '@/components/confirm-dialog';
 const fmtDate = (iso?: string | null) =>
   iso ? new Date(iso).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
 const toInputDate = (iso?: string | null) => (iso ? new Date(iso).toISOString().slice(0, 10) : '');
 
 export default function SemesterPage() {
+  const { confirm, dialog } = useConfirm();
   const [years, setYears] = useState<AcademicYear[]>([]);
   const [yearId, setYearId] = useState('');
   const [rows, setRows] = useState<SemesterView[]>([]);
@@ -28,6 +31,7 @@ export default function SemesterPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<SemesterView | null>(null);
+  const [creating, setCreating] = useState(false);
 
   const load = useCallback(async (yid: string) => {
     setLoading(true);
@@ -76,6 +80,7 @@ export default function SemesterPage() {
       <PageTitle
         title="Semester"
         subtitle="Periode semester per tahun ajaran — hanya satu yang aktif dalam satu tahun"
+        actions={<Button size="sm" onClick={async () => setCreating(true)} disabled={!yearId}>+ Semester Baru</Button>}
       />
       {error ? (
         <p role="alert" className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</p>
@@ -92,7 +97,7 @@ export default function SemesterPage() {
               setYearId(e.target.value);
               void load(e.target.value);
             }}
-          >
+>
             {years.map((y) => (
               <option key={y.id} value={y.id}>{y.name}{y.isActive ? ' (aktif)' : ''}</option>
             ))}
@@ -100,40 +105,12 @@ export default function SemesterPage() {
         </Field>
       </div>
 
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (!yearId) {
-            setError('Pilih tahun ajaran dulu.');
-            return;
-          }
-          const f = new FormData(e.currentTarget);
-          void run(
-            () =>
-              createSemester({
-                academicYearId: yearId,
-                name: String(f.get('name')),
-                startDate: String(f.get('startDate')) || undefined,
-                endDate: String(f.get('endDate')) || undefined,
-              }),
-            'Semester ditambahkan.',
-            e.currentTarget,
-          );
-        }}
-        className="mb-5 grid gap-3 rounded-2xl border border-sand-200 bg-white p-4 shadow-card sm:grid-cols-[1fr_1fr_1fr_auto] sm:items-end"
-      >
-        <Field label="Nama Semester"><Input name="name" required placeholder="Ganjil" /></Field>
-        <Field label="Mulai"><Input name="startDate" type="date" /></Field>
-        <Field label="Selesai"><Input name="endDate" type="date" /></Field>
-        <Button type="submit" disabled={busy || !yearId} variant="outline">Tambah</Button>
-      </form>
-
       <DataTable
         head={['Semester', 'Tahun Ajaran', 'Mulai', 'Selesai', 'Status', '']}
         loading={loading}
         error={error}
         empty={rows.length === 0 ? 'Belum ada semester untuk tahun ini.' : undefined}
-      >
+>
         {rows.map((s) => (
           <tr key={s.id}>
             <td className="px-5 py-3 font-bold text-sand-900">{s.name}</td>
@@ -150,47 +127,59 @@ export default function SemesterPage() {
             <td className="px-5 py-3 text-right">
               <div className="flex items-center justify-end gap-3">
                 {!s.isActive ? (
-                  <button
-                    type="button"
-                    className="text-sm font-semibold text-primary-700 hover:underline"
-                    onClick={() =>
-                      void run(
-                        () => updateSemester(s.id, { isActive: true }),
-                        `Semester ${s.name} diaktifkan.`,
-                      )
-                    }
-                  >
+                  <RowBtn type="button" onClick={async () => void run( () => updateSemester(s.id, { isActive: true }), `Semester ${s.name} diaktifkan.`, ) }>
                     Jadikan Aktif
-                  </button>
+                  </RowBtn>
                 ) : null}
-                <button
-                  type="button"
-                  className="text-sm font-semibold text-sand-700 hover:underline"
-                  onClick={() => setEditing(s)}
-                >
+                <RowBtn tone="neutral" type="button" onClick={async () => setEditing(s)}>
                   Edit
-                </button>
-                <button
-                  type="button"
-                  className="text-sm font-semibold text-red-600 hover:underline"
-                  onClick={() => {
-                    if (!confirm(`Hapus semester ${s.name} (${s.academicYear?.name ?? ''})?`)) return;
-                    void run(() => deleteSemester(s.id), `Semester ${s.name} dihapus.`);
-                  }}
-                >
+                </RowBtn>
+                <RowBtn tone="danger" type="button" onClick={async () => { if (!confirm(`Hapus semester ${s.name} (${s.academicYear?.name ?? ''})?`)) return; void run(() => deleteSemester(s.id), `Semester ${s.name} dihapus.`); }}>
                   Hapus
-                </button>
+                </RowBtn>
               </div>
             </td>
           </tr>
         ))}
       </DataTable>
 
+      <Modal open={creating} onClose={() => setCreating(false)} title="Semester Baru">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const f = new FormData(e.currentTarget);
+            void run(
+              () =>
+                createSemester({
+                  academicYearId: yearId,
+                  name: String(f.get('name')),
+                  startDate: String(f.get('startDate')) || undefined,
+                  endDate: String(f.get('endDate')) || undefined,
+                }),
+              'Semester ditambahkan.',
+            ).then((ok) => {
+              if (ok) setCreating(false);
+            });
+          }}
+          className="grid gap-3"
+>
+          <Field label="Nama Semester"><Input name="name" required placeholder="Ganjil" /></Field>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Mulai"><Input name="startDate" type="date" /></Field>
+            <Field label="Selesai"><Input name="endDate" type="date" /></Field>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="ghost" onClick={async () => setCreating(false)}>Batal</Button>
+            <Button type="submit" disabled={busy}>Simpan</Button>
+          </div>
+        </form>
+      </Modal>
+
       <Modal
         open={editing !== null}
         onClose={() => setEditing(null)}
         title={`Edit Semester ${editing?.name ?? ''}`}
-      >
+>
         {editing ? (
           <form
             onSubmit={(e) => {
@@ -210,7 +199,7 @@ export default function SemesterPage() {
               });
             }}
             className="grid gap-3"
-          >
+>
             <Field label="Nama Semester">
               <Input name="name" required defaultValue={editing.name} />
             </Field>
@@ -223,7 +212,7 @@ export default function SemesterPage() {
               </Field>
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="ghost" onClick={() => setEditing(null)}>
+              <Button type="button" variant="ghost" onClick={async () => setEditing(null)}>
                 Batal
               </Button>
               <Button type="submit" disabled={busy}>Simpan</Button>
@@ -231,6 +220,7 @@ export default function SemesterPage() {
           </form>
         ) : null}
       </Modal>
-    </Shell>
+          {dialog}
+      </Shell>
   );
 }

@@ -10,6 +10,7 @@ import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { DataTable } from '@/components/data-table';
 import { PageTitle } from '@/components/widgets';
+import { rowActionClasses } from '@/components/row-btn';
 import { createStudent, listStudents } from '@/lib/api';
 
 const tone = (s: string) => (s === 'ACTIVE' ? 'primary' : 'neutral');
@@ -73,9 +74,14 @@ export default function StudentsPage() {
         title="Data Siswa"
         subtitle="Kelola data kesiswaan"
         actions={
-          <Button size="sm" variant={showForm ? 'ghost' : 'primary'} onClick={() => setShowForm((v) => !v)}>
-            {showForm ? 'Tutup' : '+ Tambah Siswa'}
-          </Button>
+          <>
+            <Link href="/kesiswaan/orang-tua" className={rowActionClasses('neutral')}>
+              Orang Tua →
+            </Link>
+            <Button size="sm" variant={showForm ? 'ghost' : 'primary'} onClick={() => setShowForm((v) => !v)}>
+              {showForm ? 'Tutup' : '+ Tambah Siswa'}
+            </Button>
+          </>
         }
       />
 

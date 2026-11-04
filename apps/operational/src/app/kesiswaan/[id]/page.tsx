@@ -6,10 +6,12 @@ import { useCallback, useEffect, useState } from 'react';
 import { DOC_TYPE_LABELS, PERMISSIONS, STUDENT_STATUS_LABELS } from '@smpmuh3/types';
 import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
+import { SearchSelect } from '@/components/search-select';
 import { PageTitle, Widget } from '@/components/widgets';
 import {
   addAchievement,
   addViolation,
+  getBillingReceipt,
   getStudent,
   getStudentBills,
   listAcademicYears,
@@ -18,20 +20,48 @@ import {
   enrollStudent,
   me,
   notifyInvoice,
+  openStudentDocument,
   recordBillingPayment,
   updateStudent,
+  uploadStudentDocument,
   type AcademicYear,
   type CashAccountView,
   type ClassView,
   type StudentBillsView,
   type StudentDetail,
   type StudentInvoice,
+  type StudentPaymentRow,
 } from '@/lib/api';
 
+import { RowBtn, rowActionClasses } from '@/components/row-btn';
 const rupiah = (n: number) => `Rp${n.toLocaleString('id-ID')}`;
 const STATUS_BILL: Record<string, string> = {
   OPEN: 'Belum bayar', PARTIAL: 'Angsuran', PAID: 'Lunas', EXPIRED: 'Kedaluwarsa', CANCELLED: 'Batal',
 };
+const METHOD_LABEL: Record<string, string> = {
+  cash: 'Tunai', transfer: 'Transfer', mock_transfer: 'Transfer', qris: 'QRIS',
+};
+const fmtDate = (iso?: string | null) =>
+  iso ? new Date(iso).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+
+const DOC_TYPES = [
+  ['kk', 'Kartu Keluarga'],
+  ['akta', 'Akta Kelahiran'],
+  ['ijazah', 'Ijazah / SK Lulus'],
+  ['ktp_ortu', 'Fotokopi KTP Orang Tua'],
+  ['foto', 'Pas Foto'],
+  ['sertifikat', 'Sertifikat / Piagam'],
+  ['lainnya', 'Dokumen Lainnya'],
+] as const;
+const DOC_TYPE_FALLBACK: Record<string, string> = {
+  prestasi: 'Bukti Prestasi',
+  pelanggaran: 'Bukti Pelanggaran',
+};
+const docLabel = (t: string) =>
+  DOC_TYPE_LABELS[t as keyof typeof DOC_TYPE_LABELS] ?? DOC_TYPE_FALLBACK[t] ?? t;
+
+type ModalKind =
+  | 'profil' | 'ortu' | 'rombel' | 'prestasi' | 'pelanggaran' | 'dokumen' | null;
 
 export default function StudentDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -41,9 +71,11 @@ export default function StudentDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [modal, setModal] = useState<ModalKind>(null);
   // Keuangan
   const [billsView, setBillsView] = useState<StudentBillsView | null>(null);
   const [accounts, setAccounts] = useState<CashAccountView[]>([]);
+  const [canManage, setCanManage] = useState(false);
   const [canFinRead, setCanFinRead] = useState(false);
   const [canFinManage, setCanFinManage] = useState(false);
   const [payModal, setPayModal] = useState<StudentInvoice | null>(null);
@@ -69,6 +101,7 @@ export default function StudentDetailPage() {
       .catch(() => undefined);
     me()
       .then((u) => {
+        setCanManage(u.permissions.includes(PERMISSIONS.STUDENT_MANAGE));
         const finRead = u.permissions.includes(PERMISSIONS.FINANCE_READ);
         setCanFinRead(finRead);
         setCanFinManage(u.permissions.includes(PERMISSIONS.FINANCE_MANAGE));
@@ -89,8 +122,8 @@ export default function StudentDetailPage() {
       await refresh();
       setNotice(ok);
       return true;
-    } catch {
-      setError('Aksi gagal — periksa data yang diisi.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Aksi gagal — periksa data yang diisi.');
       return false;
     } finally {
       setBusy(false);
@@ -98,6 +131,19 @@ export default function StudentDetailPage() {
   }
 
   const val = (f: FormData, k: string) => String(f.get(k) ?? '').trim() || undefined;
+
+  /** Upload file bukti (bila dipilih) lalu kembalikan id dokumennya. */
+  async function uploadEvidence(file: File | null, type: string) {
+    if (!file) return undefined;
+    const doc = await uploadStudentDocument(id, file, type);
+    return doc.id;
+  }
+
+  function openDoc(docId: string) {
+    openStudentDocument(docId)
+      .then((url) => window.open(url, '_blank'))
+      .catch(() => setError('Dokumen tidak dapat dibuka.'));
+  }
 
   // Bayar/angsur — nominal bisa sebagian (cicilan) maupun lunas.
   function onPay(e: React.FormEvent<HTMLFormElement>, inv: StudentInvoice) {
@@ -136,6 +182,79 @@ export default function StudentDetailPage() {
       .finally(() => setWaBusy(null));
   }
 
+  /** Cetak kwitansi satu pembayaran — jendela print seperti laporan. */
+  async function printReceipt(payment: StudentPaymentRow) {
+    try {
+      const r = await getBillingReceipt(payment.id);
+      const win = window.open('', '_blank', 'width=760,height=900');
+      if (!win) {
+        setError('Popup diblokir — izinkan popup untuk mencetak kwitansi.');
+        return;
+      }
+      const school = r.school;
+      const number = r.receipts?.[0]?.number ?? `KWT-${r.id.slice(0, 8).toUpperCase()}`;
+      const rows = r.allocations
+        .map(
+          (a, i) => `<tr>
+            <td style="padding:7px 10px;border-bottom:1px solid #e5e0d8">${i + 1}</td>
+            <td style="padding:7px 10px;border-bottom:1px solid #e5e0d8">${a.item?.label ?? a.invoice.title}<br/><span style="font-size:11px;color:#8a8578">${a.invoice.number}</span></td>
+            <td style="padding:7px 10px;border-bottom:1px solid #e5e0d8;text-align:right">${rupiah(a.amount)}</td>
+          </tr>`,
+        )
+        .join('');
+      win.document.write(`<!doctype html><html><head><base href="${window.location.origin}"><title>Kwitansi ${number}</title>
+        <style>
+          body{font-family:ui-sans-serif,system-ui,sans-serif;color:#29261f;margin:32px;font-size:13px}
+          .kop{display:flex;align-items:center;gap:12px;border-bottom:3px double #29261f;padding-bottom:12px;margin-bottom:18px}
+          .kop h1{font-size:17px;margin:0}
+          .kop p{font-size:11px;color:#6b675a;margin:2px 0 0}
+          .nomor{text-align:center;margin:14px 0 20px}
+          .nomor b{font-size:15px}
+          table{width:100%;border-collapse:collapse}
+          th{background:#f4f1ea;text-align:left;padding:7px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+          .meta td{padding:3px 0;font-size:13px}
+          .meta td:first-child{width:150px;color:#6b675a}
+          .total td{padding:9px 10px;font-weight:700;font-size:14px;border-top:2px solid #29261f}
+          .ttd{display:flex;justify-content:space-between;margin-top:44px}
+          .ttd div{text-align:center;width:190px}
+          .ttd .nm{margin-top:64px;border-top:1px solid #29261f;padding-top:5px;font-weight:600}
+          .ttd .nm.hassig{margin-top:8px}
+          .ttd img.sig{height:52px;object-fit:contain;margin-top:8px}
+          @media print{body{margin:12mm}}
+        </style></head><body>
+        <div class="kop">
+          ${school?.logoUrl ? `<img src="/logo.png" alt="" style="width:56px;height:56px;object-fit:contain"/>` : ''}
+          <div style="flex:1;text-align:center">
+            <h1>${school?.name ?? 'Sekolah'}</h1>
+            <p>${school?.address ?? ''}${school?.phone ? ` · Telp ${school.phone}` : ''}${school?.whatsapp ? ` · WA ${school.whatsapp}` : ''}</p>
+          </div>
+          ${school?.logoUrl ? '<span style="width:56px"></span>' : ''}
+        </div>
+        <div class="nomor"><b>KWITANSI PEMBAYARAN</b><br/><span style="font-size:12px;color:#6b675a">No. ${number}</span></div>
+        <table class="meta"><tbody>
+          <tr><td>Telah diterima dari</td><td><b>${r.invoice.student?.parent?.name ?? 'Orang Tua/Wali'}</b></td></tr>
+          <tr><td>Untuk pembayaran siswa</td><td><b>${r.invoice.student?.name ?? '-'}</b>${r.invoice.student?.nis ? ` · NIS ${r.invoice.student.nis}` : ''}</td></tr>
+          <tr><td>Tanggal bayar</td><td>${fmtDate(r.paidAt)}</td></tr>
+          <tr><td>Metode / Kas</td><td>${METHOD_LABEL[r.method ?? ''] ?? r.method ?? '-'}${r.cashAccount?.name ? ` · ${r.cashAccount.name}` : ''}</td></tr>
+        </tbody></table>
+        <br/>
+        <table><thead><tr><th style="width:34px">No</th><th>Rincian Pembayaran</th><th style="width:130px;text-align:right">Jumlah</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr class="total"><td></td><td>TOTAL DITERIMA</td><td style="text-align:right">${rupiah(r.amount)}</td></tr></tfoot>
+        </table>
+        <div class="ttd">
+          <div><p>Orang Tua/Wali</p><p class="nm">${r.invoice.student?.parent?.name ?? '( …………………… )'}</p></div>
+          ${school?.headmaster ? `<div><p>Mengetahui,<br/>Kepala Sekolah</p>${school.headmasterSignatureUrl ? `<img class="sig" src="/signature.png" alt=""/>` : ''}<p class="nm${school.headmasterSignatureUrl ? ' hassig' : ''}">${school.headmaster}${school.headmasterNip ? `<br/><span style="font-weight:400;font-size:11px">NIP ${school.headmasterNip}</span>` : ''}</p></div>` : ''}
+          <div><p>Bandung, ${fmtDate(r.paidAt)}<br/>Bendahara,</p><p class="nm">${r.cashierName ?? '( …………………… )'}</p></div>
+        </div>
+        <script>window.onload=()=>{window.print();}<\/script>
+        </body></html>`);
+      win.document.close();
+    } catch {
+      setError('Gagal memuat data kwitansi.');
+    }
+  }
+
   return (
     <Shell>
       <Link href="/kesiswaan" className="text-sm font-semibold text-primary-700 hover:text-primary-800">
@@ -161,53 +280,32 @@ export default function StudentDetailPage() {
       ) : (
         <div className="grid gap-5 lg:grid-cols-3">
           <div className="space-y-5 lg:col-span-2">
-            <Widget title="Data Diri">
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const f = new FormData(e.currentTarget);
-                  run(
-                    () =>
-                      updateStudent(id, {
-                        name: val(f, 'name'),
-                        nis: val(f, 'nis'),
-                        nisn: val(f, 'nisn'),
-                        gender: val(f, 'gender'),
-                        birthPlace: val(f, 'birthPlace'),
-                        birthDate: val(f, 'birthDate'),
-                        address: val(f, 'address'),
-                      }),
-                    'Data tersimpan.',
-                  );
-                }}
-                className="grid gap-4 sm:grid-cols-2"
-              >
-                <Field label="Nama Lengkap" className="sm:col-span-2">
-                  <Input name="name" required defaultValue={s.name} />
-                </Field>
-                <Field label="NIS"><Input name="nis" defaultValue={s.nis ?? ''} /></Field>
-                <Field label="NISN"><Input name="nisn" defaultValue={s.nisn ?? ''} /></Field>
-                <Field label="Jenis Kelamin">
-                  <Select name="gender" defaultValue={s.gender ?? ''}>
-                    <option value="">Pilih…</option>
-                    <option value="MALE">Laki-laki</option>
-                    <option value="FEMALE">Perempuan</option>
-                  </Select>
-                </Field>
-                <Field label="Tempat Lahir"><Input name="birthPlace" defaultValue={s.birthPlace ?? ''} /></Field>
-                <Field label="Tanggal Lahir"><Input name="birthDate" type="date" defaultValue={s.birthDate?.slice(0, 10) ?? ''} /></Field>
-                <Field label="Alamat"><Input name="address" defaultValue={s.address ?? ''} /></Field>
-                <div className="sm:col-span-2">
-                  <Button type="submit" disabled={busy}>Simpan Perubahan</Button>
-                </div>
-              </form>
+            <Widget
+              title="Data Diri"
+              action={canManage ? <Button variant="outline" size="sm" onClick={() => setModal('profil')}>Ubah</Button> : undefined}
+>
+              <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
+                <div><dt className="text-xs font-bold uppercase tracking-wide text-sand-400">Nama Lengkap</dt><dd className="mt-0.5 font-semibold text-sand-900">{s.name}</dd></div>
+                <div><dt className="text-xs font-bold uppercase tracking-wide text-sand-400">Jenis Kelamin</dt><dd className="mt-0.5 text-sand-800">{s.gender === 'MALE' ? 'Laki-laki' : s.gender === 'FEMALE' ? 'Perempuan' : '—'}</dd></div>
+                <div><dt className="text-xs font-bold uppercase tracking-wide text-sand-400">NIS</dt><dd className="mt-0.5 text-sand-800">{s.nis ?? '—'}</dd></div>
+                <div><dt className="text-xs font-bold uppercase tracking-wide text-sand-400">NISN</dt><dd className="mt-0.5 text-sand-800">{s.nisn ?? '—'}</dd></div>
+                <div><dt className="text-xs font-bold uppercase tracking-wide text-sand-400">Tempat, Tanggal Lahir</dt><dd className="mt-0.5 text-sand-800">{[s.birthPlace, s.birthDate ? fmtDate(s.birthDate) : null].filter(Boolean).join(', ') || '—'}</dd></div>
+                <div><dt className="text-xs font-bold uppercase tracking-wide text-sand-400">Alamat</dt><dd className="mt-0.5 text-sand-800">{s.address ?? '—'}</dd></div>
+              </dl>
             </Widget>
 
-            <Widget title={`Rombel TA ${year?.name ?? ''}`}>
+            <Widget
+              title={`Rombel TA ${year?.name ?? ''}`}
+              action={
+                canManage && !s.enrollments.some((e) => e.academicYear.name === year?.name)
+                  ? <Button variant="outline" size="sm" onClick={() => setModal('rombel')}>Tempatkan di Rombel</Button>
+                  : undefined
+              }
+>
               {s.enrollments.length === 0 ? (
-                <p className="mb-4 text-sm text-sand-500">Belum ditempatkan di rombel.</p>
+                <p className="text-sm text-sand-500">Belum ditempatkan di rombel.</p>
               ) : (
-                <ul className="mb-4 space-y-2">
+                <ul className="space-y-2">
                   {s.enrollments.map((en) => (
                     <li key={en.id} className="rounded-xl border border-sand-200 bg-sand-50 px-4 py-3 text-sm font-semibold text-sand-900">
                       {en.class.name} <span className="font-normal text-sand-500">· Kelas {en.class.gradeLevel} · {en.academicYear.name}</span>
@@ -215,31 +313,12 @@ export default function StudentDetailPage() {
                   ))}
                 </ul>
               )}
-              {s.enrollments.some((e) => e.academicYear.name === year?.name) ? null : (
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    const f = new FormData(e.currentTarget);
-                    run(
-                      () => enrollStudent({ studentId: id, classId: String(f.get('classId')) }),
-                      'Siswa ditempatkan di rombel.',
-                    );
-                  }}
-                  className="flex flex-wrap items-end gap-3 rounded-2xl border border-sand-200 bg-sand-50 p-4"
-                >
-                  <Field label="Tempatkan di Rombel" className="min-w-52 flex-1">
-                    <Select name="classId" required defaultValue="">
-                      <option value="" disabled>Pilih rombel…</option>
-                      {classes.map((c) => (
-                        <option key={c.id} value={c.id}>{c.name} ({c._count?.enrollments ?? 0} siswa)</option>
-                      ))}
-                    </Select>
-                  </Field>
-                  <Button type="submit" disabled={busy} variant="outline">Tempatkan</Button>
-                </form>
-              )}
             </Widget>
-            <Widget title={`Dokumen (${s.documents?.length ?? 0})`}>
+
+            <Widget
+              title={`Dokumen (${s.documents?.length ?? 0})`}
+              action={canManage ? <Button variant="outline" size="sm" onClick={() => setModal('dokumen')}>+ Unggah</Button> : undefined}
+>
               {!s.documents?.length ? (
                 <p className="text-sm text-sand-500">Belum ada dokumen terunggah.</p>
               ) : (
@@ -255,15 +334,17 @@ export default function StudentDetailPage() {
                   ).map(([type, docs]) => (
                     <div key={type}>
                       <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-primary-700">
-                        {DOC_TYPE_LABELS[type as keyof typeof DOC_TYPE_LABELS] ?? type}
+                        {docLabel(type)}
                       </p>
                       <ul className="space-y-1.5">
                         {docs.map((d) => (
                           <li
                             key={d.id}
                             className="flex items-center justify-between gap-3 rounded-xl border border-sand-200 bg-sand-50 px-4 py-2.5 text-sm"
-                          >
-                            <span className="min-w-0 truncate font-medium text-sand-800">{d.fileName}</span>
+>
+                            <RowBtn type="button" onClick={() => openDoc(d.id)} className="min-w-0 truncate text-left" title="Buka dokumen">
+                              {d.fileName}
+                            </RowBtn>
                             <span className="flex shrink-0 items-center gap-2 text-xs text-sand-500">
                               {(d.sizeBytes / 1024).toFixed(0)} KB
                               {d.verifiedAt ? <Badge tone="primary">Terverifikasi</Badge> : null}
@@ -279,9 +360,14 @@ export default function StudentDetailPage() {
           </div>
 
           <div className="space-y-5">
-            <Widget title="Orang Tua / Wali">
+            <Widget
+              title="Orang Tua / Wali"
+              action={canManage ? <Button variant="outline" size="sm" onClick={() => setModal('ortu')}>{s.parent ? 'Ubah' : '+ Isi'}</Button> : undefined}
+>
               {!s.parent ? (
-                <p className="text-sm text-sand-500">Belum ada akun orang tua terhubung.</p>
+                <p className="text-sm text-sand-500">
+                  Belum ada data orang tua — isi nama &amp; no. HP agar pengingat tagihan dan kwitansi bisa dikirim.
+                </p>
               ) : (
                 <div className="space-y-2 text-sm">
                   <p className="font-semibold text-sand-900">{s.parent.name}</p>
@@ -293,7 +379,7 @@ export default function StudentDetailPage() {
                         href={`https://wa.me/${s.parent.phone.replace(/[^0-9]/g, '').replace(/^0/, '62')}`}
                         target="_blank"
                         rel="noreferrer"
-                        className="text-xs font-semibold text-primary-700 hover:underline"
+                        className={rowActionClasses('success')}
                       >
                         Chat WA →
                       </a>
@@ -306,76 +392,64 @@ export default function StudentDetailPage() {
               )}
             </Widget>
 
-            <Widget title={`Prestasi (${s.achievements.length})`}>
-              <ul className="mb-4 space-y-2 text-sm">
+            <Widget
+              title={`Prestasi (${s.achievements.length})`}
+              action={canManage ? <Button variant="outline" size="sm" onClick={() => setModal('prestasi')}>+ Tambah</Button> : undefined}
+>
+              <ul className="space-y-2 text-sm">
                 {s.achievements.map((a) => (
                   <li key={a.id} className="rounded-xl bg-primary-50 px-4 py-2.5">
                     <p className="font-semibold text-sand-900">{a.title}</p>
-                    <p className="text-xs text-sand-500">{[a.level, a.year].filter(Boolean).join(' · ')}</p>
+                    <p className="text-xs text-sand-500">
+                      {[a.level, a.year].filter(Boolean).join(' · ')}
+                      {a.evidenceDocument ? (
+                        <>
+                          {' · '}
+                          <RowBtn type="button" onClick={() => openDoc(a.evidenceDocument!.id)}>
+                            bukti: {a.evidenceDocument.fileName}
+                          </RowBtn>
+                        </>
+                      ) : null}
+                    </p>
                   </li>
                 ))}
                 {s.achievements.length === 0 ? (
                   <li className="text-sand-500">Belum ada prestasi.</li>
                 ) : null}
               </ul>
-              <form
-                onSubmit={async (e) => {
-                  e.preventDefault();
-                  const f = new FormData(e.currentTarget);
-                  const ok = await run(
-                    () => addAchievement(id, { title: val(f, 'title'), level: val(f, 'level'), year: Number(val(f, 'year')) || undefined }),
-                    'Prestasi ditambahkan.',
-                  );
-                  if (ok) e.currentTarget.reset();
-                }}
-                className="space-y-3"
-              >
-                <Input name="title" required placeholder="Judul prestasi" />
-                <div className="flex gap-3">
-                  <Input name="level" placeholder="Tingkat (kota, provinsi…)" className="flex-1" />
-                  <Input name="year" type="number" placeholder="Tahun" className="w-24" />
-                </div>
-                <Button type="submit" size="sm" disabled={busy} variant="outline">+ Tambah Prestasi</Button>
-              </form>
             </Widget>
 
-            <Widget title={`Pelanggaran (${s.violations.length})`}>
-              <ul className="mb-4 space-y-2 text-sm">
+            <Widget
+              title={`Pelanggaran (${s.violations.length})`}
+              action={canManage ? <Button variant="outline" size="sm" onClick={() => setModal('pelanggaran')}>+ Catat</Button> : undefined}
+>
+              <ul className="space-y-2 text-sm">
                 {s.violations.map((v) => (
                   <li key={v.id} className="rounded-xl bg-red-50 px-4 py-2.5">
                     <p className="font-semibold text-sand-900">{v.type} <span className="text-red-700">· {v.points} poin</span></p>
-                    <p className="text-xs text-sand-500">{v.date.slice(0, 10)}{v.description ? ` — ${v.description}` : ''}</p>
+                    <p className="text-xs text-sand-500">
+                      {v.date.slice(0, 10)}{v.description ? ` — ${v.description}` : ''}
+                      {v.evidenceDocument ? (
+                        <>
+                          {' · '}
+                          <RowBtn type="button" onClick={() => openDoc(v.evidenceDocument!.id)}>
+                            bukti: {v.evidenceDocument.fileName}
+                          </RowBtn>
+                        </>
+                      ) : null}
+                    </p>
                   </li>
                 ))}
                 {s.violations.length === 0 ? (
                   <li className="text-sand-500">Tidak ada pelanggaran.</li>
                 ) : null}
               </ul>
-              <form
-                onSubmit={async (e) => {
-                  e.preventDefault();
-                  const f = new FormData(e.currentTarget);
-                  const ok = await run(
-                    () => addViolation(id, { type: val(f, 'type'), points: Number(val(f, 'points')) || 0, description: val(f, 'description'), date: new Date().toISOString() }),
-                    'Pelanggaran dicatat.',
-                  );
-                  if (ok) e.currentTarget.reset();
-                }}
-                className="space-y-3"
-              >
-                <div className="flex gap-3">
-                  <Input name="type" required placeholder="Jenis" className="flex-1" />
-                  <Input name="points" type="number" min={0} placeholder="Poin" className="w-24" />
-                </div>
-                <Input name="description" placeholder="Keterangan (opsional)" />
-                <Button type="submit" size="sm" disabled={busy} variant="outline">+ Catat Pelanggaran</Button>
-              </form>
             </Widget>
           </div>
         </div>
       )}
 
-      {/* ---- Keuangan: tagihan, angsuran, pengingat WA, tabungan ---- */}
+      {/* ---- Keuangan: tagihan, angsuran, pengingat WA, kwitansi ---- */}
       {s && canFinRead ? (
         <div className="mt-6">
           <Widget
@@ -387,12 +461,12 @@ export default function StudentDetailPage() {
                     Saldo tabungan <b className="text-primary-800">{rupiah(billsView.savings)}</b>
                   </span>
                 ) : null}
-                <Link href={`/keuangan/tabungan/${id}`} className="font-semibold text-primary-700 hover:underline">
+                <Link href={`/keuangan/tabungan/${id}`} className={rowActionClasses()}>
                   Buku Tabungan →
                 </Link>
               </span>
             }
-          >
+>
             {!billsView ? (
               <p className="py-4 text-sm text-sand-500">Memuat tagihan…</p>
             ) : billsView.bills.length === 0 ? (
@@ -445,21 +519,12 @@ export default function StudentDetailPage() {
                             <td className="whitespace-nowrap py-3 text-right">
                               {active ? (
                                 <span className="flex justify-end gap-2">
-                                  <button
-                                    type="button"
-                                    className="text-xs font-semibold text-primary-700 hover:underline"
-                                    onClick={() => setPayModal(b)}
-                                  >
+                                  <RowBtn type="button" onClick={() => setPayModal(b)}>
                                     Bayar / Angsur
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="text-xs font-semibold text-emerald-700 hover:underline disabled:opacity-50"
-                                    disabled={waBusy === b.id}
-                                    onClick={() => sendWa(b)}
-                                  >
+                                  </RowBtn>
+                                  <RowBtn tone="success" type="button" className="disabled:opacity-50" disabled={waBusy === b.id} onClick={() => sendWa(b)}>
                                     {waBusy === b.id ? 'Mengantre…' : 'Ingatkan WA'}
-                                  </button>
+                                  </RowBtn>
                                 </span>
                               ) : null}
                             </td>
@@ -480,8 +545,304 @@ export default function StudentDetailPage() {
               </div>
             )}
           </Widget>
+
+          <Widget title={`Riwayat Pembayaran & Kwitansi (${billsView?.payments.length ?? 0})`}>
+            {!billsView || billsView.payments.length === 0 ? (
+              <p className="py-2 text-sm text-sand-500">Belum ada pembayaran tercatat.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs uppercase tracking-wider text-sand-500">
+                      <th className="pb-2 pr-3">No. Kwitansi</th>
+                      <th className="pb-2 pr-3">Tanggal</th>
+                      <th className="pb-2 pr-3">Rincian</th>
+                      <th className="pb-2 pr-3">Metode</th>
+                      <th className="pb-2 pr-3 text-right">Jumlah</th>
+                      <th className="pb-2 text-right"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {billsView.payments.map((p) => (
+                      <tr key={p.id} className="border-t border-sand-100">
+                        <td className="whitespace-nowrap py-3 pr-3 font-mono text-xs font-semibold text-primary-800">
+                          {p.receipts?.[0]?.number ?? '—'}
+                        </td>
+                        <td className="whitespace-nowrap py-3 pr-3 text-sand-600">{fmtDate(p.paidAt)}</td>
+                        <td className="max-w-72 py-3 pr-3 text-sand-700">
+                          {p.allocations.map((a) => (
+                            <p key={a.id} className="truncate" title={a.item?.label ?? a.invoice.title}>
+                              {a.item?.label ?? a.invoice.title}
+                            </p>
+                          ))}
+                        </td>
+                        <td className="whitespace-nowrap py-3 pr-3 text-xs text-sand-500">
+                          {METHOD_LABEL[p.method ?? ''] ?? p.method ?? '—'}
+                          {p.cashAccount?.name ? ` · ${p.cashAccount.name}` : ''}
+                        </td>
+                        <td className="whitespace-nowrap py-3 pr-3 text-right font-semibold tabular-nums text-sand-900">
+                          {rupiah(p.amount)}
+                        </td>
+                        <td className="whitespace-nowrap py-3 text-right">
+                          <RowBtn type="button" onClick={() => void printReceipt(p)}>
+                            Cetak Kwitansi
+                          </RowBtn>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Widget>
         </div>
       ) : null}
+
+      {/* ============ MODAL ============ */}
+
+      {/* Ubah data diri */}
+      <Modal open={modal === 'profil'} onClose={() => setModal(null)} title="Ubah Data Diri" size="lg">
+        {s ? (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const f = new FormData(e.currentTarget);
+              void run(
+                () =>
+                  updateStudent(id, {
+                    name: val(f, 'name'),
+                    nis: val(f, 'nis'),
+                    nisn: val(f, 'nisn'),
+                    gender: val(f, 'gender'),
+                    birthPlace: val(f, 'birthPlace'),
+                    birthDate: val(f, 'birthDate'),
+                    address: val(f, 'address'),
+                  }),
+                'Data tersimpan.',
+              ).then((ok) => ok && setModal(null));
+            }}
+            className="grid gap-4 sm:grid-cols-2"
+>
+            <Field label="Nama Lengkap" className="sm:col-span-2">
+              <Input name="name" required defaultValue={s.name} />
+            </Field>
+            <Field label="NIS"><Input name="nis" defaultValue={s.nis ?? ''} /></Field>
+            <Field label="NISN"><Input name="nisn" defaultValue={s.nisn ?? ''} /></Field>
+            <Field label="Jenis Kelamin">
+              <Select name="gender" defaultValue={s.gender ?? ''}>
+                <option value="">Pilih…</option>
+                <option value="MALE">Laki-laki</option>
+                <option value="FEMALE">Perempuan</option>
+              </Select>
+            </Field>
+            <Field label="Tempat Lahir"><Input name="birthPlace" defaultValue={s.birthPlace ?? ''} /></Field>
+            <Field label="Tanggal Lahir"><Input name="birthDate" type="date" defaultValue={s.birthDate?.slice(0, 10) ?? ''} /></Field>
+            <Field label="Alamat"><Input name="address" defaultValue={s.address ?? ''} /></Field>
+            <div className="flex justify-end gap-2 sm:col-span-2">
+              <Button type="button" variant="ghost" onClick={() => setModal(null)}>Batal</Button>
+              <Button type="submit" disabled={busy}>Simpan Perubahan</Button>
+            </div>
+          </form>
+        ) : null}
+      </Modal>
+
+      {/* Data orang tua / wali */}
+      <Modal open={modal === 'ortu'} onClose={() => setModal(null)} title="Orang Tua / Wali">
+        {s ? (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const f = new FormData(e.currentTarget);
+              void run(
+                () =>
+                  updateStudent(id, {
+                    name: s.name, // wajib di DTO
+                    parentName: val(f, 'parentName') ?? '',
+                    parentPhone: val(f, 'parentPhone') ?? '',
+                  }),
+                'Data orang tua tersimpan.',
+              ).then((ok) => ok && setModal(null));
+            }}
+            className="grid gap-4"
+>
+            <p className="rounded-xl bg-sand-50 px-4 py-3 text-xs text-sand-600">
+              Untuk siswa yang tidak masuk lewat SPMB (kelas lanjutan/mutasi), akun
+              orang tua dibuat otomatis dari data ini — no. HP dipakai untuk
+              pengingat tagihan &amp; pengiriman kwitansi via WhatsApp.
+            </p>
+            <Field label="Nama Orang Tua / Wali">
+              <Input name="parentName" required minLength={3} defaultValue={s.parent?.name ?? ''} placeholder="mis. Budi Santoso" />
+            </Field>
+            <Field label="No. HP / WhatsApp" hint="Format bebas — dinormalisasi ke 62… saat mengirim WA">
+              <Input name="parentPhone" defaultValue={s.parent?.phone ?? ''} placeholder="08xxxxxxxxxx" />
+            </Field>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={() => setModal(null)}>Batal</Button>
+              <Button type="submit" disabled={busy}>Simpan</Button>
+            </div>
+          </form>
+        ) : null}
+      </Modal>
+
+      {/* Tempatkan di rombel */}
+      <Modal open={modal === 'rombel'} onClose={() => setModal(null)} title={`Tempatkan di Rombel — TA ${year?.name ?? ''}`}>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const f = new FormData(e.currentTarget);
+            void run(
+              () => enrollStudent({ studentId: id, classId: String(f.get('classId')) }),
+              'Siswa ditempatkan di rombel.',
+            ).then((ok) => ok && setModal(null));
+          }}
+          className="grid gap-4"
+>
+          <Field label="Rombel" hint="Ketik untuk mencari nama kelas">
+            <SearchSelect
+              name="classId"
+              required
+              placeholder="Ketik nama rombel…"
+              load={async (q) =>
+                classes.filter((c) => c.name.toLowerCase().includes(q.toLowerCase()))
+              }
+              label={(c) => c.name}
+              sub={(c) => `Kelas ${c.gradeLevel} · ${c._count?.enrollments ?? 0} siswa`}
+            />
+          </Field>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={() => setModal(null)}>Batal</Button>
+            <Button type="submit" disabled={busy}>Tempatkan</Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Tambah prestasi */}
+      <Modal open={modal === 'prestasi'} onClose={() => setModal(null)} title="Tambah Prestasi">
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const f = new FormData(e.currentTarget);
+            const file = (f.get('evidence') as File | null) ?? null;
+            const ok = await run(
+              async () =>
+                addAchievement(id, {
+                  title: val(f, 'title'),
+                  level: val(f, 'level'),
+                  year: Number(val(f, 'year')) || undefined,
+                  description: val(f, 'description'),
+                  evidenceDocumentId: await uploadEvidence(file?.size ? file : null, 'prestasi'),
+                }),
+              'Prestasi ditambahkan.',
+            );
+            if (ok) setModal(null);
+          }}
+          className="grid gap-4"
+>
+          <Field label="Judul Prestasi">
+            <Input name="title" required minLength={3} placeholder="mis. Juara 1 O2SN Matematika" />
+          </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Tingkat">
+              <Input name="level" placeholder="Kota / Provinsi / Nasional" />
+            </Field>
+            <Field label="Tahun">
+              <Input name="year" type="number" min={1990} max={2100} placeholder={String(new Date().getFullYear())} />
+            </Field>
+          </div>
+          <Field label="Keterangan (opsional)">
+            <Input name="description" placeholder="Detail prestasi" />
+          </Field>
+          <Field label="Bukti — foto/PDF (opsional)" hint="Piagam, sertifikat, atau foto — maks 5 MB">
+            <Input name="evidence" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" />
+          </Field>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={() => setModal(null)}>Batal</Button>
+            <Button type="submit" disabled={busy}>Simpan Prestasi</Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Catat pelanggaran */}
+      <Modal open={modal === 'pelanggaran'} onClose={() => setModal(null)} title="Catat Pelanggaran">
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const f = new FormData(e.currentTarget);
+            const file = (f.get('evidence') as File | null) ?? null;
+            const ok = await run(
+              async () =>
+                addViolation(id, {
+                  type: val(f, 'type'),
+                  points: Number(val(f, 'points')) || 0,
+                  description: val(f, 'description'),
+                  date: val(f, 'date') ?? new Date().toISOString(),
+                  evidenceDocumentId: await uploadEvidence(file?.size ? file : null, 'pelanggaran'),
+                }),
+              'Pelanggaran dicatat.',
+            );
+            if (ok) setModal(null);
+          }}
+          className="grid gap-4"
+>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Jenis Pelanggaran">
+              <Input name="type" required minLength={3} placeholder="mis. Terlambat / Atribut" />
+            </Field>
+            <Field label="Poin">
+              <Input name="points" type="number" min={0} max={100} defaultValue={0} />
+            </Field>
+          </div>
+          <Field label="Tanggal">
+            <Input name="date" type="date" defaultValue={new Date().toISOString().slice(0, 10)} />
+          </Field>
+          <Field label="Keterangan (opsional)">
+            <Input name="description" placeholder="Kronologi singkat" />
+          </Field>
+          <Field label="Bukti — foto/PDF (opsional)" hint="Foto kejadian atau surat — maks 5 MB">
+            <Input name="evidence" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" />
+          </Field>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={() => setModal(null)}>Batal</Button>
+            <Button type="submit" disabled={busy}>Catat Pelanggaran</Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Unggah dokumen */}
+      <Modal open={modal === 'dokumen'} onClose={() => setModal(null)} title="Unggah Dokumen Siswa">
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const f = new FormData(e.currentTarget);
+            const file = f.get('file') as File | null;
+            if (!file?.size) {
+              setError('Pilih file dulu.');
+              return;
+            }
+            const ok = await run(
+              () => uploadStudentDocument(id, file, String(f.get('dtype') ?? 'lainnya')),
+              'Dokumen terunggah.',
+            );
+            if (ok) setModal(null);
+          }}
+          className="grid gap-4"
+>
+          <Field label="Jenis Dokumen">
+            <Select name="dtype" defaultValue="lainnya">
+              {DOC_TYPES.map(([k, l]) => (
+                <option key={k} value={k}>{l}</option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="File" hint="JPG, PNG, WebP, atau PDF — maks 5 MB">
+            <Input name="file" type="file" required accept="image/jpeg,image/png,image/webp,application/pdf" />
+          </Field>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={() => setModal(null)}>Batal</Button>
+            <Button type="submit" disabled={busy}>Unggah</Button>
+          </div>
+        </form>
+      </Modal>
 
       {/* Modal bayar/angsur */}
       <Modal open={payModal !== null} onClose={() => setPayModal(null)} title={payModal ? `Bayar — ${payModal.title}` : ''}>

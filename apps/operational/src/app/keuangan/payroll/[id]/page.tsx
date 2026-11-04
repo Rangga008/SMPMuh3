@@ -25,7 +25,10 @@ import {
 } from '@/lib/api';
 import { jam, monthLabel, printEl, RUN_LABEL, RUN_TONE, rupiah, SlipView } from '@/components/payroll-slip';
 
+import { RowBtn } from '@/components/row-btn';
+import { useConfirm } from '@/components/confirm-dialog';
 export default function PayrollRunPage() {
+  const { confirm, dialog } = useConfirm();
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const [canManage, setCanManage] = useState(false);
@@ -56,11 +59,12 @@ export default function PayrollRunPage() {
       .then(([accs, sc]) => {
         setAccounts(accs);
         setSchool(sc);
+        // Nama penanda tangan: profil sekolah dulu, lalu cache lokal.
+        setPrincipal(sc.headmaster ?? localStorage.getItem('payroll.principal') ?? '');
+        setTreasurer(localStorage.getItem('payroll.treasurer') ?? '');
       })
       .catch(() => undefined);
     me().then((u) => setCanManage(u.permissions.includes(PERMISSIONS.PAYROLL_MANAGE))).catch(() => undefined);
-    setPrincipal(localStorage.getItem('payroll.principal') ?? '');
-    setTreasurer(localStorage.getItem('payroll.treasurer') ?? '');
     load();
   }, [load]);
 
@@ -93,7 +97,7 @@ export default function PayrollRunPage() {
           <Link
             href="/keuangan/payroll"
             className="rounded-xl border border-sand-200 bg-white px-3 py-2 text-sm font-semibold text-primary-700 shadow-sm hover:bg-sand-50"
-          >
+>
             ← Daftar Run
           </Link>
         }
@@ -129,26 +133,26 @@ export default function PayrollRunPage() {
                 <span className="flex gap-2">
                   {run.status === 'DRAFT' ? (
                     <>
-                      <Button size="sm" variant="outline" onClick={() => void run_(() => recomputePayrollRun(run.id), 'Dihitung ulang.')} disabled={busy}>Hitung Ulang</Button>
-                      <Button size="sm" onClick={() => void run_(() => finalizePayrollRun(run.id), 'Run difinalkan.')} disabled={busy}>Finalkan</Button>
+                      <Button size="sm" variant="outline" onClick={async () => void run_(() => recomputePayrollRun(run.id), 'Dihitung ulang.')} disabled={busy}>Hitung Ulang</Button>
+                      <Button size="sm" onClick={async () => void run_(() => finalizePayrollRun(run.id), 'Run difinalkan.')} disabled={busy}>Finalkan</Button>
                     </>
                   ) : null}
                   {run.status === 'FINALIZED' ? (
-                    <Button size="sm" onClick={() => setPayModal(true)} disabled={busy}>Bayar via Kas</Button>
+                    <Button size="sm" onClick={async () => setPayModal(true)} disabled={busy}>Bayar via Kas</Button>
                   ) : null}
                   {run.status !== 'PAID' && run.status !== 'VOID' ? (
-                    <Button size="sm" variant="ghost" onClick={() => { if (window.confirm('Batalkan run ini?')) void run_(() => voidPayrollRun(run.id), 'Run dibatalkan.'); }} disabled={busy}>Void</Button>
+                    <Button size="sm" variant="ghost" onClick={async () => { if (await confirm('Batalkan run ini?')) void run_(() => voidPayrollRun(run.id), 'Run dibatalkan.'); }} disabled={busy}>Void</Button>
                   ) : null}
                   {run.status === 'DRAFT' || run.status === 'VOID' ? (
-                    <Button size="sm" variant="ghost" onClick={() => { if (window.confirm('Hapus run ini beserta semua item?')) void run_(async () => { await deletePayrollRun(run.id); router.push('/keuangan/payroll'); }, 'Run dihapus.'); }} disabled={busy}>Hapus</Button>
+                    <Button size="sm" variant="ghost" onClick={async () => { if (await confirm('Hapus run ini beserta semua item?')) void run_(async () => { await deletePayrollRun(run.id); router.push('/keuangan/payroll'); }, 'Run dihapus.'); }} disabled={busy}>Hapus</Button>
                   ) : null}
                   {run.status === 'PAID' ? (
-                    <Button size="sm" variant="ghost" onClick={() => { if (window.confirm('Void run PAID? Kas & pinjaman dikembalikan.')) void run_(() => voidPayrollRun(run.id), 'Run dibatalkan — kas dikembalikan.'); }} disabled={busy}>Void</Button>
+                    <Button size="sm" variant="ghost" onClick={async () => { if (await confirm('Void run PAID? Kas & pinjaman dikembalikan.')) void run_(() => voidPayrollRun(run.id), 'Run dibatalkan — kas dikembalikan.'); }} disabled={busy}>Void</Button>
                   ) : null}
                 </span>
               ) : undefined
             }
-          >
+>
             {run.note ? <p className="mb-3 text-xs italic text-sand-500">{run.note}</p> : null}
             {run.status === 'DRAFT' ? (
               <p className="mb-3 rounded-xl bg-amber-50 px-4 py-2.5 text-xs text-amber-800">
@@ -160,9 +164,9 @@ export default function PayrollRunPage() {
               loading={loading}
               error={null}
               empty={(run.items?.length ?? 0) === 0 ? 'Tidak ada pegawai aktif.' : undefined}
-            >
+>
               {(run.items ?? []).map((it) => (
-                <tr key={it.id} className="cursor-pointer" onClick={() => setSlip(it)}>
+                <tr key={it.id} className="cursor-pointer" onClick={async () => setSlip(it)}>
                   <td className="px-5 py-3">
                     <p className="font-medium text-sand-900">{it.employee?.name}</p>
                     <p className="text-[10px] text-sand-400">{it.employee?.nip ?? ''}{it.employee?.payScale?.name ? ` · ${it.employee.payScale.name}` : ''}</p>
@@ -174,7 +178,7 @@ export default function PayrollRunPage() {
                   <td className="whitespace-nowrap px-5 py-3 text-right text-red-600">{it.deductionAmount > 0 ? `-${rupiah(it.deductionAmount)}` : '—'}</td>
                   <td className="whitespace-nowrap px-5 py-3 text-right font-bold text-sand-900">{rupiah(it.netAmount)}</td>
                   <td className="whitespace-nowrap px-5 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                    <button type="button" className="text-xs font-semibold text-primary-700 hover:underline" onClick={() => setSlip(it)}>Slip</button>
+                    <RowBtn type="button" onClick={async () => setSlip(it)}>Slip</RowBtn>
                   </td>
                 </tr>
               ))}
@@ -202,7 +206,7 @@ export default function PayrollRunPage() {
               'Gaji dibayar — gerakan kas & pinjaman tercatat.',
             ).then((ok) => { if (ok) setPayModal(false); });
           }}
-        >
+>
           <Field label="Kas Pembayar" hint="Total netto keluar dari kas ini (satu gerakan per pegawai)">
             <Select name="cashAccountId" required>
               <option value="">— Pilih kas —</option>
@@ -215,7 +219,7 @@ export default function PayrollRunPage() {
             Pembayaran memotong angsuran pinjaman dan mencatat dana pensiun. Pastikan angka sudah final.
           </p>
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="ghost" onClick={() => setPayModal(false)}>Batal</Button>
+            <Button type="button" variant="ghost" onClick={async () => setPayModal(false)}>Batal</Button>
             <Button type="submit" disabled={busy}>Bayar Sekarang</Button>
           </div>
         </form>
@@ -226,7 +230,7 @@ export default function PayrollRunPage() {
         {slip && run ? (
           <div className="grid gap-3">
             <div className="grid gap-2 rounded-xl bg-sand-50 p-3 sm:grid-cols-2 print:hidden">
-              <Field label="Nama Kepala Sekolah">
+              <Field label="Nama Kepala Sekolah" hint="Default dari Pengaturan → Profil & Kontak">
                 <Input
                   value={principal}
                   onChange={(e) => { setPrincipal(e.target.value); localStorage.setItem('payroll.principal', e.target.value); }}
@@ -245,12 +249,13 @@ export default function PayrollRunPage() {
               <SlipView run={run} item={slip} school={school} principal={principal} treasurer={treasurer} />
             </div>
             <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setSlip(null)}>Tutup</Button>
-              <Button type="button" onClick={() => printEl(printRef.current)}>Print Slip</Button>
+              <Button type="button" variant="outline" onClick={async () => setSlip(null)}>Tutup</Button>
+              <Button type="button" onClick={async () => printEl(printRef.current)}>Print Slip</Button>
             </div>
           </div>
         ) : null}
       </Modal>
-    </Shell>
+          {dialog}
+      </Shell>
   );
 }

@@ -132,30 +132,45 @@ export class RegistrationsService {
     }
 
     const feeAmount = await this.settings.feeAmountFor(waveId, 'registration');
-    const registration = await this.prisma.registration.create({
-      data: {
-        number: await this.generateNumber(year),
-        candidateId: dto.candidateId,
-        parentId,
-        academicYearId: year.id,
-        waveId,
-        pathway: 'reguler',
-        status: 'AWAITING_PAYMENT',
-        invoices: {
-          create: {
-            number: this.generateInvoiceNumber(),
-            kind: 'registration_fee',
-            title: `Uang Pendaftaran SPMB ${year.name}`,
-            amount: feeAmount,
+    const number = await this.generateNumber(year);
+    // Kode sekali pakai: klaim entry secara atomik di dalam transaksi yang sama
+    // dengan pembuatan pendaftaran — request kedua yang balapan akan mendapat
+    // count 0 dan seluruh transaksinya dibatalkan.
+    const registration = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.registration.create({
+        data: {
+          number,
+          candidateId: dto.candidateId,
+          parentId,
+          academicYearId: year.id,
+          waveId,
+          pathway: 'reguler',
+          status: 'AWAITING_PAYMENT',
+          invoices: {
+            create: {
+              number: this.generateInvoiceNumber(),
+              kind: 'registration_fee',
+              title: `Uang Pendaftaran SPMB ${year.name}`,
+              amount: feeAmount,
+            },
           },
         },
-      },
-      include: { ...include, invoices: true },
-    });
-    await this.titipan.markRedeemed(entry.id, {
-      parentId,
-      candidateId: dto.candidateId,
-      registrationId: registration.id,
+        include: { ...include, invoices: true },
+      });
+      const claimed = await tx.titipanEntry.updateMany({
+        where: { id: entry.id, status: 'CODE_SENT', codeUsedAt: null },
+        data: {
+          status: 'REGISTERED',
+          codeUsedAt: new Date(),
+          parentId,
+          candidateId: dto.candidateId,
+          registrationId: created.id,
+        },
+      });
+      if (claimed.count === 0) {
+        throw new ConflictException('Kode formulir ini sudah dipakai.');
+      }
+      return created;
     });
     await this.audit.log({
       actorId: parentId,
