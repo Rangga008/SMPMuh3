@@ -51,6 +51,17 @@ export class EmployeeDto {
   @IsBoolean()
   isActive?: boolean;
 
+  /** Bidang tempat pegawai bernaung. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  department?: string;
+
+  /** Kepala bidang — bisa melihat seluruh pegawai di bidangnya. */
+  @IsOptional()
+  @IsBoolean()
+  isDeptHead?: boolean;
+
   /** Opsional — sekaligus buat akun login untuk pegawai ini. */
   @IsOptional()
   @IsString()

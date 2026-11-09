@@ -162,6 +162,8 @@ model AcademicYear {
   expenses      Expense[]
   payrollRuns   PayrollRun[]
   calendarEvents AcademicCalendarEvent[]
+  scheduleBlocks ScheduleBlock[]
+  examRooms     ExamRoom[]
 
   @@map("academic_years")
 }
@@ -592,15 +594,18 @@ model SavingsEntry {
 model Receipt {
   id         String   @id @default(uuid()) @db.Uuid
   number     String   @unique // e.g. "KWT-2027-000123"
-  paymentId  String   @map("payment_id") @db.Uuid
-  channel    String   @default("whatsapp") // whatsapp | sms
-  recipient  String // nomor HP tujuan
+  paymentId  String?  @map("payment_id") @db.Uuid
+  refType    String?  @map("ref_type") // expense | transaction — kwitansi non-pembayaran
+  refId      String?  @map("ref_id") @db.Uuid
+  channel    String   @default("whatsapp") // whatsapp | sms | print
+  recipient  String // nomor HP tujuan / nama penerima cetak
   body       String // isi kwitansi (teks)
-  status     String   @default("QUEUED") // QUEUED | SENT | FAILED
+  status     String   @default("QUEUED") // QUEUED | SENT | FAILED | PRINTED
   sentAt     DateTime? @map("sent_at")
+  issuedBy   String?  @map("issued_by") @db.Uuid
   createdAt  DateTime @default(now()) @map("created_at")
 
-  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  payment Payment? @relation(fields: [paymentId], references: [id], onDelete: Cascade)
 
   @@index([paymentId])
   @@map("receipts")
@@ -908,6 +913,7 @@ enum AttendanceSource {
   DEVICE // tap dari mesin fingerprint/face
   IMPORT // file attlog yang diunggah
   MANUAL // entri manual oleh TU/keuangan
+  SELFIE // absen foto+geolokasi oleh pegawai sendiri
 }
 
 enum DeviceMode {
@@ -945,6 +951,9 @@ model AttendanceLog {
   inOut      Int              @default(0) @map("in_out") // 0=masuk, 1=pulang (ZKTeco)
   employeeId String?          @map("employee_id") @db.Uuid // ter-resolve dari pin
   source     AttendanceSource @default(DEVICE)
+  photoKey   String?          @map("photo_key") // S3 key foto selfie
+  latitude   Float?           @map("latitude")
+  longitude  Float?           @map("longitude")
   createdAt  DateTime         @default(now()) @map("created_at")
 
   device   AttendanceDevice? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
@@ -1021,6 +1030,9 @@ model AttendanceSetting {
   lateAfter    Int      @default(10) @map("late_after")          // toleransi menit sebelum TELAT
   checkOutFrom String   @default("12:00") @map("check_out_from") // tap >= jam ini dihitung pulang
   autoDerive   Boolean  @default(true) @map("auto_derive")       // tap mesin → status harian
+  schoolLat    Float?   @map("school_lat")   // titik lokasi sekolah (geofence selfie)
+  schoolLng    Float?   @map("school_lng")
+  radiusM      Int      @default(200) @map("radius_m") // radius absen selfie (meter)
   updatedAt    DateTime @updatedAt @map("updated_at")
 
   @@map("attendance_settings")
@@ -1258,6 +1270,16 @@ model Student {
   status       StudentStatus @default(ACTIVE)
   candidateId  String?       @unique @map("candidate_id") @db.Uuid // link ke pendaftaran SPMB
   parentId     String?       @map("parent_id") @db.Uuid
+  // ---- buku induk peserta didik ----
+  previousSchool   String?  @map("previous_school") // pendidikan sebelumnya (SD asal)
+  healthNotes      String?  @map("health_notes") // keterangan kesehatan
+  fatherName       String?  @map("father_name")
+  motherName       String?  @map("mother_name")
+  parentOccupation String?  @map("parent_occupation")
+  parentPhone      String?  @map("parent_phone")
+  intelligenceNotes String? @map("intelligence_notes") // keterangan intelegensi
+  leavingNotes     String?  @map("leaving_notes") // keterangan meninggalkan sekolah
+  otherNotes       String?  @map("other_notes") // lain-lain
   createdAt    DateTime      @default(now()) @map("created_at")
   updatedAt    DateTime      @updatedAt @map("updated_at")
   deletedAt    DateTime?     @map("deleted_at") // soft delete / arsip
@@ -1272,6 +1294,8 @@ model Student {
   violations   Violation[]
   grades       Grade[]
   documents    Document[]
+  answers      StudentAnswer[]
+  examSeats    ExamSeat[]
 
   @@index([status, name])
   @@map("students")
@@ -1294,6 +1318,8 @@ model Employee {
   transportRate        Int?     @map("transport_rate")  // override transport/jam
   isCertified          Boolean  @default(false) @map("is_certified") // sertifikasi (BOS)
   fingerPin            String?  @unique @map("finger_pin") // user id di mesin absensi
+  department           String?  // bidang: KURIKULUM|KESISWAAN|TATA_USAHA|KEUANGAN|HUMAS|LAINNYA
+  isDeptHead           Boolean  @default(false) @map("is_dept_head") // kepala bidang
   createdAt DateTime     @default(now()) @map("created_at")
   updatedAt DateTime     @updatedAt @map("updated_at")
 
@@ -1310,6 +1336,8 @@ model Employee {
   bosHonors   BosHonor[]
   attendanceLogs AttendanceLog[]
   shifts      EmployeeShift[]
+  staffDocuments StaffDocument[]
+  collectionItems DocCollectionItem[]
 
   @@index([type, name])
   @@map("employees")
@@ -1376,6 +1404,7 @@ model Class {
   assignments  TeachingAssignment[]
   attendances  AttendanceRecord[]
   assessments  Assessment[]
+  examSeats    ExamSeat[]
 
   @@unique([name, academicYearId])
   @@index([academicYearId])
@@ -1493,6 +1522,7 @@ model Assessment {
   class        Class?       @relation(fields: [classId], references: [id], onDelete: SetNull)
   academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
   grades       Grade[]
+  questions    AssessmentQuestion[]
 
   @@map("assessments")
 }
@@ -1571,6 +1601,9 @@ model StudentMutation {
   date         DateTime          @db.Date
   school       String? // asal (mutasi masuk) / tujuan (mutasi keluar)
   letterNumber String?           @map("letter_number") // no. surat mutasi
+  storageKey   String?           @map("storage_key") // surat mutasi/keterangan terima
+  fileName     String?           @map("file_name")
+  mimeType     String?           @map("mime_type")
   status       MutationStatus    @default(PROCESS)
   notes        String?
   createdBy    String?           @map("created_by") @db.Uuid
@@ -1709,4 +1742,248 @@ model WhatsappMessage {
   @@index([status, createdAt])
   @@index([type, status])
   @@map("whatsapp_messages")
+}
+
+// ---------- Jadwal non-mapel: ishoma, pembiasaan, istirahat, upacara ----------
+
+/** Blok jadwal non-pembelajaran — rutin mingguan (day) atau tanggal spesifik (date). */
+model ScheduleBlock {
+  id             String   @id @default(uuid()) @db.Uuid
+  label          String // "Ishoma", "Pembiasaan", "Istirahat", "Upacara"
+  day            Int?     @map("day_of_week") // 1=Senin…7=Minggu — rutin tiap minggu
+  date           DateTime? @db.Date // tanggal spesifik bila bukan rutin
+  startMinute    Int      @map("start_minute")
+  endMinute      Int      @map("end_minute")
+  academicYearId String   @map("academic_year_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+  @@index([academicYearId, day])
+  @@map("schedule_blocks")
+}
+
+// ---------- Asesmen: butir soal & jawaban siswa ----------
+
+enum QuestionType {
+  MCQ          // pilihan ganda
+  MCQ_COMPLEX  // pilihan ganda kompleks (multi jawaban benar)
+  TRUE_FALSE   // benar/salah
+  MATCHING     // menjodohkan
+}
+
+/** Butir soal per asesmen — kunci + bobot untuk analisis. */
+model AssessmentQuestion {
+  id           String       @id @default(uuid()) @db.Uuid
+  assessmentId String       @map("assessment_id") @db.Uuid
+  number       Int // nomor soal
+  type         QuestionType @default(MCQ)
+  weight       Int          @default(1) // bobot nilai
+  key          Json? // kunci jawaban (index benar / pasangan menjodohkan)
+  prompt       String? // teks soal singkat opsional
+
+  assessment Assessment     @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  answers    StudentAnswer[]
+
+  @@unique([assessmentId, number])
+  @@map("assessment_questions")
+}
+
+/** Jawaban siswa per butir soal — untuk rekap & analisis butir. */
+model StudentAnswer {
+  id         String   @id @default(uuid()) @db.Uuid
+  questionId String   @map("question_id") @db.Uuid
+  studentId  String   @map("student_id") @db.Uuid
+  answer     Json? // jawaban siswa (index(es) dipilih)
+  score      Int      @default(0) // skor diperoleh (setelah bobot)
+  isCorrect  Boolean? @map("is_correct")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  question AssessmentQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  student  Student            @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([questionId, studentId])
+  @@index([studentId])
+  @@map("student_answers")
+}
+
+// ---------- Dokumen staf: administrasi guru, SK, koleksi kisi-kisi ----------
+
+/** Dokumen administrasi guru/pegawai — SK, ijazah, perangkat pembelajaran, dll. */
+model StaffDocument {
+  id         String   @id @default(uuid()) @db.Uuid
+  employeeId String   @map("employee_id") @db.Uuid
+  category   String // "SK", "IJAZAH", "ADMINISTRASI", "PERANGKAT", "LAINNYA"
+  title      String
+  storageKey String   @map("storage_key")
+  fileName   String   @map("file_name")
+  mimeType   String   @map("mime_type")
+  sizeBytes  Int      @map("size_bytes")
+  uploadedBy String?  @map("uploaded_by") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId, category])
+  @@map("staff_documents")
+}
+
+/** Batch pengumpulan dokumen dari kurikulum — e.g. kisi-kisi Sumatif Semester 1. */
+model DocCollection {
+  id             String    @id @default(uuid()) @db.Uuid
+  title          String // "Kisi-kisi Sumatif Semester Ganjil 2026"
+  category       String    @default("KISI_KISI") // jenis dokumen yang dikumpulkan
+  description    String?
+  deadlineAt     DateTime? @map("deadline_at")
+  academicYearId String?   @map("academic_year_id") @db.Uuid
+  createdBy      String    @map("created_by") @db.Uuid
+  createdAt      DateTime  @default(now()) @map("created_at")
+  notifiedAt     DateTime? @map("notified_at") // kapan WA broadcast dikirim
+
+  items DocCollectionItem[]
+
+  @@map("doc_collections")
+}
+
+model DocCollectionItem {
+  id           String    @id @default(uuid()) @db.Uuid
+  collectionId String    @map("collection_id") @db.Uuid
+  employeeId   String    @map("employee_id") @db.Uuid
+  submittedAt  DateTime? @map("submitted_at")
+  fileName     String?   @map("file_name")
+  storageKey   String?   @map("storage_key")
+  mimeType     String?   @map("mime_type")
+  sizeBytes    Int?      @map("size_bytes")
+  note         String?
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  collection DocCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  employee   Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([collectionId, employeeId])
+  @@map("doc_collection_items")
+}
+
+// ---------- Pengajuan program/RKS per bidang → persetujuan KS ----------
+
+enum SubmissionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/** Pengajuan RKS / program kerja / rencana & realisasi kegiatan — diajukan bidang, disetujui KS, terlihat bendahara. */
+model ProgramSubmission {
+  id          String           @id @default(uuid()) @db.Uuid
+  department  String // bidang pengaju: KURIKULUM|KESISWAAN|TATA_USAHA|KEUANGAN|HUMAS|LAINNYA
+  kind        String // "RKS", "PROKER", "RENCANA", "REALISASI"
+  title       String
+  description String?
+  rab         Json? // [{ name, qty, unit, price, amount }]
+  amountTotal Int              @default(0) @map("amount_total")
+  storageKey  String?          @map("storage_key")
+  fileName    String?          @map("file_name")
+  status      SubmissionStatus @default(PENDING)
+  submittedBy String           @map("submitted_by") @db.Uuid
+  reviewedBy  String?          @map("reviewed_by") @db.Uuid
+  reviewedAt  DateTime?        @map("reviewed_at")
+  reviewNote  String?          @map("review_note")
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+
+  @@index([department, status])
+  @@map("program_submissions")
+}
+
+// ---------- Arsip TU ----------
+
+model ArchiveCategory {
+  id        String        @id @default(uuid()) @db.Uuid
+  name      String        @unique
+  createdAt DateTime      @default(now()) @map("created_at")
+  items     ArchiveItem[]
+
+  @@map("archive_categories")
+}
+
+model ArchiveItem {
+  id         String   @id @default(uuid()) @db.Uuid
+  categoryId String?  @map("category_id") @db.Uuid
+  title      String
+  refNumber  String?  @map("ref_number") // nomor dokumen/arsip
+  date       DateTime? @db.Date
+  storageKey String   @map("storage_key")
+  fileName   String   @map("file_name")
+  mimeType   String   @map("mime_type")
+  sizeBytes  Int      @map("size_bytes")
+  uploadedBy String?  @map("uploaded_by") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  category ArchiveCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@index([categoryId, date])
+  @@map("archive_items")
+}
+
+// ---------- Tata tertib, template & jadwal seragam PTK ----------
+
+/** Dokumen kebijakan/template — tata tertib siswa/PTK, form mutasi, contoh surat — dikelola kurikulum/TU. */
+model PolicyDocument {
+  id         String   @id @default(uuid()) @db.Uuid
+  kind       String // "TATA_TERTIB_SISWA","TATA_TERTIB_PTK","SERAGAM","FORM_MUTASI_MASUK","FORM_MUTASI_KELUAR","LAINNYA"
+  title      String
+  storageKey String   @map("storage_key")
+  fileName   String   @map("file_name")
+  mimeType   String   @map("mime_type")
+  sizeBytes  Int      @map("size_bytes")
+  uploadedBy String?  @map("uploaded_by") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([kind])
+  @@map("policy_documents")
+}
+
+/** Jadwal seragam PTK per hari — terlihat semua pegawai. */
+model UniformSchedule {
+  id    String  @id @default(uuid()) @db.Uuid
+  day   Int     @unique // 1=Senin…7=Minggu
+  name  String // "Putih Abu-abu", "Batik", "Pramuka", "Olahraga"
+  note  String?
+
+  @@map("uniform_schedules")
+}
+
+// ---------- Ruang & kursi ujian → kartu peserta ---------
+
+/** Ruang ujian per periode — untuk cetak kartu peserta & denah per rombel. */
+model ExamRoom {
+  id             String  @id @default(uuid()) @db.Uuid
+  name           String // "Ruang 1 / Lab IPA"
+  period         String // label periode ujian, e.g. "US 2026" / "PTS Ganjil"
+  academicYearId String  @map("academic_year_id") @db.Uuid
+  capacity       Int     @default(24)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  seats        ExamSeat[]
+
+  @@unique([name, period, academicYearId])
+  @@map("exam_rooms")
+}
+
+model ExamSeat {
+  id        String  @id @default(uuid()) @db.Uuid
+  roomId    String  @map("room_id") @db.Uuid
+  studentId String  @map("student_id") @db.Uuid
+  classId   String? @map("class_id") @db.Uuid
+  seatNo    Int?    @map("seat_no")
+
+  room    ExamRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  student Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  class   Class?   @relation(fields: [classId], references: [id], onDelete: SetNull)
+
+  @@unique([roomId, studentId])
+  @@index([classId])
+  @@map("exam_seats")
 }

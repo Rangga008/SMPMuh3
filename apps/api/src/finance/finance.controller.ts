@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -319,6 +320,7 @@ export class FinanceController {
     @Query('semesterId') semesterId?: string,
     @Query('kind') kind?: string,
     @Query('status') status?: string,
+    @Query('studentStatus') studentStatus?: string,
     @Query('search') search?: string,
     @Query('take') take?: string,
     @Query('skip') skip?: string,
@@ -331,6 +333,7 @@ export class FinanceController {
       semesterId: semesterId || undefined,
       kind: kind || undefined,
       status: status || undefined,
+      studentStatus: studentStatus || undefined,
       search: search || undefined,
       take: take ? Number(take) : undefined,
       skip: skip ? Number(skip) : undefined,
@@ -448,5 +451,92 @@ export class FinanceController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.finance.createSavingsEntry(dto, user.id);
+  }
+
+  /** Hapus batch tagihan massal — hanya bila belum ada pembayaran sama sekali. */
+  @Post('billing/batches/:id/delete')
+  @RequirePermission(PERMISSIONS.FINANCE_MANAGE)
+  deleteBatch(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.finance.deleteBatch(id, user.id);
+  }
+
+  /** Hapus kategori — hanya bila belum dipakai transaksi/budget/pengeluaran. */
+  @Delete('categories/:id')
+  @RequirePermission(PERMISSIONS.FINANCE_MANAGE)
+  deleteCategory(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.finance.deleteCategory(id, user.id);
+  }
+
+  // ---------- Kwitansi ----------
+
+  /** Terbitkan kwitansi (idempoten) untuk payment | expense | transaction. */
+  @Post('receipts')
+  @RequirePermission(PERMISSIONS.FINANCE_MANAGE)
+  issueReceipt(
+    @Body() body: { refType: 'payment' | 'expense' | 'transaction'; refId: string },
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.finance.issueReceipt(body.refType, body.refId, user.id);
+  }
+
+  /** Galeri kwitansi — semua kwitansi yang diterbitkan keuangan. */
+  @Get('receipts')
+  @RequirePermission(PERMISSIONS.FINANCE_READ)
+  listReceipts(@Query('refType') refType?: string, @Query('search') search?: string) {
+    return this.finance.listReceipts({ refType: refType || undefined, search: search || undefined });
+  }
+
+  @Get('receipts/:id')
+  @RequirePermission(PERMISSIONS.FINANCE_READ)
+  getReceipt(@Param('id', ParseUUIDPipe) id: string) {
+    return this.finance.getReceipt(id);
+  }
+
+  // ---------- Laporan ----------
+
+  /** Pemasukan per siswa per bulan per jenis tagihan. */
+  @Get('reports/income-by-student')
+  @RequirePermission(PERMISSIONS.FINANCE_READ)
+  incomeByStudent(
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @Query('academicYearId') academicYearId?: string,
+    @Query('classId') classId?: string,
+    @Query('studentId') studentId?: string,
+    @Query('search') search?: string,
+  ) {
+    if (!from || !to) throw new BadRequestException('Parameter from & to (YYYY-MM) wajib.');
+    return this.finance.incomeByStudent({
+      from,
+      to,
+      academicYearId: academicYearId || undefined,
+      classId: classId || undefined,
+      studentId: studentId || undefined,
+      search: search || undefined,
+    });
+  }
+
+  /** Laporan tabungan — detail per tanggal + agregat per bulan. */
+  @Get('reports/savings')
+  @RequirePermission(PERMISSIONS.FINANCE_READ)
+  savingsReport(
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @Query('studentId') studentId?: string,
+    @Query('classId') classId?: string,
+  ) {
+    if (!from || !to) throw new BadRequestException('Parameter from & to (YYYY-MM) wajib.');
+    return this.finance.savingsReport({
+      from,
+      to,
+      studentId: studentId || undefined,
+      classId: classId || undefined,
+    });
   }
 }

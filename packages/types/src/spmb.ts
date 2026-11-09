@@ -278,6 +278,8 @@ export interface CandidateDto {
   previousSchool?: string | undefined;
   address?: string | undefined;
   tkaScore?: number | undefined;
+  /** Terisi bila kandidat sudah dijadikan murid (promote). */
+  student?: { id: string; name: string; nis?: string | null } | undefined;
 }
 
 export interface WaveDto {

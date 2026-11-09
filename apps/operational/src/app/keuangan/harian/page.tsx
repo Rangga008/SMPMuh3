@@ -8,6 +8,7 @@ import { PageTitle, Widget } from '@/components/widgets';
 import {
   createFinanceTransaction,
   deleteFinanceTransaction,
+  issueReceipt,
   listAcademicYears,
   listFinanceCategories,
   listFinanceTransactions,
@@ -310,14 +311,21 @@ export default function HarianPage() {
               </td>
               <td className="px-5 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                 <span className="flex justify-end gap-2">
-                  {canManage && t.source === 'manual' ? (
+                  {canManage ? (
                     <>
-                      <RowBtn type="button" onClick={async () => setTxModal(t)}>
-                        Ubah
+                      <RowBtn type="button" onClick={async () => void run(() => issueReceipt('transaction', t.id).then((r) => r.receipt), 'Kwitansi diterbitkan — cetak di menu Galeri Kwitansi.')}>
+                        Kwitansi
                       </RowBtn>
-                      <RowBtn tone="danger" type="button" onClick={async () => { if (await confirm('Hapus transaksi ini?')) void run(() => deleteFinanceTransaction(t.id), 'Transaksi dihapus.'); }}>
-                        Hapus
-                      </RowBtn>
+                      {t.source === 'manual' ? (
+                        <>
+                          <RowBtn type="button" onClick={async () => setTxModal(t)}>
+                            Ubah
+                          </RowBtn>
+                          <RowBtn tone="danger" type="button" onClick={async () => { if (await confirm('Hapus transaksi ini?')) void run(() => deleteFinanceTransaction(t.id), 'Transaksi dihapus.'); }}>
+                            Hapus
+                          </RowBtn>
+                        </>
+                      ) : null}
                     </>
                   ) : null}
                 </span>

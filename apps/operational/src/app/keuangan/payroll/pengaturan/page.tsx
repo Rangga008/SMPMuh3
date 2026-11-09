@@ -32,8 +32,10 @@ import {
   listPayrollEmployees,
   listPayScales,
   me,
+  updateDeductionType,
   updateEmployeeDeduction,
   updateEmployeeHonor,
+  updateHonorType,
   updateEmployeePayrollSettings,
   updateLoan,
   updatePayrollSettings,
@@ -91,8 +93,8 @@ export default function PayrollPengaturanPage() {
 
   const [empModal, setEmpModal] = useState<EmployeePayroll | null>(null);
   const [scaleModal, setScaleModal] = useState<false | PayScaleView>(false);
-  const [honorTypeModal, setHonorTypeModal] = useState(false);
-  const [dedTypeModal, setDedTypeModal] = useState(false);
+  const [honorTypeModal, setHonorTypeModal] = useState<HonorTypeView | 'new' | null>(null);
+  const [dedTypeModal, setDedTypeModal] = useState<DeductionTypeView | 'new' | null>(null);
   const [honorModal, setHonorModal] = useState(false);
   const [dedModal, setDedModal] = useState(false);
   const [loanModal, setLoanModal] = useState(false);
@@ -236,7 +238,7 @@ export default function PayrollPengaturanPage() {
         <div className="grid gap-5">
           <Widget
             title="Tipe Honor"
-            action={canManage ? <Button size="sm" onClick={async () => setHonorTypeModal(true)}>+ Tipe</Button> : undefined}
+            action={canManage ? <Button size="sm" onClick={async () => setHonorTypeModal('new')}>+ Tipe</Button> : undefined}
 >
             <DataTable head={['Nama', 'Periode', 'Default', 'Dipakai', ...(canManage ? [''] : [])]} loading={false} error={null} empty={honorTypes.length === 0 ? '—' : undefined}>
               {honorTypes.map((t) => (
@@ -247,7 +249,10 @@ export default function PayrollPengaturanPage() {
                   <td className="px-5 py-3 text-sand-600">{t._count?.honors ?? 0}</td>
                   {canManage ? (
                     <td className="px-5 py-3 text-right">
-                      <RowBtn tone="danger" type="button" onClick={async () => { if (await confirm('Hapus tipe?')) void run(() => deleteHonorType(t.id), 'Tipe dihapus.'); }}>Hapus</RowBtn>
+                      <span className="flex justify-end gap-2">
+                        <RowBtn type="button" onClick={async () => setHonorTypeModal(t)}>Edit</RowBtn>
+                        <RowBtn tone="danger" type="button" onClick={async () => { if (await confirm('Hapus tipe?')) void run(() => deleteHonorType(t.id), 'Tipe dihapus.'); }}>Hapus</RowBtn>
+                      </span>
                     </td>
                   ) : null}
                 </tr>
@@ -354,14 +359,19 @@ export default function PayrollPengaturanPage() {
           </Widget>
           <Widget
             title="Tipe Potongan"
-            action={canManage ? <Button size="sm" onClick={async () => setDedTypeModal(true)}>+ Tipe</Button> : undefined}
+            action={canManage ? <Button size="sm" onClick={async () => setDedTypeModal('new')}>+ Tipe</Button> : undefined}
 >
-            <DataTable head={['Nama', 'Default', 'Berulang']} loading={false} error={null} empty={dedTypes.length === 0 ? '—' : undefined}>
+            <DataTable head={['Nama', 'Default', 'Berulang', ...(canManage ? [''] : [])]} loading={false} error={null} empty={dedTypes.length === 0 ? '—' : undefined}>
               {dedTypes.map((t) => (
                 <tr key={t.id}>
                   <td className="px-5 py-3 font-medium text-sand-900">{t.name}</td>
                   <td className="whitespace-nowrap px-5 py-3">{rupiah(t.defaultAmount)}</td>
                   <td className="px-5 py-3 text-sand-600">{t.isRecurring ? 'Tiap bulan' : 'Sekali'}</td>
+                  {canManage ? (
+                    <td className="px-5 py-3 text-right">
+                      <RowBtn type="button" onClick={async () => setDedTypeModal(t)}>Edit</RowBtn>
+                    </td>
+                  ) : null}
                 </tr>
               ))}
             </DataTable>
@@ -567,36 +577,36 @@ export default function PayrollPengaturanPage() {
       </Modal>
 
       {/* Modal tipe honor */}
-      <Modal open={honorTypeModal} onClose={() => setHonorTypeModal(false)} title="Tipe Honor Baru">
+      <Modal open={honorTypeModal !== null} onClose={() => setHonorTypeModal(null)} title={honorTypeModal === 'new' ? 'Tipe Honor Baru' : 'Edit Tipe Honor'}>
         <form
           className="grid gap-3"
           onSubmit={(e) => {
             e.preventDefault();
             const f = new FormData(e.currentTarget);
+            const dto = {
+              name: String(f.get('name')),
+              period: String(f.get('period')),
+              defaultAmount: Number(f.get('defaultAmount')) || 0,
+            };
             void run(
-              () =>
-                createHonorType({
-                  name: String(f.get('name')),
-                  period: String(f.get('period')),
-                  defaultAmount: Number(f.get('defaultAmount')) || 0,
-                }),
-              'Tipe honor ditambahkan.',
-            ).then((ok) => { if (ok) setHonorTypeModal(false); });
+              () => (honorTypeModal === 'new' ? createHonorType(dto) : updateHonorType((honorTypeModal as HonorTypeView).id, dto)),
+              honorTypeModal === 'new' ? 'Tipe honor ditambahkan.' : 'Tipe honor diperbarui.',
+            ).then((ok) => { if (ok) setHonorTypeModal(null); });
           }}
 >
-          <Field label="Nama"><Input name="name" required placeholder="Tunjangan Wali Kelas" /></Field>
+          <Field label="Nama"><Input name="name" required placeholder="Tunjangan Wali Kelas" defaultValue={honorTypeModal === 'new' ? '' : (honorTypeModal as HonorTypeView)?.name} /></Field>
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Periode">
-              <Select name="period" required>
+              <Select name="period" required defaultValue={honorTypeModal === 'new' ? 'MONTHLY' : (honorTypeModal as HonorTypeView)?.period}>
                 <option value="MONTHLY">Per bulan</option>
                 <option value="PER_SESSION">Per sesi</option>
                 <option value="ONE_TIME">Sekali (per kegiatan)</option>
               </Select>
             </Field>
-            <Field label="Nominal default"><Input name="defaultAmount" type="number" min={0} defaultValue={0} /></Field>
+            <Field label="Nominal default"><Input name="defaultAmount" type="number" min={0} defaultValue={honorTypeModal === 'new' ? 0 : (honorTypeModal as HonorTypeView)?.defaultAmount ?? 0} /></Field>
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="ghost" onClick={async () => setHonorTypeModal(false)}>Batal</Button>
+            <Button type="button" variant="ghost" onClick={async () => setHonorTypeModal(null)}>Batal</Button>
             <Button type="submit" disabled={busy}>Simpan</Button>
           </div>
         </form>
@@ -655,31 +665,31 @@ export default function PayrollPengaturanPage() {
       </Modal>
 
       {/* Modal tipe potongan */}
-      <Modal open={dedTypeModal} onClose={() => setDedTypeModal(false)} title="Tipe Potongan Baru">
+      <Modal open={dedTypeModal !== null} onClose={() => setDedTypeModal(null)} title={dedTypeModal === 'new' ? 'Tipe Potongan Baru' : 'Edit Tipe Potongan'}>
         <form
           className="grid gap-3"
           onSubmit={(e) => {
             e.preventDefault();
             const f = new FormData(e.currentTarget);
+            const dto = {
+              name: String(f.get('name')),
+              defaultAmount: Number(f.get('defaultAmount')) || 0,
+              isRecurring: f.get('isRecurring') === 'on',
+            };
             void run(
-              () =>
-                createDeductionType({
-                  name: String(f.get('name')),
-                  defaultAmount: Number(f.get('defaultAmount')) || 0,
-                  isRecurring: f.get('isRecurring') === 'on',
-                }),
-              'Tipe potongan ditambahkan.',
-            ).then((ok) => { if (ok) setDedTypeModal(false); });
+              () => (dedTypeModal === 'new' ? createDeductionType(dto) : updateDeductionType((dedTypeModal as DeductionTypeView).id, dto)),
+              dedTypeModal === 'new' ? 'Tipe potongan ditambahkan.' : 'Tipe potongan diperbarui.',
+            ).then((ok) => { if (ok) setDedTypeModal(null); });
           }}
 >
-          <Field label="Nama"><Input name="name" required placeholder="Infak Jumat" /></Field>
-          <Field label="Nominal default"><Input name="defaultAmount" type="number" min={0} defaultValue={0} /></Field>
+          <Field label="Nama"><Input name="name" required placeholder="Infak Jumat" defaultValue={dedTypeModal === 'new' ? '' : (dedTypeModal as DeductionTypeView)?.name} /></Field>
+          <Field label="Nominal default"><Input name="defaultAmount" type="number" min={0} defaultValue={dedTypeModal === 'new' ? 0 : (dedTypeModal as DeductionTypeView)?.defaultAmount ?? 0} /></Field>
           <label className="flex items-center gap-2 text-sm">
-            <input name="isRecurring" type="checkbox" defaultChecked className="size-4" />
+            <input name="isRecurring" type="checkbox" defaultChecked={dedTypeModal === 'new' ? true : (dedTypeModal as DeductionTypeView)?.isRecurring ?? true} className="size-4" />
             Berulang tiap bulan
           </label>
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="ghost" onClick={async () => setDedTypeModal(false)}>Batal</Button>
+            <Button type="button" variant="ghost" onClick={async () => setDedTypeModal(null)}>Batal</Button>
             <Button type="submit" disabled={busy}>Simpan</Button>
           </div>
         </form>

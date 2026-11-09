@@ -2,12 +2,15 @@
 
 import Link from 'next/link';
 import { use, useCallback, useEffect, useState } from 'react';
-import { Badge, Button, Field, Select } from '@smpmuh3/ui';
+import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
+import { PERMISSIONS } from '@smpmuh3/types';
 import { Shell } from '@/components/shell';
 import { PageTitle, Widget } from '@/components/widgets';
 import {
   getAttendanceMonthly,
   getEmployee,
+  me,
+  updateEmployee,
   type AttendanceDayRow,
   type EmployeeDetail,
   type EmployeeMonthly,
@@ -27,6 +30,10 @@ const fmtTime = (iso?: string | null) =>
 const minToHHMM = (m: number) =>
   `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 const thisMonth = () => new Date().toISOString().slice(0, 7);
+const DEPT_LABEL: Record<string, string> = {
+  KURIKULUM: 'Kurikulum', KESISWAAN: 'Kesiswaan', TATA_USAHA: 'Tata Usaha',
+  KEUANGAN: 'Keuangan', HUMAS: 'Humas', LAINNYA: 'Lainnya',
+};
 
 export default function EmployeeDetailPage({
   params,
@@ -39,6 +46,15 @@ export default function EmployeeDetailPage({
   const [att, setAtt] = useState<EmployeeMonthly | null>(null);
   const [attLoading, setAttLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [canManage, setCanManage] = useState(false);
+  const [editModal, setEditModal] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const loadEmp = useCallback(() => {
+    getEmployee(id)
+      .then(setEmp)
+      .catch(() => setError('Pegawai tidak ditemukan.'));
+  }, [id]);
 
   const loadAtt = useCallback(() => {
     setAttLoading(true);
@@ -49,12 +65,39 @@ export default function EmployeeDetailPage({
   }, [id, month]);
 
   useEffect(() => {
-    getEmployee(id)
-      .then(setEmp)
-      .catch(() => setError('Pegawai tidak ditemukan.'));
-  }, [id]);
+    loadEmp();
+    me()
+      .then((u) => setCanManage(u.permissions.includes(PERMISSIONS.EMPLOYEE_MANAGE)))
+      .catch(() => undefined);
+  }, [loadEmp]);
 
   useEffect(() => loadAtt(), [loadAtt]);
+
+  async function onSaveEdit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!emp) return;
+    const f = new FormData(e.currentTarget);
+    setBusy(true);
+    setError(null);
+    try {
+      await updateEmployee(emp.id, {
+        name: String(f.get('name') ?? emp.name),
+        nip: String(f.get('nip') ?? '') || undefined,
+        type: String(f.get('type') ?? emp.type),
+        email: String(f.get('email') ?? '') || undefined,
+        phone: String(f.get('phone') ?? '') || undefined,
+        department: String(f.get('department') ?? '') || null,
+        isDeptHead: f.get('isDeptHead') === 'on',
+        isActive: f.get('isActive') === 'on',
+      });
+      setEditModal(false);
+      loadEmp();
+    } catch (e2) {
+      setError(e2 instanceof Error ? e2.message : 'Gagal menyimpan perubahan.');
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const byDate = new Map<string, AttendanceDayRow>(
     (att?.days ?? []).map((d) => [String(d.date).slice(0, 10), d]),
@@ -94,6 +137,11 @@ export default function EmployeeDetailPage({
               actions={
                 <span className="flex items-center gap-2">
                   <Badge tone={emp.isActive ? 'primary' : 'neutral'}>{emp.isActive ? 'Aktif' : 'Nonaktif'}</Badge>
+                  {canManage ? (
+                    <Button size="sm" variant="outline" onClick={() => setEditModal(true)}>
+                      Edit Data
+                    </Button>
+                  ) : null}
                   {waPhone ? (
                     <a
                       href={`https://wa.me/${waPhone}?text=${encodeURIComponent(`Assalamu'alaikum ${emp.name}, `)}`}
@@ -120,6 +168,12 @@ export default function EmployeeDetailPage({
                 <dd className="font-medium text-sand-900">{emp.phone ?? '—'}</dd>
                 <dt className="text-sand-500">Email</dt>
                 <dd className="font-medium text-sand-900">{emp.email ?? '—'}</dd>
+                <dt className="text-sand-500">Bidang</dt>
+                <dd className="font-medium text-sand-900">
+                  {emp.department
+                    ? `${DEPT_LABEL[emp.department] ?? emp.department}${emp.isDeptHead ? ' · Kepala' : ''}`
+                    : '—'}
+                </dd>
                 <dt className="text-sand-500">Golongan gaji</dt>
                 <dd className="font-medium text-sand-900">
                   {emp.payScale ? `${emp.payScale.name} (Rp${emp.payScale.hourlyRate.toLocaleString('id-ID')}/jam)` : '—'}
@@ -228,9 +282,54 @@ export default function EmployeeDetailPage({
                   .join(' · ')}
               </p>
             ) : (
-              <p className="mt-3 text-xs text-sand-400">Memakai aturan jam kerja global — atur shift di Absensi → Shift Kerja.</p>
+              <p className="mt-3 text-xs text-sand-400">Memakai aturan jam kerja global — atur shift di Kurikulum → Jadwal Kerja.</p>
             )}
           </Widget>
+
+          <Modal open={editModal} onClose={() => setEditModal(false)} title="Edit Data Pegawai">
+            <form onSubmit={onSaveEdit} className="grid gap-4 sm:grid-cols-2">
+              <Field label="Nama Lengkap" className="sm:col-span-2">
+                <Input name="name" required defaultValue={emp.name} />
+              </Field>
+              <Field label="NIP" hint="Kosongkan untuk menghapus NIP">
+                <Input name="nip" defaultValue={emp.nip ?? ''} />
+              </Field>
+              <Field label="Jenis">
+                <Select name="type" defaultValue={emp.type}>
+                  <option value="TEACHER">Guru</option>
+                  <option value="STAFF">Staf</option>
+                </Select>
+              </Field>
+              <Field label="Email" hint={emp.userId ? 'Tersinkron ke akun login — harus unik' : undefined}>
+                <Input name="email" type="email" defaultValue={emp.email ?? ''} />
+              </Field>
+              <Field label="Telepon" hint={emp.userId ? 'Tersinkron ke akun login — harus unik' : undefined}>
+                <Input name="phone" defaultValue={emp.phone ?? ''} />
+              </Field>
+              <Field label="Bidang">
+                <Select name="department" defaultValue={emp.department ?? ''}>
+                  <option value="">— Belum ditugaskan —</option>
+                  {Object.entries(DEPT_LABEL).map(([k, v]) => (
+                    <option key={k} value={k}>{v}</option>
+                  ))}
+                </Select>
+              </Field>
+              <div className="grid gap-2">
+                <label className="flex items-center gap-2 text-sm font-semibold text-sand-700">
+                  <input type="checkbox" name="isDeptHead" defaultChecked={emp.isDeptHead} className="size-4 accent-primary-700" />
+                  Kepala bidang
+                </label>
+                <label className="flex items-center gap-2 text-sm font-semibold text-sand-700">
+                  <input type="checkbox" name="isActive" defaultChecked={emp.isActive} className="size-4 accent-primary-700" />
+                  Aktif
+                </label>
+              </div>
+              <div className="sm:col-span-2 flex justify-end gap-2">
+                <Button type="button" variant="secondary" onClick={() => setEditModal(false)}>Batal</Button>
+                <Button type="submit" disabled={busy}>{busy ? 'Menyimpan…' : 'Simpan'}</Button>
+              </div>
+            </form>
+          </Modal>
         </>
       )}
     </Shell>

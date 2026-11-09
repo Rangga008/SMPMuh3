@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
@@ -189,6 +190,13 @@ export default function PenilaianPage() {
                   </p>
                   <p className="mt-0.5 text-xs text-sand-500">
                     {a.subject.name} · maks {a.maxScore} · {a._count?.grades ?? 0} nilai
+                    <Link
+                      href={`/kurikulum/asesmen/${a.id}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="ml-2 font-bold text-primary-700 hover:underline"
+                    >
+                      Butir & Analisis →
+                    </Link>
                   </p>
                 </button>
               </li>

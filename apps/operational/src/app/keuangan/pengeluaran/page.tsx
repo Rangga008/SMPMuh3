@@ -15,6 +15,7 @@ import {
   listExpenses,
   listFinanceCategories,
   me,
+  issueReceipt,
   updateExpense,
   updateFinanceCategory,
   createFinanceCategory,
@@ -410,6 +411,9 @@ export default function PengeluaranPage() {
                   <span className="flex justify-end gap-2">
                     <RowBtn type="button" onClick={async () => { getExpense(e.id).then(setDetail).catch(() => undefined); }}>
                       Detail
+                    </RowBtn>
+                    <RowBtn type="button" onClick={async () => void run(() => issueReceipt('expense', e.id).then((r) => r.receipt), 'Kwitansi diterbitkan — cetak di menu Galeri Kwitansi.')}>
+                      Kwitansi
                     </RowBtn>
                     <RowBtn tone="neutral" type="button" onClick={async () => { getExpense(e.id) .then((full) => { setAllocState( (full.allocations ?? []).map((a) => ({ cashAccountId: a.cashAccountId, amount: String(a.amount), })), ); setModal(full); }) .catch(() => undefined); }}>
                       Edit

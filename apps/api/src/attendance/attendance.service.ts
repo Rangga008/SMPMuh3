@@ -8,6 +8,7 @@ import {
 import type { AttendanceSource, DeviceMode } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../core/prisma/prisma.service';
+import { StorageService } from '../core/storage/storage.service';
 import type {
   AssignShiftDto,
   AttendanceSettingsDto,
@@ -89,6 +90,7 @@ export class AttendanceService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly storage: StorageService,
   ) {}
 
   // ---------- Perangkat ----------
@@ -209,6 +211,9 @@ export class AttendanceService {
         ...(dto.lateAfter !== undefined ? { lateAfter: dto.lateAfter } : {}),
         ...(dto.checkOutFrom !== undefined ? { checkOutFrom: dto.checkOutFrom } : {}),
         ...(dto.autoDerive !== undefined ? { autoDerive: dto.autoDerive } : {}),
+        ...(dto.schoolLat !== undefined ? { schoolLat: dto.schoolLat } : {}),
+        ...(dto.schoolLng !== undefined ? { schoolLng: dto.schoolLng } : {}),
+        ...(dto.radiusM !== undefined ? { radiusM: dto.radiusM } : {}),
       },
       create: { id: 'global' },
     });
@@ -566,6 +571,157 @@ export class AttendanceService {
       metadata: { punchedAt: t.toISOString(), inOut: dto.inOut ?? 0 },
     });
     return { inserted: r.inserted };
+  }
+
+  // ---------- Absen selfie (pegawai) ----------
+
+  /** Jarak haversine (meter) antara dua koordinat. */
+  private static distanceM(aLat: number, aLng: number, bLat: number, bLng: number) {
+    const R = 6371000;
+    const rad = (d: number) => (d * Math.PI) / 180;
+    const dLat = rad(bLat - aLat);
+    const dLng = rad(bLng - aLng);
+    const h =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(rad(aLat)) * Math.cos(rad(bLat)) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+  }
+
+  /** Profil absen pegawai dari akun yang sedang login. */
+  private async employeeOfUser(userId: string) {
+    const emp = await this.prisma.employee.findUnique({ where: { userId } });
+    if (!emp) throw new BadRequestException('Akun ini belum tertaut ke data pegawai');
+    if (!emp.isActive) throw new BadRequestException('Data pegawai tidak aktif');
+    return emp;
+  }
+
+  /** Absen selfie: foto + geolokasi dalam radius sekolah → tap masuk/pulang. */
+  async selfiePunch(
+    userId: string,
+    inOut: 0 | 1,
+    latitude: number,
+    longitude: number,
+    file: { buffer: Buffer; mimetype: string } | undefined,
+  ) {
+    const emp = await this.employeeOfUser(userId);
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('Foto wajib dilampirkan — aktifkan kamera dan ambil selfie');
+    }
+    const s = await this.getSettings();
+    if (s.schoolLat == null || s.schoolLng == null) {
+      throw new BadRequestException('Lokasi sekolah belum diatur — minta bidang Kurikulum mengisi pengaturan lokasi');
+    }
+    const dist = AttendanceService.distanceM(latitude, longitude, s.schoolLat, s.schoolLng);
+    if (dist > s.radiusM) {
+      throw new BadRequestException(
+        `Di luar jangkauan — Anda ${Math.round(dist)} m dari sekolah (maks ${s.radiusM} m). Dekati lokasi sekolah lalu coba lagi.`,
+      );
+    }
+    const now = new Date();
+    const ext = file.mimetype.includes('png') ? 'png' : 'jpg';
+    const photoKey = `attendance/selfie/${emp.id}/${localDay(now).toISOString().slice(0, 10)}-${inOut}-${now.getTime()}.${ext}`;
+    await this.storage.putObject(photoKey, file.buffer, file.mimetype);
+    const log = await this.prisma.attendanceLog.create({
+      data: {
+        deviceKey: `SELFIE-${emp.id}`,
+        pin: `selfie-${emp.id}`,
+        punchedAt: now,
+        inOut,
+        employeeId: emp.id,
+        source: 'SELFIE',
+        photoKey,
+        latitude,
+        longitude,
+      },
+    });
+    const day = localDay(now);
+    await this.deriveDay(emp.id, day);
+    const attendance = await this.prisma.employeeAttendance.findUnique({
+      where: { employeeId_date: { employeeId: emp.id, date: day } },
+    });
+    await this.audit.log({
+      actorId: userId,
+      action: 'attendance.selfie',
+      entity: 'attendance_log',
+      entityId: log.id,
+      metadata: { inOut, distanceM: Math.round(dist), latitude, longitude },
+    });
+    return {
+      id: log.id,
+      punchedAt: log.punchedAt,
+      inOut,
+      distanceM: Math.round(dist),
+      attendance: attendance
+        ? {
+            status: attendance.status,
+            checkInAt: attendance.checkInAt,
+            checkOutAt: attendance.checkOutAt,
+            lateMinutes: attendance.lateMinutes,
+          }
+        : null,
+    };
+  }
+
+  /** Rekap absen milik pegawai yang login (bulan berjalan + status hari ini). */
+  async myAttendance(userId: string, month?: string) {
+    const emp = await this.employeeOfUser(userId);
+    const now = new Date();
+    const parts = (month ?? `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`)
+      .split('-').map(Number);
+    const y = parts[0] ?? now.getUTCFullYear();
+    const m = parts[1] ?? now.getUTCMonth() + 1;
+    const rows = await this.prisma.employeeAttendance.findMany({
+      where: { employeeId: emp.id, date: { gte: new Date(Date.UTC(y, m - 1, 1)), lt: new Date(Date.UTC(y, m, 1)) } },
+      orderBy: { date: 'asc' },
+    });
+    const settings = await this.getSettings();
+    const today = await this.prisma.employeeAttendance.findUnique({
+      where: { employeeId_date: { employeeId: emp.id, date: localDay(now) } },
+    });
+    const todayLogs = await this.prisma.attendanceLog.findMany({
+      where: { employeeId: emp.id, source: 'SELFIE', punchedAt: { gte: new Date(localDay(now).getTime() - DEVICE_OFFSET_MS), lt: new Date(localDay(now).getTime() + 86400000 - DEVICE_OFFSET_MS) } },
+      select: { id: true, punchedAt: true, inOut: true },
+      orderBy: { punchedAt: 'asc' },
+    });
+    const shifts = await this.prisma.employeeShift.findMany({
+      where: { employeeId: emp.id },
+      include: { shift: true },
+    });
+    return {
+      employee: { id: emp.id, name: emp.name, nip: emp.nip },
+      geo: { schoolLat: settings.schoolLat, schoolLng: settings.schoolLng, radiusM: settings.radiusM, configured: settings.schoolLat != null && settings.schoolLng != null },
+      today: today
+        ? { status: today.status, checkInAt: today.checkInAt, checkOutAt: today.checkOutAt, lateMinutes: today.lateMinutes }
+        : null,
+      todayLogs,
+      rows: rows.map((r) => ({
+        date: r.date,
+        status: r.status,
+        checkInAt: r.checkInAt,
+        checkOutAt: r.checkOutAt,
+        lateMinutes: r.lateMinutes,
+        teachingMinutes: r.teachingMinutes,
+        note: r.note,
+      })),
+      shifts: shifts.map((s) => ({
+        dayOfWeek: s.dayOfWeek,
+        shift: {
+          name: s.shift.name,
+          startMinute: s.shift.startMinute,
+          endMinute: s.shift.endMinute,
+          checkOutFrom: s.shift.checkOutFrom,
+          lateAfter: s.shift.lateAfter,
+        },
+      })),
+    };
+  }
+
+  /** Foto selfie sebuah log — dibaca TU/admin. */
+  async logPhoto(logId: string) {
+    const log = await this.prisma.attendanceLog.findUnique({ where: { id: logId } });
+    if (!log?.photoKey) throw new NotFoundException('Foto tidak ditemukan');
+    const buf = await this.storage.getObjectBuffer(log.photoKey);
+    return { buffer: buf, mime: log.photoKey.endsWith('.png') ? 'image/png' : 'image/jpeg' };
   }
 
   // ---------- Shift kerja ----------

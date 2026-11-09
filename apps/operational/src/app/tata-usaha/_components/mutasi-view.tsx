@@ -14,6 +14,7 @@ import {
   updateMutation,
   type StudentMutation,
 } from '@/lib/api';
+import { mutationLetterUrl, uploadMutationLetter } from '@/lib/api-ops';
 
 import { RowBtn } from '@/components/row-btn';
 import { useConfirm } from '@/components/confirm-dialog';
@@ -34,6 +35,7 @@ export function MutasiView({ direction }: { direction: 'IN' | 'OUT' }) {
   const schoolLabel = isIn ? 'Asal Sekolah' : 'Tujuan Sekolah';
 
   const [search, setSearch] = useState('');
+  const [status, setStatus] = useState('');
   const [rows, setRows] = useState<StudentMutation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -115,7 +117,7 @@ export function MutasiView({ direction }: { direction: 'IN' | 'OUT' }) {
         <p role="status" className="mb-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">{notice}</p>
       ) : null}
 
-      <div className="mb-4">
+      <div className="mb-4 flex flex-wrap items-center gap-3">
         <Input
           type="search"
           value={search}
@@ -123,6 +125,12 @@ export function MutasiView({ direction }: { direction: 'IN' | 'OUT' }) {
           placeholder="Cari nama / NISN / sekolah…"
           className="w-72 max-w-full"
         />
+        <Select value={status} onChange={(e) => setStatus(e.target.value)} className="w-44">
+          <option value="">Semua status</option>
+          <option value="PROCESS">Diproses</option>
+          <option value="DONE">Selesai</option>
+          <option value="CANCELLED">Batal</option>
+        </Select>
       </div>
 
       <DataTable
@@ -131,18 +139,37 @@ export function MutasiView({ direction }: { direction: 'IN' | 'OUT' }) {
         error={error}
         empty={rows.length === 0 ? 'Belum ada mutasi.' : undefined}
 >
-        {rows.map((m) => (
+        {rows.filter((m) => !status || m.status === status).map((m) => (
           <tr key={m.id}>
             <td className="px-5 py-3 font-semibold text-sand-900">{m.studentName}</td>
             <td className="px-5 py-3 text-sand-600">{m.nisn ?? '—'}</td>
             <td className="whitespace-nowrap px-5 py-3 text-sand-600">{fmtDate(m.date)}</td>
             <td className="px-5 py-3 text-sand-600">{m.school ?? '—'}</td>
-            <td className="px-5 py-3 font-mono text-xs text-sand-600">{m.letterNumber ?? '—'}</td>
+            <td className="px-5 py-3 font-mono text-xs text-sand-600">
+              {m.letterNumber ?? '—'}
+              {m.fileName ? (
+                <a href={mutationLetterUrl(m.id)} className="block font-bold text-primary-700 hover:underline">{m.fileName}</a>
+              ) : null}
+            </td>
             <td className="px-5 py-3">
               <Badge tone={STATUS[m.status].tone}>{STATUS[m.status].label}</Badge>
             </td>
             <td className="px-5 py-3 text-right">
               <span className="flex justify-end gap-2">
+                <label className="cursor-pointer rounded-lg bg-sand-100 px-2.5 py-1 text-xs font-bold text-sand-700 hover:bg-sand-200">
+                  Surat
+                  <input
+                    type="file"
+                    className="hidden"
+                    accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                    onChange={async (e) => {
+                      const f = e.target.files?.[0];
+                      if (!f) return;
+                      await run(() => uploadMutationLetter(m.id, f), 'Surat terupload.');
+                      e.target.value = '';
+                    }}
+                  />
+                </label>
                 <RowBtn type="button" onClick={async () => setModal(m)}>
                   Ubah
                 </RowBtn>

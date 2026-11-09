@@ -8,6 +8,7 @@ import { PageTitle } from '@/components/widgets';
 import { useConfirm } from '@/components/confirm-dialog';
 import {
   deleteParent,
+  exportParentsXlsx,
   getParent,
   listAcademicYears,
   listAdminWaves,
@@ -122,6 +123,20 @@ export default function AkunOrtuPage() {
       <PageTitle
         title="Akun Orang Tua"
         subtitle="Kelola akun pendaftar SPMB — lihat data pendaftaran, edit, atau hapus akun."
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              void exportParentsXlsx({
+                ...(filterYear ? { academicYearId: filterYear } : {}),
+                ...(filterWave ? { waveId: filterWave } : {}),
+              }).catch(() => setError('Export Excel gagal.'))
+            }
+          >
+            Export Excel
+          </Button>
+        }
       />
 
       {error ? (

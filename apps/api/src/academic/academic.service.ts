@@ -35,11 +35,29 @@ export class AcademicService {
   ) {}
 
   // ---------- Employees ----------
-  listEmployees(type?: string, search?: string) {
+  listEmployees(type?: string, search?: string, department?: string) {
     const where: Prisma.EmployeeWhereInput = {};
     if (type) where.type = type as 'TEACHER' | 'STAFF';
-    if (search) where.name = { contains: search, mode: 'insensitive' };
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { nip: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+    if (department) where.department = department;
     return this.prisma.employee.findMany({ where, orderBy: { name: 'asc' } });
+  }
+
+  /** Anggota bidang dari pegawai yang login — untuk kepala bidang. */
+  async myDepartment(userId: string) {
+    const me = await this.prisma.employee.findUnique({ where: { userId } });
+    if (!me) throw new NotFoundException('Akun ini belum tertaut ke data pegawai.');
+    if (!me.department) return { department: null, isHead: me.isDeptHead, members: [] };
+    const members = await this.prisma.employee.findMany({
+      where: { department: me.department, isActive: true },
+      orderBy: [{ isDeptHead: 'desc' }, { name: 'asc' }],
+    });
+    return { department: me.department, isHead: me.isDeptHead, members };
   }
 
   async createEmployee(dto: EmployeeDto, actorId: string) {
@@ -70,6 +88,8 @@ export class AcademicService {
       if (role.key === 'spmb_parent') {
         throw new BadRequestException('Role orang tua tidak untuk pegawai.');
       }
+      // Cegah konflik login — email/no HP harus unik antar akun.
+      await this.assertLoginFree(dto.email, dto.phone);
       const passwordHash = await argon2.hash(dto.password);
       const user = await this.prisma.user.create({
         data: {
@@ -90,6 +110,8 @@ export class AcademicService {
         type: dto.type ?? 'TEACHER',
         email: dto.email ?? null,
         phone: dto.phone ?? null,
+        department: dto.department ?? null,
+        isDeptHead: dto.isDeptHead ?? false,
         isActive: dto.isActive ?? true,
         userId,
       },
@@ -99,7 +121,20 @@ export class AcademicService {
   }
 
   async updateEmployee(id: string, dto: EmployeeDto, actorId: string) {
-    await this.prisma.employee.findUniqueOrThrow({ where: { id } });
+    const existing = await this.prisma.employee.findUniqueOrThrow({
+      where: { id },
+    });
+    if (dto.nip && dto.nip !== existing.nip) {
+      const clash = await this.prisma.employee.findUnique({
+        where: { nip: dto.nip },
+      });
+      if (clash) throw new ConflictException(`NIP ${dto.nip} sudah dipakai ${clash.name}.`);
+    }
+    // Email/HP pegawai yang punya akun ikut disalin ke akun login —
+    // cek dulu agar tak bentrok dengan akun lain.
+    if (existing.userId) {
+      await this.assertLoginFree(dto.email, dto.phone, existing.userId);
+    }
     const emp = await this.prisma.employee.update({
       where: { id },
       data: {
@@ -108,11 +143,147 @@ export class AcademicService {
         email: dto.email ?? null,
         phone: dto.phone ?? null,
         ...(dto.type !== undefined ? { type: dto.type } : {}),
+        ...(dto.department !== undefined ? { department: dto.department || null } : {}),
+        ...(dto.isDeptHead !== undefined ? { isDeptHead: dto.isDeptHead } : {}),
         ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
       },
     });
+    if (existing.userId) {
+      await this.prisma.user.update({
+        where: { id: existing.userId },
+        data: {
+          name: emp.name,
+          email: emp.email?.toLowerCase() ?? null,
+          phone: emp.phone ? normalizePhone(emp.phone) : null,
+        },
+      });
+    }
     await this.audit.log({ actorId, action: 'employee.update', entity: 'employee', entityId: id });
     return emp;
+  }
+
+  /** Pastikan email/HP belum dipakai akun lain (kecuali akun `excludeUserId`). */
+  private async assertLoginFree(
+    email: string | undefined | null,
+    phone: string | undefined | null,
+    excludeUserId?: string,
+  ) {
+    const or: Prisma.UserWhereInput[] = [];
+    if (email) or.push({ email: email.toLowerCase() });
+    if (phone) or.push({ phone: normalizePhone(phone) });
+    if (!or.length) return;
+    const clash = await this.prisma.user.findFirst({
+      where: { OR: or, ...(excludeUserId ? { id: { not: excludeUserId } } : {}) },
+      select: { name: true, email: true, phone: true },
+    });
+    if (clash) {
+      throw new ConflictException(
+        `Email/HP sudah dipakai akun "${clash.name}" — satu identitas tidak boleh dobel akun. Kosongkan atau pakai kontak lain.`,
+      );
+    }
+  }
+
+  /**
+   * Import pegawai dari baris Excel/CSV — anti-redundan:
+   * cocokkan NIP → email → HP; yang cocok di-update, sisanya dibuat baru.
+   */
+  async importEmployees(
+    rows: {
+      name: string;
+      nip?: string | undefined;
+      type?: string | undefined;
+      email?: string | undefined;
+      phone?: string | undefined;
+      department?: string | undefined;
+      isDeptHead?: boolean | undefined;
+    }[],
+    actorId: string,
+  ) {
+    let created = 0;
+    let updated = 0;
+    const errors: { row: number; name: string; error: string }[] = [];
+    const seenNip = new Set<string>();
+    const seenEmail = new Set<string>();
+    const seenPhone = new Set<string>();
+
+    for (const [i, raw] of rows.entries()) {
+      const row = i + 2; // baris Excel (header = 1)
+      const name = raw.name?.trim();
+      if (!name) {
+        errors.push({ row, name: raw.name ?? '', error: 'Nama kosong' });
+        continue;
+      }
+      const nip = raw.nip?.trim() || null;
+      const email = raw.email?.trim().toLowerCase() || null;
+      const phone = raw.phone ? normalizePhone(raw.phone) : null;
+      // Duplikat di dalam file import sendiri.
+      if (nip && seenNip.has(nip)) {
+        errors.push({ row, name, error: `NIP ${nip} dobel di file ini` });
+        continue;
+      }
+      if (email && seenEmail.has(email)) {
+        errors.push({ row, name, error: `Email ${email} dobel di file ini` });
+        continue;
+      }
+      if (phone && seenPhone.has(phone)) {
+        errors.push({ row, name, error: `HP ${phone} dobel di file ini` });
+        continue;
+      }
+      if (nip) seenNip.add(nip);
+      if (email) seenEmail.add(email);
+      if (phone) seenPhone.add(phone);
+
+      // Cari pegawai yang sudah ada — NIP dulu, lalu email, lalu HP.
+      let existing = nip
+        ? await this.prisma.employee.findUnique({ where: { nip } })
+        : null;
+      if (!existing && email) {
+        existing = await this.prisma.employee.findFirst({
+          where: { email: { equals: email, mode: 'insensitive' } },
+        });
+      }
+      if (!existing && phone) {
+        existing = await this.prisma.employee.findFirst({ where: { phone } });
+      }
+
+      const data = {
+        name,
+        ...(nip ? { nip } : {}),
+        email,
+        phone,
+        ...(raw.type ? { type: raw.type as 'TEACHER' | 'STAFF' } : {}),
+        ...(raw.department !== undefined
+          ? { department: raw.department || null }
+          : {}),
+        ...(raw.isDeptHead !== undefined ? { isDeptHead: raw.isDeptHead } : {}),
+      };
+
+      if (existing) {
+        // NIP baru yang bentrok dengan pegawai lain.
+        if (nip && existing.nip && existing.nip !== nip) {
+          const nipOwner = await this.prisma.employee.findUnique({ where: { nip } });
+          if (nipOwner && nipOwner.id !== existing.id) {
+            errors.push({ row, name, error: `NIP ${nip} sudah dipakai ${nipOwner.name}` });
+            continue;
+          }
+        }
+        await this.prisma.employee.update({ where: { id: existing.id }, data });
+        updated++;
+      } else {
+        await this.prisma.employee.create({
+          data: { name, nip, email, phone, type: data.type ?? 'TEACHER', ...(data.department !== undefined ? { department: data.department } : {}), ...(data.isDeptHead !== undefined ? { isDeptHead: data.isDeptHead } : {}) },
+        });
+        created++;
+      }
+    }
+    await this.audit.log({
+      actorId,
+      action: 'employee.import',
+      entity: 'employee',
+      entityId: 'bulk',
+      metadata: { created, updated, errors: errors.length },
+    });
+    return { created, updated, skipped: errors.length, errors };
   }
 
   /** Detail pegawai — profil + wali kelas + penugasan mengajar. */

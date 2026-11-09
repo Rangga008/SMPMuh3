@@ -210,6 +210,97 @@ export class SpmbImportService {
     return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
   }
 
+  /** Export daftar titipan — semua status, terurut antrean. */
+  async exportTitipanXlsx(academicYearId?: string, waveId?: string) {
+    const entries = await this.prisma.titipanEntry.findMany({
+      where: {
+        ...(academicYearId ? { academicYearId } : {}),
+        ...(waveId ? { waveId } : {}),
+      },
+      include: {
+        academicYear: { select: { name: true } },
+        wave: { select: { name: true } },
+      },
+      orderBy: [{ academicYearId: 'asc' }, { queueNo: 'asc' }],
+    });
+    // registrationId disimpan sebagai id polos (bukan relasi) — ambil nomornya.
+    const regIds = entries.map((e) => e.registrationId).filter((x): x is string => !!x);
+    const regs = await this.prisma.registration.findMany({
+      where: { id: { in: regIds } },
+      select: { id: true, number: true },
+    });
+    const regNo = new Map(regs.map((r) => [r.id, r.number]));
+    const STATUS: Record<string, string> = {
+      PENDING: 'Menunggu verifikasi',
+      QUEUED: 'Dalam antrean',
+      CODE_SENT: 'Kode terkirim',
+      REGISTERED: 'Sudah daftar',
+      CANCELLED: 'Dibatalkan',
+    };
+    const ws = XLSX.utils.json_to_sheet(
+      entries.map((e) => ({
+        'No. Antre': e.queueNo,
+        'Tahun Ajaran': e.academicYear.name,
+        Gelombang: e.wave?.name ?? '',
+        'Nama Calon Siswa': e.candidateName,
+        'Tempat Lahir': e.birthPlace ?? '',
+        'Tanggal Lahir': e.birthDate ? e.birthDate.toISOString().slice(0, 10) : '',
+        'Asal Sekolah': e.previousSchool ?? '',
+        Alamat: e.address ?? '',
+        'No. HP Wali': e.guardianPhone ?? '',
+        Status: STATUS[e.status] ?? e.status,
+        'Kode Formulir': e.formCode ?? '',
+        'No. Pendaftaran': e.registrationId ? (regNo.get(e.registrationId) ?? '') : '',
+        'Tanggal Titip': e.createdAt.toISOString().slice(0, 10),
+      })),
+    );
+    ws['!cols'] = [{ wch: 9 }, { wch: 12 }, { wch: 12 }, { wch: 28 }, { wch: 14 }, { wch: 12 }, { wch: 22 }, { wch: 26 }, { wch: 15 }, { wch: 18 }, { wch: 13 }, { wch: 18 }, { wch: 12 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Titipan');
+    return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+  }
+
+  /** Export akun orang tua beserta jumlah pendaftarannya. */
+  async exportParentsXlsx(academicYearId?: string, waveId?: string) {
+    const regFilter: { waveId?: string; academicYearId?: string } = {};
+    if (waveId) regFilter.waveId = waveId;
+    if (academicYearId) regFilter.academicYearId = academicYearId;
+    const parents = await this.prisma.user.findMany({
+      where: {
+        roles: { some: { role: { key: 'spmb_parent' } } },
+        ...(Object.keys(regFilter).length
+          ? { registrations: { some: regFilter } }
+          : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        name: true,
+        phone: true,
+        email: true,
+        status: true,
+        createdAt: true,
+        lastLoginAt: true,
+        _count: { select: { registrations: true, candidates: true } },
+      },
+    });
+    const ws = XLSX.utils.json_to_sheet(
+      parents.map((p) => ({
+        'Nama Orang Tua': p.name,
+        'No. HP': p.phone ?? '',
+        Email: p.email ?? '',
+        Status: p.status,
+        'Jumlah Anak Terdaftar': p._count.candidates,
+        'Jumlah Pendaftaran': p._count.registrations,
+        'Terdaftar Sejak': p.createdAt.toISOString().slice(0, 10),
+        'Login Terakhir': p.lastLoginAt ? p.lastLoginAt.toISOString().slice(0, 10) : '',
+      })),
+    );
+    ws['!cols'] = [{ wch: 26 }, { wch: 16 }, { wch: 26 }, { wch: 10 }, { wch: 18 }, { wch: 16 }, { wch: 14 }, { wch: 14 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Akun Orang Tua');
+    return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+  }
+
   /**
    * Export seluruh dokumen pendaftar di satu gelombang — semua status,
    * selama pendaftar punya berkas terunggah. Zip berisi satu folder

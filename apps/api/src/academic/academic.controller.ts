@@ -5,11 +5,19 @@ import {
   Delete,
   Get,
   Param,
+  ParseFilePipeBuilder,
   ParseUUIDPipe,
   Patch,
   Post,
   Query,
+  Res,
+  StreamableFile,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
+import * as XLSX from 'xlsx';
 import { PERMISSIONS, type AuthUser } from '@smpmuh3/types';
 import { CurrentUser } from '../identity/decorators/current-user.decorator';
 import { RequirePermission } from '../identity/decorators/require-permission.decorator';
@@ -53,8 +61,18 @@ export class AcademicController {
   // ---------- Employees ----------
   @Get('employees')
   @RequirePermission(ER)
-  employees(@Query('type') type?: string, @Query('search') search?: string) {
-    return this.academic.listEmployees(type, search);
+  employees(
+    @Query('type') type?: string,
+    @Query('search') search?: string,
+    @Query('department') department?: string,
+  ) {
+    return this.academic.listEmployees(type, search, department);
+  }
+
+  /** Anggota bidang milik pegawai yang login — untuk kepala bidang. */
+  @Get('employees/my-department')
+  myDepartment(@CurrentUser() u: AuthUser) {
+    return this.academic.myDepartment(u.id);
   }
 
   @Post('employees')
@@ -73,6 +91,87 @@ export class AcademicController {
     return this.academic.updateEmployee(id, dto, u.id);
   }
 
+  /** Template Excel import pegawai — header sesuai kolom yang dibaca import. */
+  @Get('employees/import-template')
+  @RequirePermission(ER)
+  importTemplate(@Res({ passthrough: true }) res: Response) {
+    const ws = XLSX.utils.json_to_sheet([
+      {
+        name: 'Ahmad Guru Contoh',
+        nip: '19750101001',
+        type: 'TEACHER',
+        email: 'ahmad@sekolah.sch.id',
+        phone: '081234567890',
+        department: 'KURIKULUM',
+        is_dept_head: '',
+      },
+    ]);
+    ws['!cols'] = [{ wch: 28 }, { wch: 16 }, { wch: 10 }, { wch: 26 }, { wch: 16 }, { wch: 14 }, { wch: 12 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Pegawai');
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+    res.set({
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': 'attachment; filename="template-pegawai.xlsx"',
+    });
+    return new StreamableFile(buf);
+  }
+
+  /**
+   * Import pegawai dari Excel/CSV — anti-redundan: NIP/email/HP yang sudah
+   * ada di-update, bukan dibuat ulang. Kolom: name, nip, type, email,
+   * phone, department, is_dept_head.
+   */
+  @Post('employees/import')
+  @RequirePermission(EM)
+  @UseInterceptors(FileInterceptor('file'))
+  async importEmployees(
+    @CurrentUser() u: AuthUser,
+    @UploadedFile(
+      new ParseFilePipeBuilder()
+        .addMaxSizeValidator({ maxSize: 5 * 1024 * 1024 })
+        .build({ fileIsRequired: true }),
+    )
+    file: Express.Multer.File,
+  ) {
+    const name = file.originalname.toLowerCase();
+    if (!name.endsWith('.xlsx') && !name.endsWith('.xls') && !name.endsWith('.csv')) {
+      throw new BadRequestException('Hanya file Excel (.xlsx/.xls) atau CSV');
+    }
+    let wb: XLSX.WorkBook;
+    try {
+      wb = XLSX.read(file.buffer, { type: 'buffer' });
+    } catch {
+      throw new BadRequestException('File tidak dapat dibaca');
+    }
+    const rows: Parameters<AcademicService['importEmployees']>[0] = [];
+    for (const sn of wb.SheetNames) {
+      const sheet = wb.Sheets[sn];
+      if (!sheet) continue;
+      for (const r of XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' })) {
+        const g = (...keys: string[]) => {
+          for (const k of keys) {
+            const v = r[k];
+            if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();
+          }
+          return '';
+        };
+        rows.push({
+          name: g('name', 'nama', 'Nama'),
+          nip: g('nip', 'NIP') || undefined,
+          type: g('type', 'jenis', 'Jenis').toUpperCase() || undefined,
+          email: g('email', 'Email') || undefined,
+          phone: g('phone', 'hp', 'telepon', 'Telepon', 'HP') || undefined,
+          department: g('department', 'bidang', 'Bidang').toUpperCase() || undefined,
+          isDeptHead: ['1', 'true', 'ya', 'yes', 'y'].includes(g('is_dept_head', 'kepala_bidang').toLowerCase()) || undefined,
+        });
+      }
+    }
+    if (!rows.length) throw new BadRequestException('File tidak berisi baris data.');
+    return this.academic.importEmployees(rows, u.id);
+  }
+
   /** Profil lengkap pegawai — data + penugasan mengajar (detail guru). */
   @Get('employees/:id')
   @RequirePermission(ER)
@@ -82,16 +181,14 @@ export class AcademicController {
 
   // ---------- Kalender akademik ----------
 
-  /** Kalender sebulan — siapa mengajar per tanggal + event libur/kegiatan. */
+  /** Kalender sebulan — siapa mengajar per tanggal + event libur/kegiatan. Terbuka untuk semua bidang yang login. */
   @Get('academic-calendar')
-  @RequirePermission(ER)
   academicCalendar(@Query('month') month: string) {
     if (!month) throw new BadRequestException('Parameter month wajib (YYYY-MM).');
     return this.academic.academicCalendar(month);
   }
 
   @Get('academic-calendar/events')
-  @RequirePermission(ER)
   calendarEvents(@Query('from') from?: string, @Query('to') to?: string) {
     return this.academic.listCalendarEvents(from || undefined, to || undefined);
   }

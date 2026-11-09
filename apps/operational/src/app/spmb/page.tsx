@@ -403,6 +403,15 @@ function SpmbList() {
             </td>
             <td className="px-5 py-3.5 font-semibold text-sand-900">
               {r.candidate.name}
+              {r.candidate.student?.id ? (
+                <Link
+                  href={`/kesiswaan/${r.candidate.student.id}`}
+                  className="ml-2 rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800 hover:bg-emerald-200"
+                  title={`Sudah jadi murid${r.candidate.student.nis ? ` — NIS ${r.candidate.student.nis}` : ''}`}
+                >
+                  SUDAH MURID{r.candidate.student.nis ? ` · ${r.candidate.student.nis}` : ''}
+                </Link>
+              ) : null}
             </td>
             <td className="px-5 py-3.5 text-sand-600">
               {r.parent.name}

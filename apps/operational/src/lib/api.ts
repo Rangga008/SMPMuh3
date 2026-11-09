@@ -63,7 +63,7 @@ function refreshTokens(): Promise<AuthTokens | null> {
   return refreshing;
 }
 
-async function req<T>(
+export async function req<T>(
   path: string,
   opts: RequestInit & { json?: unknown } = {},
 ): Promise<T> {
@@ -240,7 +240,7 @@ export const recordCash = (invoiceId: string, note?: string) =>
     json: note ? { invoiceId, note } : { invoiceId },
   });
 /** Unduh file ber-otorisasi sebagai blob lalu simpan. */
-async function downloadFile(path: string, filename: string) {
+export async function downloadFile(path: string, filename: string) {
   const tokens = getTokens();
   const res = await fetch(`${API}${path}`, {
     headers: tokens?.accessToken
@@ -543,9 +543,16 @@ export interface EmployeeDto {
   phone?: string | null;
   isActive: boolean;
   userId?: string | null;
+  department?: string | null;
+  isDeptHead?: boolean;
 }
-export const listEmployees = (type?: string) =>
-  req<EmployeeDto[]>(`/employees${type ? `?type=${type}` : ''}`);
+export const listEmployees = (type?: string, search?: string, department?: string) => {
+  const p = new URLSearchParams();
+  if (type) p.set('type', type);
+  if (search) p.set('search', search);
+  if (department) p.set('department', department);
+  return req<EmployeeDto[]>(`/employees?${p}`);
+};
 export const createEmployee = (dto: Record<string, unknown>) =>
   req<EmployeeDto>('/employees', { method: 'POST', json: dto });
 
@@ -581,7 +588,7 @@ export interface DailyRow {
   checkInAt?: string | null;
   checkOutAt?: string | null;
   lateMinutes?: number | null;
-  source?: 'DEVICE' | 'IMPORT' | 'MANUAL' | null;
+  source?: 'DEVICE' | 'IMPORT' | 'MANUAL' | 'SELFIE' | null;
   note?: string | null;
 }
 export interface AttendanceSettings {
@@ -589,6 +596,9 @@ export interface AttendanceSettings {
   lateAfter: number;
   checkOutFrom: string;
   autoDerive: boolean;
+  schoolLat?: number | null;
+  schoolLng?: number | null;
+  radiusM: number;
 }
 export interface PinRow {
   id: string;
@@ -686,7 +696,7 @@ export interface AttendanceDayRow {
   checkOutAt?: string | null;
   lateMinutes: number;
   teachingMinutes: number;
-  source: 'DEVICE' | 'IMPORT' | 'MANUAL';
+  source: 'DEVICE' | 'IMPORT' | 'MANUAL' | 'SELFIE';
   note?: string | null;
 }
 export interface EmployeeMonthly {
@@ -1130,6 +1140,7 @@ export interface StudentInvoice {
     id: string;
     name: string;
     nis?: string | null;
+    status?: string | null;
     parent?: { name: string; phone?: string | null } | null;
   } | null;
   class?: { id: string; name: string; gradeLevel: number } | null;
@@ -1190,7 +1201,7 @@ export interface BillingBatchView {
 
 export const listStudentInvoices = (q: {
   studentId?: string; classId?: string; gradeLevel?: string; academicYearId?: string;
-  semesterId?: string; kind?: string; status?: string; search?: string; take?: string; skip?: string;
+  semesterId?: string; kind?: string; status?: string; studentStatus?: string; search?: string; take?: string; skip?: string;
 }) => {
   const p = qs({ ...q });
   return req<{ items: StudentInvoice[]; total: number }>(`/admin/finance/invoices${p}`);
@@ -1631,6 +1642,7 @@ export interface StudentMutation {
   date: string;
   school?: string | null;
   letterNumber?: string | null;
+  fileName?: string | null;
   status: 'PROCESS' | 'DONE' | 'CANCELLED';
   notes?: string | null;
   createdAt: string;
@@ -1892,3 +1904,100 @@ export const voidPayrollRun = (id: string) =>
   req<{ voided: boolean }>(`${py}/runs/${id}/void`, { method: 'POST' });
 export const deletePayrollRun = (id: string) =>
   req<{ deleted: boolean }>(`${py}/runs/${id}`, { method: 'DELETE' });
+
+// ---- absen selfie (semua pegawai) ----
+export interface MyAttendance {
+  employee: { id: string; name: string; nip?: string | null };
+  geo: { schoolLat: number | null; schoolLng: number | null; radiusM: number; configured: boolean };
+  today: { status: string; checkInAt?: string | null; checkOutAt?: string | null; lateMinutes: number } | null;
+  todayLogs: { id: string; punchedAt: string; inOut: number }[];
+  rows: AttendanceDayRow[];
+  shifts?: MyShift[];
+}
+export const getMyAttendance = (month?: string) =>
+  req<MyAttendance>(`/admin/attendance/my${month ? `?month=${month}` : ''}`);
+export interface MyShift {
+  dayOfWeek: number; // -1 = tiap hari
+  shift: { name: string; startMinute: number; endMinute: number; checkOutFrom: number; lateAfter: number };
+}
+export const selfiePunch = (inOut: 0 | 1, latitude: number, longitude: number, photo: Blob) => {
+  const fd = new FormData();
+  fd.set('inOut', String(inOut));
+  fd.set('latitude', String(latitude));
+  fd.set('longitude', String(longitude));
+  fd.set('photo', photo, `selfie-${Date.now()}.jpg`);
+  return req<{ punchedAt: string; inOut: number; distanceM: number; attendance: { status: string; checkInAt?: string | null; checkOutAt?: string | null; lateMinutes: number } | null }>(
+    '/admin/attendance/selfie', { method: 'POST', body: fd });
+};
+export const attendanceLogPhotoUrl = (id: string) => `${API}/admin/attendance/logs/${id}/photo`;
+
+// ---- bidang (kepala bidang) ----
+export const getMyDepartment = () =>
+  req<{ department: string | null; isHead: boolean; members: EmployeeDto[] }>('/employees/my-department');
+
+// ---- keuangan: batch delete, kategori delete, kwitansi, laporan ----
+export const deleteBillingBatch = (id: string) =>
+  req<{ deleted: number }>(`/admin/finance/billing/batches/${id}/delete`, { method: 'POST' });
+export const deleteFinanceCategory = (id: string) =>
+  req<{ deleted: boolean }>(`/admin/finance/categories/${id}`, { method: 'DELETE' });
+export interface ReceiptRow {
+  id: string; number: string; refType?: string | null; refId?: string | null;
+  channel: string; recipient: string; body: string; status: string;
+  sentAt?: string | null; createdAt: string;
+  payment?: { amount: number; method?: string | null; paidAt?: string | null; invoice?: { number: string; title: string } | null } | null;
+}
+export const issueReceipt = (refType: 'payment' | 'expense' | 'transaction', refId: string) =>
+  req<{ receipt: ReceiptRow; fresh: boolean }>('/admin/finance/receipts', { method: 'POST', json: { refType, refId } });
+export const listReceipts = (q: { refType?: string; search?: string } = {}) => {
+  const p = new URLSearchParams();
+  if (q.refType) p.set('refType', q.refType);
+  if (q.search) p.set('search', q.search);
+  return req<ReceiptRow[]>(`/admin/finance/receipts?${p}`);
+};
+export interface IncomeStudentRow {
+  student: { id: string; name: string; nisn?: string | null };
+  className?: string | null;
+  total: number;
+  months: Record<string, Record<string, number>>;
+}
+export const incomeByStudent = (q: { from: string; to: string; classId?: string; search?: string }) => {
+  const p = new URLSearchParams({ from: q.from, to: q.to });
+  if (q.classId) p.set('classId', q.classId);
+  if (q.search) p.set('search', q.search);
+  return req<{ months: string[]; kinds: string[]; rows: IncomeStudentRow[] }>(
+    `/admin/finance/reports/income-by-student?${p}`);
+};
+export const savingsReport = (q: { from: string; to: string; studentId?: string; classId?: string }) => {
+  const p = new URLSearchParams({ from: q.from, to: q.to });
+  if (q.studentId) p.set('studentId', q.studentId);
+  if (q.classId) p.set('classId', q.classId);
+  return req<{ student: { id: string; name: string }; days: { date: string; in: number; out: number }[]; months: { month: string; in: number; out: number }[] }[]>(
+    `/admin/finance/reports/savings?${p}`);
+};
+
+// ---- kepegawaian: update, import, export SPMB ----
+export const updateEmployee = (id: string, dto: Record<string, unknown>) =>
+  req<EmployeeDto>(`/employees/${id}`, { method: 'PATCH', json: dto });
+export const importEmployees = (file: File) => {
+  const fd = new FormData();
+  fd.set('file', file);
+  return req<{ created: number; updated: number; skipped: number; errors: { row: number; name: string; error: string }[] }>(
+    '/employees/import', { method: 'POST', body: fd });
+};
+export const downloadEmployeeTemplate = () =>
+  downloadFile('/employees/import-template', 'template-pegawai.xlsx');
+export const exportTitipanXlsx = (q: { academicYearId?: string; waveId?: string }) => {
+  const p = new URLSearchParams();
+  if (q.academicYearId) p.set('academicYearId', q.academicYearId);
+  if (q.waveId) p.set('waveId', q.waveId);
+  const s = p.toString();
+  return downloadFile(`/admin/titipan/export.xlsx${s ? `?${s}` : ''}`, 'titipan-spmb.xlsx');
+};
+export const exportParentsXlsx = (q: { academicYearId?: string; waveId?: string }) => {
+  const p = new URLSearchParams();
+  if (q.academicYearId) p.set('academicYearId', q.academicYearId);
+  if (q.waveId) p.set('waveId', q.waveId);
+  const s = p.toString();
+  return downloadFile(`/admin/parents/export.xlsx${s ? `?${s}` : ''}`, 'akun-orang-tua.xlsx');
+};
+

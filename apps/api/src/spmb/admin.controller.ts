@@ -177,6 +177,23 @@ export class AdminSpmbController {
     });
   }
 
+  /** Export akun orang tua ke Excel — ikut filter TA/gelombang. */
+  @Get('parents/export.xlsx')
+  @RequirePermission(PERMISSIONS.SPMB_REGISTRATION_READ)
+  async exportParents(
+    @Query('waveId') waveId: string | undefined,
+    @Query('academicYearId') academicYearId: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const buf = await this.importer.exportParentsXlsx(academicYearId, waveId);
+    res.set({
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': 'attachment; filename="akun-orang-tua.xlsx"',
+    });
+    return new StreamableFile(buf);
+  }
+
   @Get('parents/:id')
   @RequirePermission(PERMISSIONS.SPMB_REGISTRATION_READ)
   async parentDetail(@Param('id', ParseUUIDPipe) id: string) {
@@ -583,6 +600,23 @@ export class AdminSpmbController {
       status,
       search: search || undefined,
     });
+  }
+
+  /** Export daftar titipan ke Excel — ikut filter TA/gelombang. */
+  @Get('titipan/export.xlsx')
+  @RequirePermission(PERMISSIONS.SPMB_TITIPAN_READ)
+  async exportTitipan(
+    @Query('waveId') waveId: string | undefined,
+    @Query('academicYearId') academicYearId: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const buf = await this.importer.exportTitipanXlsx(academicYearId, waveId);
+    res.set({
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': 'attachment; filename="titipan-spmb.xlsx"',
+    });
+    return new StreamableFile(buf);
   }
 
   /** Verifikasi entri (guest/pending) → masuk antrean resmi. */

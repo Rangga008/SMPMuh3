@@ -9,10 +9,13 @@ import {
   Patch,
   Post,
   Query,
+  Res,
+  StreamableFile,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
 import { PERMISSIONS, type AuthUser } from '@smpmuh3/types';
 import { CurrentUser } from '../identity/decorators/current-user.decorator';
 import { RequirePermission } from '../identity/decorators/require-permission.decorator';
@@ -24,12 +27,16 @@ import {
   CreateShiftDto,
   ManualPunchDto,
   PinMapDto,
+  SelfiePunchDto,
   UpdateDeviceDto,
   UpdateShiftDto,
 } from './dto/attendance.dto';
 
 const R = PERMISSIONS.TATAUSAHA_READ;
 const M = PERMISSIONS.TATAUSAHA_MANAGE;
+/** Shift kerja, jadwal & lokasi absen — dikelola bidang Kurikulum. */
+const AR = PERMISSIONS.ACADEMIC_READ;
+const AM = PERMISSIONS.ACADEMIC_MANAGE;
 
 /** Administrasi absensi pegawai — dikelola Tata Usaha. */
 @Controller({ path: 'admin/attendance', version: '1' })
@@ -73,16 +80,16 @@ export class AttendanceController {
     return this.attendance.pullFromDevice(id, u.id);
   }
 
-  // ---------- Pengaturan jadwal ----------
+  // ---------- Pengaturan jadwal & lokasi (Kurikulum) ----------
 
   @Get('settings')
-  @RequirePermission(R)
+  @RequirePermission(AR)
   settings() {
     return this.attendance.getSettings();
   }
 
   @Patch('settings')
-  @RequirePermission(M)
+  @RequirePermission(AM)
   updateSettings(@Body() dto: AttendanceSettingsDto, @CurrentUser() u: AuthUser) {
     return this.attendance.updateSettings(dto, u.id);
   }
@@ -169,22 +176,22 @@ export class AttendanceController {
     return this.attendance.importFile(deviceKey.trim(), file.buffer, u.id);
   }
 
-  // ---------- Shift kerja ----------
+  // ---------- Shift kerja (Kurikulum) ----------
 
   @Get('shifts')
-  @RequirePermission(R)
+  @RequirePermission(AR)
   shifts() {
     return this.attendance.listShifts();
   }
 
   @Post('shifts')
-  @RequirePermission(M)
+  @RequirePermission(AM)
   createShift(@Body() dto: CreateShiftDto, @CurrentUser() u: AuthUser) {
     return this.attendance.createShift(dto, u.id);
   }
 
   @Patch('shifts/:id')
-  @RequirePermission(M)
+  @RequirePermission(AM)
   updateShift(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateShiftDto,
@@ -194,7 +201,7 @@ export class AttendanceController {
   }
 
   @Delete('shifts/:id')
-  @RequirePermission(M)
+  @RequirePermission(AM)
   deleteShift(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) {
     return this.attendance.deleteShift(id, u.id);
   }
@@ -202,20 +209,51 @@ export class AttendanceController {
   // ---------- Penugasan shift ----------
 
   @Get('employee-shifts')
-  @RequirePermission(R)
+  @RequirePermission(AR)
   employeeShifts(@Query('employeeId') employeeId?: string) {
     return this.attendance.listEmployeeShifts(employeeId || undefined);
   }
 
   @Post('employee-shifts')
-  @RequirePermission(M)
+  @RequirePermission(AM)
   assignShift(@Body() dto: AssignShiftDto, @CurrentUser() u: AuthUser) {
     return this.attendance.assignShift(dto, u.id);
   }
 
   @Delete('employee-shifts/:id')
-  @RequirePermission(M)
+  @RequirePermission(AM)
   removeEmployeeShift(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) {
     return this.attendance.removeEmployeeShift(id, u.id);
+  }
+
+  // ---------- Absen selfie — semua pegawai yang login ----------
+
+  @Get('my')
+  myAttendance(@CurrentUser() u: AuthUser, @Query('month') month?: string) {
+    return this.attendance.myAttendance(u.id, month || undefined);
+  }
+
+  @Post('selfie')
+  @UseInterceptors(FileInterceptor('photo'))
+  selfie(
+    @Body() dto: SelfiePunchDto,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @CurrentUser() u: AuthUser,
+  ) {
+    return this.attendance.selfiePunch(
+      u.id,
+      Number(dto.inOut) as 0 | 1,
+      Number(dto.latitude),
+      Number(dto.longitude),
+      file,
+    );
+  }
+
+  @Get('logs/:id/photo')
+  @RequirePermission(R)
+  async logPhoto(@Param('id', ParseUUIDPipe) id: string, @Res({ passthrough: true }) res: Response) {
+    const { buffer, mime } = await this.attendance.logPhoto(id);
+    res.set({ 'Content-Type': mime, 'Cache-Control': 'private, max-age=60' });
+    return new StreamableFile(buffer);
   }
 }

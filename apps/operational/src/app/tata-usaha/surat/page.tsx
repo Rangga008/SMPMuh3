@@ -150,16 +150,16 @@ export default function SuratPage() {
                   📎 {l.fileName}
                 </RowBtn>
               ) : (
-                <button
+                <RowBtn
                   type="button"
-                  className="text-xs font-semibold text-sand-500 hover:text-primary-700"
+                  tone="neutral"
                   onClick={async () => {
                     setFileTarget(l);
                     fileRef.current?.click();
                   }}
 >
-                  + Lampirkan
-                </button>
+                  ⭱ Lampirkan
+                </RowBtn>
               )}
             </td>
             <td className="px-5 py-3 text-right">
@@ -168,16 +168,16 @@ export default function SuratPage() {
                   Ubah
                 </RowBtn>
                 {l.fileName ? (
-                  <button
+                  <RowBtn
                     type="button"
-                    className="text-xs font-semibold text-sand-500 hover:text-primary-700"
+                    tone="neutral"
                     onClick={async () => {
                       setFileTarget(l);
                       fileRef.current?.click();
                     }}
 >
                     Ganti File
-                  </button>
+                  </RowBtn>
                 ) : null}
                 <RowBtn tone="danger" type="button" onClick={async () => { if (await confirm(`Hapus surat "${l.number}"?`)) { void run(() => deleteLetter(l.id), 'Surat dihapus.'); } }}>
                   Hapus

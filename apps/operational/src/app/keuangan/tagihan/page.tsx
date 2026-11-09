@@ -17,6 +17,7 @@ import {
 } from '@/components/invoice-detail';
 import {
   createStudentInvoice,
+  deleteBillingBatch,
   generateBilling,
   getStudentBills,
   listAcademicYears,
@@ -59,9 +60,11 @@ function StudentPicker({
       value={value}
       onPick={onPick}
       placeholder="Cari nama/NIS siswa…"
-      load={(q) => listStudents({ search: q, status: 'ACTIVE' }).then((r) => r.slice(0, 8))}
+      load={(q) => listStudents({ search: q }).then((r) => r.slice(0, 8))}
       label={(s) => s.name}
-      sub={(s) => (s.nis ? `NIS ${s.nis}` : (s.nisn ?? ''))}
+      sub={(s) =>
+        `${s.nis ? `NIS ${s.nis}` : (s.nisn ?? '')}${s.status && s.status !== 'ACTIVE' ? ` · ${s.status === 'GRADUATED' ? 'Alumni' : s.status}` : ''}`
+      }
     />
   );
 }
@@ -79,6 +82,7 @@ export default function TagihanPage() {
   const [classId, setClassId] = useState('');
   const [status, setStatus] = useState('');
   const [kind, setKind] = useState('');
+  const [studentStatus, setStudentStatus] = useState('');
   const [search, setSearch] = useState('');
 
   const [rows, setRows] = useState<StudentInvoice[]>([]);
@@ -103,6 +107,7 @@ export default function TagihanPage() {
       ...(status ? { status } : {}),
       ...(kind ? { kind } : {}),
       status: status || 'active', // riwayat (lunas/batal) ada di halaman sendiri
+      ...(studentStatus ? { studentStatus } : {}),
       ...(search ? { search } : {}),
       take: '100',
     })
@@ -112,7 +117,7 @@ export default function TagihanPage() {
       })
       .catch(() => setError('Gagal memuat tagihan.'))
       .finally(() => setLoading(false));
-  }, [yearId, classId, status, kind, search]);
+  }, [yearId, classId, status, kind, studentStatus, search]);
 
   useEffect(() => {
     Promise.all([listAcademicYears(), listCashAccounts(), listBillingBatches()])
@@ -260,6 +265,16 @@ export default function TagihanPage() {
             <option value="PARTIAL">Sebagian</option>
           </Select>
         </label>
+        <label className="flex min-w-32 flex-col gap-1.5">
+          <span className="text-xs font-bold uppercase tracking-wider text-sand-500">Siswa</span>
+          <Select value={studentStatus} onChange={(e) => setStudentStatus(e.target.value)} aria-label="Filter status siswa">
+            <option value="">Semua</option>
+            <option value="ACTIVE">Aktif</option>
+            <option value="GRADUATED">Alumni / Lulus</option>
+            <option value="TRANSFERRED">Pindah</option>
+            <option value="DROPPED">Keluar</option>
+          </Select>
+        </label>
         <label className="flex min-w-40 flex-1 flex-col gap-1.5">
           <span className="text-xs font-bold uppercase tracking-wider text-sand-500">Pencarian</span>
           <Input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Nama siswa / no. tagihan…" aria-label="Cari tagihan" />
@@ -280,9 +295,14 @@ export default function TagihanPage() {
                 <span className="flex items-center gap-3 text-xs text-sand-500">
                   {b.generatedCount} dibuat{b.skippedCount ? ` · ${b.skippedCount} dilewati` : ''} · {fmtDate(b.createdAt)}
                   {canManage ? (
-                    <RowBtn tone="danger" type="button" onClick={async () => { if (await confirm('Batalkan semua tagihan batch ini yang belum dibayar?')) void run(() => voidBillingBatch(b.id), 'Batch dibatalkan.'); }}>
-                      Batalkan
-                    </RowBtn>
+                    <span className="flex gap-2">
+                      <RowBtn tone="danger" type="button" onClick={async () => { if (await confirm('Batalkan semua tagihan batch ini yang belum dibayar?')) void run(() => voidBillingBatch(b.id), 'Batch dibatalkan.'); }}>
+                        Batalkan
+                      </RowBtn>
+                      <RowBtn tone="danger" type="button" onClick={async () => { if (await confirm(`Hapus batch "${b.title}" beserta seluruh tagihannya? Hanya bisa bila belum ada pembayaran.`)) void run(() => deleteBillingBatch(b.id), 'Batch beserta tagihannya dihapus.'); }}>
+                        Hapus
+                      </RowBtn>
+                    </span>
                   ) : null}
                 </span>
               </li>
@@ -309,6 +329,11 @@ export default function TagihanPage() {
                   <p className="font-medium text-sand-900">—</p>
                 )}
                 {inv.student?.nis ? <p className="text-[10px] text-sand-400">NIS {inv.student.nis}</p> : null}
+                {inv.student?.status && inv.student.status !== 'ACTIVE' ? (
+                  <Badge tone={inv.student.status === 'GRADUATED' ? 'accent' : 'danger'}>
+                    {inv.student.status === 'GRADUATED' ? 'Alumni' : inv.student.status === 'TRANSFERRED' ? 'Pindah' : 'Keluar'}
+                  </Badge>
+                ) : null}
               </td>
               <td className="px-5 py-3 text-sand-600">{inv.class?.name ?? '—'}</td>
               <td className="whitespace-nowrap px-5 py-3 text-sand-600">
@@ -323,6 +348,14 @@ export default function TagihanPage() {
               </td>
               <td className="px-5 py-3">
                 <Badge tone={STATUS_TONE[inv.status] ?? 'neutral'}>{STATUS_LABEL[inv.status] ?? inv.status}</Badge>
+                {inv.dueAt && (inv.status === 'OPEN' || inv.status === 'PARTIAL') ? (() => {
+                  const days = Math.ceil((new Date(inv.dueAt).getTime() - Date.now()) / 86400000);
+                  return days < 0 ? (
+                    <p className="mt-0.5 text-[10px] font-bold text-red-600">Lewat tempo {-days} hr</p>
+                  ) : days <= 7 ? (
+                    <p className="mt-0.5 text-[10px] font-bold text-amber-600">Tempo {days === 0 ? 'hari ini' : `${days} hr lagi`}</p>
+                  ) : null;
+                })() : null}
               </td>
               {canManage ? (
                 <td className="whitespace-nowrap px-5 py-3 text-right" onClick={(e) => e.stopPropagation()}>

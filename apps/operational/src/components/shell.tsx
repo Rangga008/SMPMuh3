@@ -42,9 +42,13 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
   );
 }
 
+/** Aktif bila pathname persis href atau sub-rute-nya (batas segmen '/'). */
+const routeActive = (pathname: string, href: string) =>
+  pathname === href || pathname.startsWith(`${href}/`);
+
 /** Item nav dengan submenu — dropdown collapsible; terbuka otomatis bila anak aktif. */
 function NavGroup({ item, pathname }: { item: NavItem; pathname: string }) {
-  const childActive = item.children?.some((c) => c.href && pathname.startsWith(c.href)) ?? false;
+  const childActive = item.children?.some((c) => c.href && routeActive(pathname, c.href)) ?? false;
   const [open, setOpen] = useState(childActive);
   useEffect(() => {
     if (childActive) setOpen(true);
@@ -89,7 +93,7 @@ function NavGroup({ item, pathname }: { item: NavItem; pathname: string }) {
         <ul className="ml-5 mt-1 space-y-0.5 border-s border-white/10 pl-2.5">
           {item.children.map((c) => (
             <li key={c.key}>
-              <NavLink item={c} active={pathname === c.href} />
+              <NavLink item={c} active={c.href !== undefined && routeActive(pathname, c.href)} />
             </li>
           ))}
         </ul>
@@ -260,9 +264,8 @@ export function Shell({ children }: { children: ReactNode }) {
               <NavLink
                 item={item}
                 active={
-                  item.href === '/'
-                    ? pathname === '/'
-                    : item.href !== undefined && pathname.startsWith(item.href)
+                  item.href !== undefined &&
+                  (item.href === '/' ? pathname === '/' : routeActive(pathname, item.href))
                 }
               />
             </li>

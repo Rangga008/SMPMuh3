@@ -63,6 +63,67 @@ const ROLES: Record<string, { name: string; description: string; permissionKeys:
     description: 'Parent/guardian managing their own applications',
     permissionKeys: [PERMISSIONS.NOTIFICATION_READ],
   },
+  kepala_sekolah: {
+    name: 'Kepala Sekolah',
+    description: 'Headmaster — approves submissions, oversees all departments',
+    permissionKeys: [
+      PERMISSIONS.STUDENT_READ,
+      PERMISSIONS.EMPLOYEE_READ,
+      PERMISSIONS.ACADEMIC_READ,
+      PERMISSIONS.ACADEMIC_MANAGE,
+      PERMISSIONS.ACADEMIC_YEAR_READ,
+      PERMISSIONS.ATTENDANCE_READ,
+      PERMISSIONS.TATAUSAHA_READ,
+      PERMISSIONS.FINANCE_READ,
+      PERMISSIONS.PAYROLL_READ,
+      PERMISSIONS.NOTIFICATION_READ,
+    ],
+  },
+  staff_kurikulum: {
+    name: 'Staf Kurikulum / Wakasek',
+    description: 'Curriculum staff — schedules, assessments, teacher docs, collections',
+    permissionKeys: [
+      PERMISSIONS.STUDENT_READ,
+      PERMISSIONS.EMPLOYEE_READ,
+      PERMISSIONS.EMPLOYEE_MANAGE,
+      PERMISSIONS.ACADEMIC_READ,
+      PERMISSIONS.ACADEMIC_MANAGE,
+      PERMISSIONS.ACADEMIC_YEAR_READ,
+      PERMISSIONS.ATTENDANCE_READ,
+      PERMISSIONS.ATTENDANCE_MANAGE,
+      PERMISSIONS.NOTIFICATION_READ,
+    ],
+  },
+  staff_kesiswaan: {
+    name: 'Staf Kesiswaan / Wakasek',
+    description: 'Student affairs — students, attendance recap, achievements & violations',
+    permissionKeys: [
+      PERMISSIONS.STUDENT_READ,
+      PERMISSIONS.STUDENT_MANAGE,
+      PERMISSIONS.EMPLOYEE_READ,
+      PERMISSIONS.ACADEMIC_READ,
+      PERMISSIONS.ACADEMIC_YEAR_READ,
+      PERMISSIONS.NOTIFICATION_READ,
+    ],
+  },
+  kepala_tu: {
+    name: 'Kepala Tata Usaha',
+    description: 'Head of administration — letters, mutations, archives, dept members',
+    permissionKeys: [
+      PERMISSIONS.SPMB_REGISTRATION_READ,
+      PERMISSIONS.SPMB_REGISTRATION_MANAGE,
+      PERMISSIONS.SPMB_TITIPAN_READ,
+      PERMISSIONS.SPMB_TITIPAN_MANAGE,
+      PERMISSIONS.STUDENT_READ,
+      PERMISSIONS.STUDENT_MANAGE,
+      PERMISSIONS.EMPLOYEE_READ,
+      PERMISSIONS.EMPLOYEE_MANAGE,
+      PERMISSIONS.TATAUSAHA_READ,
+      PERMISSIONS.TATAUSAHA_MANAGE,
+      PERMISSIONS.ACADEMIC_YEAR_READ,
+      PERMISSIONS.NOTIFICATION_READ,
+    ],
+  },
   guru_mapel: {
     name: 'Guru Mata Pelajaran',
     description: 'Subject teacher — academic & attendance access',
@@ -71,6 +132,8 @@ const ROLES: Record<string, { name: string; description: string; permissionKeys:
       PERMISSIONS.ACADEMIC_YEAR_READ,
       PERMISSIONS.ATTENDANCE_READ,
       PERMISSIONS.ATTENDANCE_MANAGE,
+      PERMISSIONS.EMPLOYEE_READ,
+      PERMISSIONS.STUDENT_READ,
       PERMISSIONS.NOTIFICATION_READ,
     ],
   },
@@ -100,6 +163,7 @@ const ROLES: Record<string, { name: string; description: string; permissionKeys:
       PERMISSIONS.PAYROLL_READ,
       PERMISSIONS.PAYROLL_MANAGE,
       PERMISSIONS.EMPLOYEE_READ,
+      PERMISSIONS.STUDENT_READ,
       PERMISSIONS.ACADEMIC_YEAR_READ,
       PERMISSIONS.NOTIFICATION_READ,
     ],
@@ -278,6 +342,47 @@ async function main() {
     create: { userId: user.id, roleId: superadmin.id },
   });
   console.log(`Admin user ensured: ${email}`);
+
+  // Akun per bidang — satu akun operasional per departemen.
+  // Password diambil dari STAFF_PASSWORD (default dev: staff123).
+  const staffPassword = process.env.STAFF_PASSWORD ?? 'staff123';
+  const staffHash = await argon2.hash(staffPassword);
+  const deptAccounts: { email: string; name: string; role: string; dept: string; isHead: boolean }[] = [
+    { email: 'kepsek@smpmuh3.sch.id', name: 'Kepala Sekolah', role: 'kepala_sekolah', dept: 'LAINNYA', isHead: true },
+    { email: 'kurikulum@smpmuh3.sch.id', name: 'Wakasek Kurikulum', role: 'staff_kurikulum', dept: 'KURIKULUM', isHead: true },
+    { email: 'kesiswaan@smpmuh3.sch.id', name: 'Wakasek Kesiswaan', role: 'staff_kesiswaan', dept: 'KESISWAAN', isHead: true },
+    { email: 'tu@smpmuh3.sch.id', name: 'Kepala Tata Usaha', role: 'kepala_tu', dept: 'TATA_USAHA', isHead: true },
+    { email: 'bendahara@smpmuh3.sch.id', name: 'Bendahara', role: 'bendahara', dept: 'KEUANGAN', isHead: true },
+  ];
+  for (const acc of deptAccounts) {
+    const role = roles[acc.role];
+    if (!role) continue;
+    const u = await prisma.user.upsert({
+      where: { email: acc.email },
+      update: {},
+      create: { email: acc.email, name: acc.name, passwordHash: staffHash },
+    });
+    await prisma.userRole.upsert({
+      where: { userId_roleId: { userId: u.id, roleId: role.id } },
+      update: {},
+      create: { userId: u.id, roleId: role.id },
+    });
+    // Pastikan ada pegawai tertaut agar fitur personal (absen, bidang) jalan.
+    const emp = await prisma.employee.findFirst({ where: { userId: u.id } });
+    if (!emp) {
+      await prisma.employee.create({
+        data: {
+          name: acc.name,
+          type: 'STAFF',
+          department: acc.dept,
+          isDeptHead: acc.isHead,
+          email: acc.email,
+          userId: u.id,
+        },
+      });
+    }
+    console.log(`Dept account ensured: ${acc.email} (${acc.role})`);
+  }
 
   // Profil sekolah — satu baris, dikelola admin via Pengaturan → Profil & Kontak.
   const school = await prisma.school.findFirst();

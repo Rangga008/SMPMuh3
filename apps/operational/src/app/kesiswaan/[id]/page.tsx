@@ -264,7 +264,14 @@ export default function StudentDetailPage() {
         <PageTitle
           title={s?.name ?? 'Detail Siswa'}
           subtitle={s ? [s.nis && `NIS ${s.nis}`, s.nisn && `NISN ${s.nisn}`].filter(Boolean).join(' · ') || undefined : undefined}
-          actions={s ? <Badge tone={s.status === 'ACTIVE' ? 'primary' : 'neutral'}>{STUDENT_STATUS_LABELS[s.status]}</Badge> : undefined}
+          actions={s ? (
+            <span className="flex items-center gap-2">
+              <Link href={`/kesiswaan/${s.id}/induk`} className={rowActionClasses('neutral')}>
+                Buku Induk →
+              </Link>
+              <Badge tone={s.status === 'ACTIVE' ? 'primary' : 'neutral'}>{STUDENT_STATUS_LABELS[s.status]}</Badge>
+            </span>
+          ) : undefined}
         />
       </div>
 

@@ -111,8 +111,8 @@ export default function AbsensiPage() {
   return (
     <Shell>
       <PageTitle
-        title="Absensi Pegawai — Sinkron Gaji"
-        subtitle="Data tap dari mesin (dikelola Tata Usaha) + penyesuaian status & menit mengajar untuk payroll"
+        title="Data Absensi Pegawai"
+        subtitle="Rekap absen dari selfie & mesin fingerprint — data ini dipakai payroll untuk hitung honor & potongan telat"
       />
       {error ? <p role="alert" className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</p> : null}
       {notice ? <p role="status" className="mb-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">{notice}</p> : null}
@@ -193,11 +193,6 @@ export default function AbsensiPage() {
               />
             </Field>
           </div>
-          {canManage ? (
-            <Button size="sm" className="ml-auto" onClick={() => void save()} disabled={busy || loading}>
-              Simpan Semua
-            </Button>
-          ) : null}
         </div>
         <DataTable
           head={['Pegawai', 'Masuk', 'Pulang', 'Status', 'Menit ngajar', 'Catatan']}
@@ -229,7 +224,7 @@ export default function AbsensiPage() {
                   <Select
                     aria-label={`Status ${e.name}`}
                     value={r.status}
-                    disabled={!canManage}
+                    disabled={true}
                     onChange={(ev) =>
                       setRows((prev) => ({
                         ...prev,
@@ -250,7 +245,7 @@ export default function AbsensiPage() {
                     placeholder="0"
                     className="w-24"
                     value={r.minutes}
-                    disabled={!canManage || r.status === 'IZIN' || r.status === 'SAKIT' || r.status === 'ALPHA'}
+                    disabled={true}
                     onChange={(ev) =>
                       setRows((prev) => ({
                         ...prev,
@@ -264,7 +259,7 @@ export default function AbsensiPage() {
                     aria-label={`Catatan ${e.name}`}
                     placeholder="opsional"
                     value={r.note}
-                    disabled={!canManage}
+                    disabled={true}
                     onChange={(ev) =>
                       setRows((prev) => ({
                         ...prev,

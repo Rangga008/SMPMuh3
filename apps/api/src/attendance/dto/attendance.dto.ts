@@ -1,8 +1,9 @@
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
   IsIn,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   Matches,
@@ -153,6 +154,36 @@ export class AttendanceSettingsDto {
   @IsOptional()
   @IsBoolean()
   autoDerive?: boolean;
+
+  /** Koordinat sekolah — geofence absen selfie. */
+  @IsOptional()
+  @IsNumber()
+  schoolLat?: number | null;
+
+  @IsOptional()
+  @IsNumber()
+  schoolLng?: number | null;
+
+  @IsOptional()
+  @IsInt()
+  @Min(10)
+  @Max(5000)
+  radiusM?: number;
+}
+
+/** Absen selfie — pegawai mengirim foto + koordinat sendiri. */
+export class SelfiePunchDto {
+  @Type(() => Number)
+  @IsIn([0, 1])
+  inOut!: 0 | 1; // 0 = masuk, 1 = pulang
+
+  @Type(() => Number)
+  @IsNumber()
+  latitude!: number;
+
+  @Type(() => Number)
+  @IsNumber()
+  longitude!: number;
 }
 
 const HHMM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;

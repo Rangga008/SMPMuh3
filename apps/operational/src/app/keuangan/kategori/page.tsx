@@ -8,6 +8,7 @@ import { DataTable } from '@/components/data-table';
 import { PageTitle, Widget } from '@/components/widgets';
 import {
   createFinanceCategory,
+  deleteFinanceCategory,
   listFinanceCategories,
   updateFinanceCategory,
   me,
@@ -123,9 +124,14 @@ export default function KategoriPage() {
               </td>
               <td className="px-5 py-3 text-right">
                 {canManage ? (
-                  <RowBtn type="button" onClick={() => void run( () => updateFinanceCategory(c.id, { isActive: c.isActive === false }), c.isActive === false ? 'Kategori diaktifkan.' : 'Kategori dinonaktifkan.', ) }>
-                    {c.isActive === false ? 'Aktifkan' : 'Nonaktifkan'}
-                  </RowBtn>
+                  <span className="flex justify-end gap-2">
+                    <RowBtn type="button" onClick={() => void run( () => updateFinanceCategory(c.id, { isActive: c.isActive === false }), c.isActive === false ? 'Kategori diaktifkan.' : 'Kategori dinonaktifkan.', ) }>
+                      {c.isActive === false ? 'Aktifkan' : 'Nonaktifkan'}
+                    </RowBtn>
+                    <RowBtn tone="danger" type="button" onClick={() => { if (window.confirm(`Hapus kategori "${c.name}"? Hanya bisa bila belum dipakai transaksi.`)) void run(() => deleteFinanceCategory(c.id), 'Kategori dihapus.'); }}>
+                      Hapus
+                    </RowBtn>
+                  </span>
                 ) : null}
               </td>
             </tr>

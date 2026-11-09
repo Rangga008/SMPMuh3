@@ -27,11 +27,13 @@ export function PageTitle({
 
 export function Widget({
   title,
+  subtitle,
   children,
   className,
   action,
 }: {
   title: string;
+  subtitle?: string;
   children: ReactNode;
   className?: string;
   action?: ReactNode;
@@ -45,9 +47,12 @@ export function Widget({
       )}
     >
       <div className="mb-4 flex items-center justify-between gap-3">
-        <h2 className="text-xs font-bold uppercase tracking-wider text-sand-500">
-          {title}
-        </h2>
+        <div>
+          <h2 className="text-xs font-bold uppercase tracking-wider text-sand-500">
+            {title}
+          </h2>
+          {subtitle ? <p className="mt-0.5 text-xs text-sand-400">{subtitle}</p> : null}
+        </div>
         {action}
       </div>
       {children}

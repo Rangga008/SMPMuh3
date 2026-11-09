@@ -15,6 +15,7 @@ import {
   ApiError,
   approveTitipan,
   cancelTitipan,
+  exportTitipanXlsx,
   listAcademicYears,
   listAdminWaves,
   listTitipan,
@@ -166,6 +167,20 @@ export default function TitipanPage() {
       <PageTitle
         title="Daftar Titipan / Waiting List"
         subtitle="Antrean calon siswa — verifikasi entri, terbitkan kode formulir sesuai antrean & kuota"
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              void exportTitipanXlsx({
+                ...(yearId ? { academicYearId: yearId } : {}),
+                ...(waveId ? { waveId } : {}),
+              }).catch(() => setError('Export Excel gagal.'))
+            }
+          >
+            Export Excel
+          </Button>
+        }
       />
       {error ? (
         <p role="alert" className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</p>

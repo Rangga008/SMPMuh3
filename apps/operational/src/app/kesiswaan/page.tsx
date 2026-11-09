@@ -11,7 +11,8 @@ import { Shell } from '@/components/shell';
 import { DataTable } from '@/components/data-table';
 import { PageTitle } from '@/components/widgets';
 import { rowActionClasses } from '@/components/row-btn';
-import { createStudent, listStudents } from '@/lib/api';
+import { createStudent, listStudents, listAcademicYears, listClasses } from '@/lib/api';
+import { importStudentsDapodik } from '@/lib/api-ops';
 
 const tone = (s: string) => (s === 'ACTIVE' ? 'primary' : 'neutral');
 
@@ -21,6 +22,7 @@ export default function StudentsPage() {
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -75,6 +77,24 @@ export default function StudentsPage() {
         subtitle="Kelola data kesiswaan"
         actions={
           <>
+            <label className={`cursor-pointer ${rowActionClasses('neutral')}`}>
+              ⭱ Import Dapodik
+              <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={async (e) => {
+                const f = e.target.files?.[0];
+                e.target.value = '';
+                if (!f) return;
+                try {
+                  const ys = await listAcademicYears();
+                  const y = ys.find((x) => x.isActive) ?? ys[0];
+                  if (!y) { setError('Tahun ajaran aktif tidak ada.'); return; }
+                  const cs = await listClasses(y.id);
+                  const map = Object.fromEntries(cs.map((c) => [c.name.toLowerCase(), c.id]));
+                  const r = await importStudentsDapodik(y.id, map, f);
+                  setNotice(`Import: ${r.ok} masuk, ${r.failed} gagal.${r.failed ? ` Baris bermasalah: ${r.results.filter((x) => !x.ok).slice(0, 3).map((x) => `${x.row}(${x.msg})`).join(', ')}` : ''}`);
+                  load({ search, status });
+                } catch { setError('Import gagal — cek format kolom (nama, nis, nisn, kelas, …).'); }
+              }} />
+            </label>
             <Link href="/kesiswaan/orang-tua" className={rowActionClasses('neutral')}>
               Orang Tua →
             </Link>
@@ -87,6 +107,9 @@ export default function StudentsPage() {
 
       {error ? (
         <p role="alert" className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</p>
+      ) : null}
+      {notice ? (
+        <p role="status" className="mb-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">{notice}</p>
       ) : null}
 
       {showForm ? (

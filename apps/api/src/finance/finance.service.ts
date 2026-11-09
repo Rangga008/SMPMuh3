@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomInt } from 'crypto';
-import type { InvoiceStatus, Prisma } from '@prisma/client';
+import type { InvoiceStatus, Prisma, StudentStatus } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../core/prisma/prisma.service';
 import { WhatsappService } from '../spmb/whatsapp.service';
@@ -1010,6 +1010,7 @@ export class FinanceService {
     semesterId?: string | undefined;
     kind?: string | undefined;
     status?: string | undefined;
+    studentStatus?: string | undefined;
     search?: string | undefined;
     take?: number | undefined;
     skip?: number | undefined;
@@ -1030,6 +1031,15 @@ export class FinanceService {
             ? { status: q.status as InvoiceStatus }
             : {}),
       ...(q.gradeLevel ? { class: { gradeLevel: q.gradeLevel } } : {}),
+      // Tunggakan alumni — siswa lulus/pindah tetap ditagih lewat halaman ini.
+      ...(q.studentStatus
+        ? {
+            student:
+              q.studentStatus === 'alumni'
+                ? { status: { in: ['GRADUATED', 'TRANSFERRED', 'DROPPED'] as StudentStatus[] } }
+                : { status: q.studentStatus as StudentStatus },
+          }
+        : {}),
       ...(q.search
         ? {
             OR: [
@@ -1051,6 +1061,7 @@ export class FinanceService {
               id: true,
               name: true,
               nis: true,
+              status: true,
               parent: { select: { name: true, phone: true } },
             },
           },
@@ -2286,5 +2297,302 @@ export class FinanceService {
       };
     });
     return result.sort((x, y) => y.total - x.total);
+  }
+
+  /** Hapus batch massal — hanya bila tak ada satu pun pembayaran masuk. */
+  async deleteBatch(id: string, actorId: string) {
+    const batch = await this.prisma.billingBatch.findUnique({
+      where: { id },
+      include: { invoices: { select: { id: true, status: true } } },
+    });
+    if (!batch) throw new NotFoundException('Batch tidak ditemukan');
+    const paidMap = await this.invoicePaidMap(batch.invoices.map((i) => i.id));
+    const withPayment = batch.invoices.filter((i) => (paidMap.get(i.id) ?? 0) > 0);
+    if (withPayment.length > 0) {
+      throw new BadRequestException(
+        `Batch tidak bisa dihapus — ${withPayment.length} tagihan sudah ada pembayaran. Batalkan saja.`,
+      );
+    }
+    await this.prisma.invoice.deleteMany({ where: { batchId: id } });
+    await this.prisma.billingBatch.delete({ where: { id } });
+    await this.audit.log({
+      actorId,
+      action: 'finance.billing.delete',
+      entity: 'billing_batch',
+      entityId: id,
+      metadata: { title: batch.title, deleted: batch.invoices.length },
+    });
+    return { deleted: batch.invoices.length };
+  }
+
+  /** Hapus kategori — hanya bila belum pernah dipakai transaksi/budget/pengeluaran. */
+  async deleteCategory(id: string, actorId: string) {
+    const cat = await this.prisma.financeCategory.findUnique({
+      where: { id },
+      include: {
+        _count: { select: { transactions: true, budgets: true, expenses: true, bankIncomes: true } },
+      },
+    });
+    if (!cat) throw new NotFoundException('Kategori tidak ditemukan');
+    const used =
+      cat._count.transactions + cat._count.budgets + cat._count.expenses + cat._count.bankIncomes;
+    if (used > 0) {
+      throw new BadRequestException(
+        `Kategori "${cat.name}" sudah dipakai ${used} data — nonaktifkan saja agar histori tetap utuh.`,
+      );
+    }
+    await this.prisma.financeCategory.delete({ where: { id } });
+    await this.audit.log({
+      actorId,
+      action: 'finance.category.delete',
+      entity: 'finance_category',
+      entityId: id,
+      metadata: { name: cat.name },
+    });
+    return { deleted: true };
+  }
+
+  // ---------- Kwitansi ----------
+
+  /** Nomor kwitansi unik KWT-YYYY-NNNNNN. */
+  private receiptNo() {
+    return `KWT-${new Date().getFullYear()}-${String(randomInt(0, 1_000_000)).padStart(6, '0')}`;
+  }
+
+  /**
+   * Terbitkan kwitansi untuk pembayaran / pengeluaran / transaksi kas.
+   * Idempoten — refType+refId yang sama mengembalikan kwitansi yang sudah ada.
+   */
+  async issueReceipt(refType: 'payment' | 'expense' | 'transaction', refId: string, actorId: string) {
+    let recipient = '-';
+    let body = '';
+    let paymentId: string | null = null;
+    if (refType === 'payment') {
+      const p = await this.prisma.payment.findUnique({
+        where: { id: refId },
+        include: {
+          invoice: {
+            include: {
+              student: { select: { name: true } },
+              registration: { include: { candidate: { select: { name: true } } } },
+            },
+          },
+        },
+      });
+      if (!p) throw new NotFoundException('Pembayaran tidak ditemukan');
+      if (p.status !== 'SETTLED') throw new BadRequestException('Pembayaran belum lunas/terverifikasi');
+      paymentId = p.id;
+      recipient = p.invoice.student?.name ?? p.invoice.registration?.candidate.name ?? p.invoice.payerLabel ?? '-';
+      body = `Kwitansi pembayaran ${p.invoice.number} — ${p.invoice.title}. Terima kasih, pembayaran Rp${p.amount.toLocaleString('id-ID')} telah diterima.`;
+    } else if (refType === 'expense') {
+      const e = await this.prisma.expense.findUnique({ where: { id: refId }, include: { category: true } });
+      if (!e) throw new NotFoundException('Pengeluaran tidak ditemukan');
+      recipient = e.vendor ?? 'Penerima';
+      body = `Kwitansi pengeluaran ${e.number} — ${e.description} (${e.category.name}). Sebesar Rp${e.totalAmount.toLocaleString('id-ID')}.`;
+    } else {
+      const t = await this.prisma.financeTransaction.findUnique({
+        where: { id: refId },
+        include: { category: true },
+      });
+      if (!t) throw new NotFoundException('Transaksi tidak ditemukan');
+      recipient = 'Bidang Keuangan';
+      body = `Kwitansi ${t.type === 'INCOME' ? 'pemasukan' : 'pengeluaran'} — ${t.description ?? t.category.name}. Sebesar Rp${t.amount.toLocaleString('id-ID')}.`;
+    }
+    const existing = await this.prisma.receipt.findFirst({
+      where: { refType, refId, channel: 'print' },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (existing) return { receipt: existing, fresh: false };
+    const receipt = await this.prisma.receipt.create({
+      data: {
+        number: this.receiptNo(),
+        paymentId,
+        refType,
+        refId,
+        channel: 'print',
+        recipient,
+        body,
+        status: 'PRINTED',
+        issuedBy: actorId,
+      },
+    });
+    await this.audit.log({
+      actorId,
+      action: 'finance.receipt.issue',
+      entity: 'receipt',
+      entityId: receipt.id,
+      metadata: { number: receipt.number, refType, refId },
+    });
+    return { receipt, fresh: true };
+  }
+
+  /** Galeri kwitansi — semua kwitansi yang pernah diterbitkan keuangan. */
+  async listReceipts(q: { refType?: string | undefined; search?: string | undefined }) {
+    const rows = await this.prisma.receipt.findMany({
+      where: {
+        ...(q.refType ? { refType: q.refType } : {}),
+        ...(q.search
+          ? { OR: [{ number: { contains: q.search, mode: 'insensitive' } }, { recipient: { contains: q.search, mode: 'insensitive' } }] }
+          : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+      include: {
+        payment: {
+          select: { amount: true, method: true, paidAt: true, invoice: { select: { number: true, title: true } } },
+        },
+      },
+    });
+    return rows;
+  }
+
+  async getReceipt(id: string) {
+    const r = await this.prisma.receipt.findUnique({
+      where: { id },
+      include: {
+        payment: {
+          include: {
+            invoice: { include: { student: { select: { name: true } }, registration: { include: { candidate: { select: { name: true } } } } } },
+          },
+        },
+      },
+    });
+    if (!r) throw new NotFoundException('Kwitansi tidak ditemukan');
+    let refDetail: unknown = null;
+    if (r.refType === 'expense' && r.refId) {
+      refDetail = await this.prisma.expense.findUnique({ where: { id: r.refId }, include: { category: true } });
+    } else if (r.refType === 'transaction' && r.refId) {
+      refDetail = await this.prisma.financeTransaction.findUnique({ where: { id: r.refId }, include: { category: true } });
+    }
+    return { ...r, refDetail };
+  }
+
+  // ---------- Laporan pemasukan per siswa & tabungan ----------
+
+  /**
+   * Pemasukan siswa per bulan per tipe — dari pembayaran terverifikasi.
+   * Baris: siswa → kolom bulan → per jenis (spp/dsp/seragam/dll).
+   */
+  async incomeByStudent(f: {
+    from: string;
+    to: string;
+    academicYearId?: string | undefined;
+    classId?: string | undefined;
+    studentId?: string | undefined;
+    search?: string | undefined;
+  }) {
+    const from = new Date(`${f.from}-01T00:00:00.000Z`);
+    const to = new Date(`${f.to}-01T00:00:00.000Z`);
+    to.setUTCMonth(to.getUTCMonth() + 1);
+    const months: string[] = [];
+    for (const d = new Date(from); d < to; d.setUTCMonth(d.getUTCMonth() + 1)) {
+      months.push(d.toISOString().slice(0, 7));
+    }
+    const payments = await this.prisma.payment.findMany({
+      where: {
+        status: 'SETTLED',
+        paidAt: { gte: from, lt: to },
+        invoice: {
+          studentId: { not: null },
+          ...(f.studentId ? { studentId: f.studentId } : {}),
+          ...(f.classId ? { classId: f.classId } : {}),
+          ...(f.academicYearId ? { academicYearId: f.academicYearId } : {}),
+          ...(f.search ? { student: { name: { contains: f.search, mode: 'insensitive' } } } : {}),
+        },
+      },
+      select: {
+        amount: true,
+        paidAt: true,
+        invoice: {
+          select: {
+            kind: true,
+            studentId: true,
+            classId: true,
+            student: { select: { id: true, name: true, nisn: true } },
+            class: { select: { name: true } },
+            items: { select: { kind: true, amount: true } },
+          },
+        },
+      },
+      take: 50000,
+    });
+    const byStudent = new Map<
+      string,
+      { student: { id: string; name: string; nisn: string | null }; className: string | null; cells: Map<string, Map<string, number>>; total: number }
+    >();
+    for (const p of payments) {
+      const inv = p.invoice;
+      if (!inv.studentId || !inv.student) continue;
+      const month = p.paidAt ? p.paidAt.toISOString().slice(0, 7) : '';
+      let row = byStudent.get(inv.studentId);
+      if (!row) {
+        row = { student: inv.student, className: inv.class?.name ?? null, cells: new Map(), total: 0 };
+        byStudent.set(inv.studentId, row);
+      }
+      let cell = row.cells.get(month);
+      if (!cell) { cell = new Map(); row.cells.set(month, cell); }
+      if (inv.items.length > 0) {
+        const totalItems = inv.items.reduce((s, i) => s + i.amount, 0);
+        for (const item of inv.items) {
+          const share = totalItems > 0 ? Math.round((p.amount * item.amount) / totalItems) : 0;
+          cell.set(item.kind, (cell.get(item.kind) ?? 0) + share);
+        }
+      } else {
+        cell.set(inv.kind, (cell.get(inv.kind) ?? 0) + p.amount);
+      }
+      row.total += p.amount;
+    }
+    const kinds = [...new Set(payments.flatMap((p) => p.invoice.items.length > 0 ? p.invoice.items.map((i) => i.kind) : [p.invoice.kind]))].sort();
+    return {
+      months,
+      kinds,
+      rows: [...byStudent.values()]
+        .sort((a, b) => a.student.name.localeCompare(b.student.name))
+        .map((r) => ({
+          student: r.student,
+          className: r.className,
+          total: r.total,
+          months: Object.fromEntries(
+            months.map((m) => [m, Object.fromEntries([...(r.cells.get(m)?.entries() ?? [])])]),
+          ),
+        })),
+    };
+  }
+
+  /** Laporan tabungan siswa — mode 'monthly' (per tanggal) atau 'yearly' (per bulan). */
+  async savingsReport(f: { studentId?: string | undefined; classId?: string | undefined; from: string; to: string }) {
+    const from = new Date(`${f.from}-01T00:00:00.000Z`);
+    const to = new Date(`${f.to}-01T00:00:00.000Z`);
+    to.setUTCMonth(to.getUTCMonth() + 1);
+    const entries = await this.prisma.savingsEntry.findMany({
+      where: {
+        occurredAt: { gte: from, lt: to },
+        ...(f.studentId ? { studentId: f.studentId } : {}),
+        ...(f.classId ? { student: { enrollments: { some: { classId: f.classId } } } } : {}),
+      },
+      include: {
+        student: { select: { id: true, name: true, nisn: true } },
+      },
+      orderBy: { occurredAt: 'asc' },
+      take: 50000,
+    });
+    const perStudent = new Map<string, { student: { id: string; name: string }; days: Map<string, { in: number; out: number }>; months: Map<string, { in: number; out: number }> }>();
+    for (const e of entries) {
+      let r = perStudent.get(e.studentId);
+      if (!r) { r = { student: e.student, days: new Map(), months: new Map() }; perStudent.set(e.studentId, r); }
+      const day = e.occurredAt.toISOString().slice(0, 10);
+      const month = e.occurredAt.toISOString().slice(0, 7);
+      const d = r.days.get(day) ?? { in: 0, out: 0 };
+      const mo = r.months.get(month) ?? { in: 0, out: 0 };
+      if (e.direction === 'IN') { d.in += e.amount; mo.in += e.amount; }
+      else { d.out += e.amount; mo.out += e.amount; }
+      r.days.set(day, d);
+      r.months.set(month, mo);
+    }
+    return [...perStudent.values()].map((r) => ({
+      student: r.student,
+      days: [...r.days.entries()].map(([date, v]) => ({ date, ...v })),
+      months: [...r.months.entries()].map(([month, v]) => ({ month, ...v })),
+    }));
   }
 }

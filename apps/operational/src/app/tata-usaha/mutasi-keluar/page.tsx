@@ -1,12 +1,5 @@
-'use client';
-
-import { Shell } from '@/components/shell';
-import { MutasiView } from '../_components/mutasi-view';
+import { redirect } from 'next/navigation';
 
 export default function MutasiKeluarPage() {
-  return (
-    <Shell>
-      <MutasiView direction="OUT" />
-    </Shell>
-  );
+  redirect('/tata-usaha/mutasi?dir=OUT');
 }

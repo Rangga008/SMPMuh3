@@ -34,6 +34,7 @@ const include = {
       previousSchool: true,
       address: true,
       tkaScore: true,
+      student: { select: { id: true, name: true, nis: true } },
     },
   },
   wave: {
