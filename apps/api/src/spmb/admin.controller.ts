@@ -167,8 +167,14 @@ export class AdminSpmbController {
 
   @Get('parents')
   @RequirePermission(PERMISSIONS.SPMB_REGISTRATION_READ)
-  listParents() {
-    return this.users.listParents();
+  listParents(
+    @Query('waveId') waveId?: string,
+    @Query('academicYearId') academicYearId?: string,
+  ) {
+    return this.users.listParents({
+      waveId: waveId || undefined,
+      academicYearId: academicYearId || undefined,
+    });
   }
 
   @Get('parents/:id')
@@ -567,11 +573,13 @@ export class AdminSpmbController {
   @RequirePermission(PERMISSIONS.SPMB_TITIPAN_READ)
   listTitipan(
     @Query('academicYearId') academicYearId?: string,
+    @Query('waveId') waveId?: string,
     @Query('status') status?: TitipanStatus,
     @Query('q') search?: string,
   ) {
     return this.titipan.listForAdmin({
       academicYearId: academicYearId || undefined,
+      waveId: waveId || undefined,
       status,
       search: search || undefined,
     });

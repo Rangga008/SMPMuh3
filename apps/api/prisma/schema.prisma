@@ -161,6 +161,7 @@ model AcademicYear {
   invoices      Invoice[]
   expenses      Expense[]
   payrollRuns   PayrollRun[]
+  calendarEvents AcademicCalendarEvent[]
 
   @@map("academic_years")
 }
@@ -230,6 +231,7 @@ enum TitipanStatus {
 model TitipanEntry {
   id             String        @id @default(uuid()) @db.Uuid
   academicYearId String        @map("academic_year_id") @db.Uuid
+  waveId         String?       @map("wave_id") @db.Uuid // gelombang sasaran di TA tsb — opsional
   parentId       String?       @map("parent_id") @db.Uuid
   candidateId    String?       @map("candidate_id") @db.Uuid
   candidateName  String        @map("candidate_name")
@@ -250,12 +252,14 @@ model TitipanEntry {
   createdAt      DateTime      @default(now()) @map("created_at")
   updatedAt      DateTime      @updatedAt @map("updated_at")
 
-  academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
-  parent       User?        @relation(fields: [parentId], references: [id], onDelete: SetNull)
-  candidate    Candidate?   @relation(fields: [candidateId], references: [id], onDelete: SetNull)
+  academicYear AcademicYear     @relation(fields: [academicYearId], references: [id])
+  wave         RegistrationWave? @relation(fields: [waveId], references: [id], onDelete: SetNull)
+  parent       User?            @relation(fields: [parentId], references: [id], onDelete: SetNull)
+  candidate    Candidate?       @relation(fields: [candidateId], references: [id], onDelete: SetNull)
 
   @@unique([academicYearId, queueNo])
   @@index([academicYearId, status, queueNo])
+  @@index([waveId])
   @@index([parentId])
   @@map("titipan_entries")
 }
@@ -273,9 +277,10 @@ model RegistrationWave {
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
-  academicYear  AcademicYear  @relation(fields: [academicYearId], references: [id])
-  registrations Registration[]
-  fees          WaveFee[]
+  academicYear   AcademicYear  @relation(fields: [academicYearId], references: [id])
+  registrations  Registration[]
+  fees           WaveFee[]
+  titipanEntries TitipanEntry[]
 
   @@unique([academicYearId, name])
   @@index([academicYearId, isActive])
@@ -884,6 +889,10 @@ model EmployeeAttendance {
   status          EmpAttendanceStatus
   teachingMinutes Int             @default(0) @map("teaching_minutes")
   note            String?
+  checkInAt       DateTime?       @map("check_in_at")  // tap masuk (mesin/manual)
+  checkOutAt      DateTime?       @map("check_out_at") // tap pulang
+  lateMinutes     Int             @default(0) @map("late_minutes") // menit lewat jam masuk (shift/global)
+  source          AttendanceSource @default(MANUAL)
   recordedBy      String?         @map("recorded_by") @db.Uuid
   createdAt       DateTime        @default(now()) @map("created_at")
   updatedAt       DateTime        @updatedAt @map("updated_at")
@@ -893,6 +902,128 @@ model EmployeeAttendance {
   @@unique([employeeId, date])
   @@index([date])
   @@map("employee_attendances")
+}
+
+enum AttendanceSource {
+  DEVICE // tap dari mesin fingerprint/face
+  IMPORT // file attlog yang diunggah
+  MANUAL // entri manual oleh TU/keuangan
+}
+
+enum DeviceMode {
+  ICLOCK // mesin push ke server (ADMS/iClock) — disarankan
+  PULL   // server menarik log via TCP (port 4370)
+  MANUAL // hanya lewat unggah file
+}
+
+/** Perangkat absensi biometrik yang tersambung ke sistem. */
+model AttendanceDevice {
+  id         String          @id @default(uuid()) @db.Uuid
+  name       String
+  serial     String          @unique // SN mesin — kunci autentikasi iClock
+  mode       DeviceMode      @default(ICLOCK)
+  host       String?                   // IP mesin untuk mode PULL
+  port       Int             @default(4370)
+  commKey    String?         @map("comm_key") // comm password mesin (PULL)
+  location   String?
+  isActive   Boolean         @default(true) @map("is_active")
+  lastSeenAt DateTime?       @map("last_seen_at") // handshake terakhir
+  createdAt  DateTime        @default(now()) @map("created_at")
+
+  logs AttendanceLog[]
+
+  @@map("attendance_devices")
+}
+
+/** Satu tap (check-in/out) mentah dari mesin atau impor — dedup via deviceKey+pin+waktu. */
+model AttendanceLog {
+  id         String           @id @default(uuid()) @db.Uuid
+  deviceKey  String           @map("device_key") // SN mesin, atau 'MANUAL'/'IMPORT'
+  deviceId   String?          @map("device_id") @db.Uuid
+  pin        String                                // user id di mesin
+  punchedAt  DateTime         @map("punched_at")
+  inOut      Int              @default(0) @map("in_out") // 0=masuk, 1=pulang (ZKTeco)
+  employeeId String?          @map("employee_id") @db.Uuid // ter-resolve dari pin
+  source     AttendanceSource @default(DEVICE)
+  createdAt  DateTime         @default(now()) @map("created_at")
+
+  device   AttendanceDevice? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  employee Employee?         @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+
+  @@unique([deviceKey, pin, punchedAt, inOut])
+  @@index([employeeId, punchedAt])
+  @@index([punchedAt])
+  @@map("attendance_logs")
+}
+
+/** Pengaturan jadwal kerja untuk derivasi HADIR/TELAT dari tap mesin. */
+/** Shift kerja pegawai — jam masuk/pulang per kelompok (pagi/siang/dll). */
+model WorkShift {
+  id           String   @id @default(uuid()) @db.Uuid
+  name         String   // e.g. "Pagi", "Siang"
+  startMinute  Int      @map("start_minute")   // jam masuk (menit sejak 00:00)
+  endMinute    Int      @map("end_minute")     // jam pulang
+  lateAfter    Int      @default(10) @map("late_after")   // toleransi telat (menit)
+  checkOutFrom Int      @map("check_out_from") // tap pulang sah mulai menit ini
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  assignments EmployeeShift[]
+
+  @@map("work_shifts")
+}
+
+/** Penugasan shift ke pegawai — dayOfWeek -1 = semua hari (default), 0=Minggu…6=Sabtu. */
+model EmployeeShift {
+  id         String @id @default(uuid()) @db.Uuid
+  employeeId String @map("employee_id") @db.Uuid
+  shiftId    String @map("shift_id") @db.Uuid
+  dayOfWeek  Int    @default(-1) @map("day_of_week")
+
+  employee Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  shift    WorkShift @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, dayOfWeek])
+  @@index([shiftId])
+  @@map("employee_shifts")
+}
+
+/** Event kalender akademik — libur/kegiatan/ujian yang memengaruhi kalender mengajar. */
+model AcademicCalendarEvent {
+  id             String   @id @default(uuid()) @db.Uuid
+  date           DateTime @db.Date
+  title          String
+  type           String   @default("KEGIATAN") // LIBUR | KEGIATAN | UJIAN | LAINNYA
+  note           String?
+  academicYearId String?  @map("academic_year_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  academicYear AcademicYear? @relation(fields: [academicYearId], references: [id], onDelete: SetNull)
+
+  @@index([date])
+  @@map("academic_calendar_events")
+}
+
+/** Pengaturan payroll global — potongan otomatis dari data absensi. */
+model PayrollSetting {
+  id                  String   @id @default("global")
+  lateDeductionPerDay Int      @default(0) @map("late_deduction_per_day") // potongan per hari telat
+  lateDeductionPerMin Int      @default(0) @map("late_deduction_per_min") // potongan per menit telat
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@map("payroll_settings")
+}
+
+model AttendanceSetting {
+  id           String   @id @default("global")
+  workStart    String   @default("07:00") @map("work_start")     // "HH:mm" — batas jam masuk
+  lateAfter    Int      @default(10) @map("late_after")          // toleransi menit sebelum TELAT
+  checkOutFrom String   @default("12:00") @map("check_out_from") // tap >= jam ini dihitung pulang
+  autoDerive   Boolean  @default(true) @map("auto_derive")       // tap mesin → status harian
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("attendance_settings")
 }
 
 /** Tipe honor tambahan — jabatan, wali kelas, piket, eskul, mamin, panitia. */
@@ -1162,6 +1293,7 @@ model Employee {
   hourlyRate           Int?     @map("hourly_rate")     // override tarif/jam
   transportRate        Int?     @map("transport_rate")  // override transport/jam
   isCertified          Boolean  @default(false) @map("is_certified") // sertifikasi (BOS)
+  fingerPin            String?  @unique @map("finger_pin") // user id di mesin absensi
   createdAt DateTime     @default(now()) @map("created_at")
   updatedAt DateTime     @updatedAt @map("updated_at")
 
@@ -1176,6 +1308,8 @@ model Employee {
   payrollItems PayrollItem[]
   pensionEntries PensionEntry[]
   bosHonors   BosHonor[]
+  attendanceLogs AttendanceLog[]
+  shifts      EmployeeShift[]
 
   @@index([type, name])
   @@map("employees")

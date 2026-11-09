@@ -21,6 +21,7 @@ import {
   deletePayScale,
   getPensionLedger,
   getPensionSummary,
+  getPayrollSettings,
   listBosHonors,
   listCashAccounts,
   listDeductionTypes,
@@ -35,6 +36,7 @@ import {
   updateEmployeeHonor,
   updateEmployeePayrollSettings,
   updateLoan,
+  updatePayrollSettings,
   updatePayScale,
   upsertBosHonor,
   type BosHonorView,
@@ -47,6 +49,7 @@ import {
   type LoanView,
   type PayScaleView,
   type PensionSummaryRow,
+  type PayrollSettings,
 } from '@/lib/api';
 
 import { RowBtn } from '@/components/row-btn';
@@ -80,6 +83,7 @@ export default function PayrollPengaturanPage() {
   const [accounts, setAccounts] = useState<CashAccountView[]>([]);
   const [pension, setPension] = useState<PensionSummaryRow[]>([]);
   const [bos, setBos] = useState<BosHonorView[]>([]);
+  const [payrollSettings, setPayrollSettings] = useState<PayrollSettings | null>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -107,6 +111,7 @@ export default function PayrollPengaturanPage() {
     listCashAccounts().then(setAccounts).catch(() => undefined);
     getPensionSummary().then(setPension).catch(() => undefined);
     listBosHonors({}).then(setBos).catch(() => undefined);
+    getPayrollSettings().then(setPayrollSettings).catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -143,7 +148,7 @@ export default function PayrollPengaturanPage() {
   return (
     <Shell>
       <PageTitle
-        title="Pengaturan Payroll"
+        title="Pengaturan Gaji & Honor"
         subtitle="Golongan masa kerja, honor, potongan, pinjaman/koperasi, dana pensiun, honor BOS, dan pengaturan per pegawai"
       />
       {error ? <p role="alert" className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</p> : null}
@@ -284,6 +289,69 @@ export default function PayrollPengaturanPage() {
 
       {tab === 'Potongan' ? (
         <div className="grid gap-5">
+          <Widget
+            title="Potongan Keterlambatan Otomatis"
+            action={<p className="text-xs text-sand-500">dari data absen mesin/entri harian</p>}
+          >
+            <form
+              className="grid max-w-xl gap-4"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const f = new FormData(e.currentTarget);
+                void run(
+                  () =>
+                    updatePayrollSettings({
+                      lateDeductionPerDay: Number(f.get('lateDeductionPerDay')) || 0,
+                      lateDeductionPerMin: Number(f.get('lateDeductionPerMin')) || 0,
+                    }),
+                  'Pengaturan potongan keterlambatan disimpan.',
+                );
+              }}
+            >
+              <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                Terapkan ke slip gaji per periode — akumulasi hari <b>TELAT</b> + total menit telat dari
+                tap mesin (shift-aware). Isi 0 untuk menonaktifkan.
+              </p>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Potongan per hari telat (Rp)" hint="tarif tetap tiap hari berstatus TELAT">
+                  <Input
+                    type="number"
+                    name="lateDeductionPerDay"
+                    min={0}
+                    step={1000}
+                    defaultValue={payrollSettings?.lateDeductionPerDay ?? 0}
+                    disabled={!canManage}
+                  />
+                </Field>
+                <Field label="Potongan per menit telat (Rp)" hint="akumulasi menit dari jam masuk shift">
+                  <Input
+                    type="number"
+                    name="lateDeductionPerMin"
+                    min={0}
+                    step={500}
+                    defaultValue={payrollSettings?.lateDeductionPerMin ?? 0}
+                    disabled={!canManage}
+                  />
+                </Field>
+              </div>
+              {payrollSettings ? (
+                <p className="text-xs text-sand-500">
+                  Contoh bulan ini: 3 hari telat + 45 menit →{' '}
+                  <b>
+                    {rupiah(
+                      3 * payrollSettings.lateDeductionPerDay +
+                        45 * payrollSettings.lateDeductionPerMin,
+                    )}
+                  </b>
+                </p>
+              ) : null}
+              {canManage ? (
+                <div>
+                  <Button type="submit" disabled={busy}>Simpan</Button>
+                </div>
+              ) : null}
+            </form>
+          </Widget>
           <Widget
             title="Tipe Potongan"
             action={canManage ? <Button size="sm" onClick={async () => setDedTypeModal(true)}>+ Tipe</Button> : undefined}

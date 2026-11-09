@@ -1,3 +1,4 @@
+import { Transform } from 'class-transformer';
 import {
   IsBoolean,
   IsEmail,
@@ -6,6 +7,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -15,6 +17,11 @@ import {
 import { EMPLOYEE_TYPES } from '@smpmuh3/types';
 import type { EmployeeType } from '@smpmuh3/types';
 import type { AssessmentType } from '@prisma/client';
+
+const emptyToUndefined = () =>
+  Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' && value.trim() === '' ? undefined : value,
+  );
 
 export class EmployeeDto {
   @IsString()
@@ -323,4 +330,29 @@ export class GradeDto {
   @Min(0)
   @Max(1000)
   score!: number;
+}
+
+export class CalendarEventDto {
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'Format tanggal YYYY-MM-DD' })
+  date!: string;
+
+  @IsString()
+  @MinLength(2)
+  @MaxLength(120)
+  title!: string;
+
+  @IsIn(['LIBUR', 'KEGIATAN', 'UJIAN', 'LAINNYA'])
+  type!: 'LIBUR' | 'KEGIATAN' | 'UJIAN' | 'LAINNYA';
+
+  @emptyToUndefined()
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  note?: string;
+
+  @emptyToUndefined()
+  @IsOptional()
+  @IsUUID()
+  academicYearId?: string;
 }

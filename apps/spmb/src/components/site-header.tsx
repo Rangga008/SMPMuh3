@@ -8,12 +8,9 @@ import { ThemeToggle } from './theme-toggle';
 export const NAV_LINKS = [
   { href: '/', label: 'Beranda' },
   { href: '/#alur', label: 'Alur' },
-  { href: '/#jalur', label: 'Jalur' },
   { href: '/#biaya', label: 'Biaya' },
-  { href: '/#syarat', label: 'Syarat' },
   { href: '/#gelombang', label: 'Gelombang' },
   { href: '/titipan', label: 'Titipan' },
-  { href: '/#brosur', label: 'Brosur' },
   { href: '/#kontak', label: 'Kontak' },
 ];
 

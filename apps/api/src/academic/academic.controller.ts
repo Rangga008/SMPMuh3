@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -15,6 +16,7 @@ import { RequirePermission } from '../identity/decorators/require-permission.dec
 import { AcademicService } from './academic.service';
 import {
   AssessmentDto,
+  CalendarEventDto,
   ClassDto,
   CurriculumDto,
   EmployeeDto,
@@ -69,6 +71,51 @@ export class AcademicController {
     @Body() dto: EmployeeDto,
   ) {
     return this.academic.updateEmployee(id, dto, u.id);
+  }
+
+  /** Profil lengkap pegawai — data + penugasan mengajar (detail guru). */
+  @Get('employees/:id')
+  @RequirePermission(ER)
+  employeeDetail(@Param('id', ParseUUIDPipe) id: string) {
+    return this.academic.employeeDetail(id);
+  }
+
+  // ---------- Kalender akademik ----------
+
+  /** Kalender sebulan — siapa mengajar per tanggal + event libur/kegiatan. */
+  @Get('academic-calendar')
+  @RequirePermission(ER)
+  academicCalendar(@Query('month') month: string) {
+    if (!month) throw new BadRequestException('Parameter month wajib (YYYY-MM).');
+    return this.academic.academicCalendar(month);
+  }
+
+  @Get('academic-calendar/events')
+  @RequirePermission(ER)
+  calendarEvents(@Query('from') from?: string, @Query('to') to?: string) {
+    return this.academic.listCalendarEvents(from || undefined, to || undefined);
+  }
+
+  @Post('academic-calendar/events')
+  @RequirePermission(EM)
+  createCalendarEvent(@Body() dto: CalendarEventDto, @CurrentUser() u: AuthUser) {
+    return this.academic.createCalendarEvent(dto, u.id);
+  }
+
+  @Patch('academic-calendar/events/:id')
+  @RequirePermission(EM)
+  updateCalendarEvent(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CalendarEventDto,
+    @CurrentUser() u: AuthUser,
+  ) {
+    return this.academic.updateCalendarEvent(id, dto, u.id);
+  }
+
+  @Delete('academic-calendar/events/:id')
+  @RequirePermission(EM)
+  deleteCalendarEvent(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) {
+    return this.academic.deleteCalendarEvent(id, u.id);
   }
 
   // ---------- Curriculum & subjects ----------

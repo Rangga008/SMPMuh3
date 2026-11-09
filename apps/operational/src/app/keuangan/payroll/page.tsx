@@ -40,7 +40,7 @@ export default function PayrollPage() {
   return (
     <Shell>
       <PageTitle
-        title="Payroll"
+        title="Gaji & Honor"
         subtitle="Run penggajian bulanan — buka detail untuk rincian per pegawai & slip"
         actions={
           canManage ? (

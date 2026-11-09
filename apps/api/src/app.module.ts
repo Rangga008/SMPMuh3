@@ -17,6 +17,7 @@ import { AcademicModule } from './academic/academic.module';
 import { FinanceModule } from './finance/finance.module';
 import { PayrollModule } from './payroll/payroll.module';
 import { TatausahaModule } from './tatausaha/tatausaha.module';
+import { AttendanceModule } from './attendance/attendance.module';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { TatausahaModule } from './tatausaha/tatausaha.module';
     FinanceModule,
     PayrollModule,
     TatausahaModule,
+    AttendanceModule,
     NotificationsModule,
     AuditModule,
   ],

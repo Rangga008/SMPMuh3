@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
@@ -183,7 +184,11 @@ export default function EmployeesPage() {
       >
         {rows.map((e) => (
           <tr key={e.id}>
-            <td className="px-5 py-3.5 font-semibold text-sand-900">{e.name}</td>
+            <td className="px-5 py-3.5">
+              <Link href={`/kepegawaian/${e.id}`} className="font-semibold text-sand-900 hover:text-primary-700 hover:underline">
+                {e.name}
+              </Link>
+            </td>
             <td className="px-5 py-3.5 text-sand-600">{e.nip ?? '—'}</td>
             <td className="px-5 py-3.5 text-sand-600">{typeLabel(e.type)}</td>
             <td className="px-5 py-3.5 text-sand-600">

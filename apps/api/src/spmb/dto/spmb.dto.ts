@@ -291,6 +291,12 @@ export class GuestTitipanDto {
   @IsUUID()
   academicYearId!: string;
 
+  /** Gelombang sasaran — opsional; default gelombang aktif pertama TA tsb. */
+  @emptyToUndefined()
+  @IsOptional()
+  @IsUUID()
+  waveId?: string;
+
   @IsString()
   @MinLength(3)
   @MaxLength(120)
@@ -347,6 +353,11 @@ export class ParentTitipanDto {
 
   @emptyToUndefined()
   @IsOptional()
+  @IsUUID()
+  waveId?: string;
+
+  @emptyToUndefined()
+  @IsOptional()
   @IsString()
   @MinLength(9)
   @MaxLength(20)
@@ -378,6 +389,10 @@ export class AdminTitipanNoteDto {
   @IsString()
   @MaxLength(300)
   note?: string;
+
+  /** Tugaskan gelombang ke entri — null/'' untuk melepas gelombang. */
+  @IsOptional()
+  waveId?: string | null;
 
   /** Ubah status manual — REGISTERED tidak bisa diubah/dituju manual. */
   @emptyToUndefined()

@@ -16,15 +16,18 @@ import {
   approveTitipan,
   cancelTitipan,
   listAcademicYears,
+  listAdminWaves,
   listTitipan,
   sendTitipanCode,
   setTitipanStatus,
+  setTitipanWave,
   titipanSummary,
   updateAcademicYear,
   type AcademicYear,
   type TitipanAdmin,
   type TitipanSummary,
 } from '@/lib/api';
+import type { WaveDto } from '@smpmuh3/types';
 
 const TONE: Record<string, 'primary' | 'accent' | 'neutral' | 'danger'> = {
   PENDING: 'neutral',
@@ -35,7 +38,7 @@ const TONE: Record<string, 'primary' | 'accent' | 'neutral' | 'danger'> = {
 };
 
 const FILTERS: { key: TitipanStatus | ''; label: string }[] = [
-  { key: '', label: 'Semua' },
+  { key: '', label: 'Aktif (antrean)' },
   { key: 'PENDING', label: 'Pending' },
   { key: 'WAITING', label: 'Antrean' },
   { key: 'CODE_SENT', label: 'Kode Terkirim' },
@@ -48,6 +51,8 @@ export default function TitipanPage() {
   const [summary, setSummary] = useState<TitipanSummary[]>([]);
   const [rows, setRows] = useState<TitipanAdmin[]>([]);
   const [yearId, setYearId] = useState('');
+  const [waveId, setWaveId] = useState('');
+  const [waves, setWaves] = useState<WaveDto[]>([]);
   const [status, setStatus] = useState<TitipanStatus | ''>('');
   const [q, setQ] = useState('');
   const [loading, setLoading] = useState(true);
@@ -64,6 +69,7 @@ export default function TitipanPage() {
         titipanSummary().catch(() => [] as TitipanSummary[]),
         listTitipan({
           academicYearId: yearId || undefined,
+          waveId: waveId || undefined,
           status: status || undefined,
           q: q || undefined,
         }),
@@ -77,12 +83,18 @@ export default function TitipanPage() {
     } finally {
       setLoading(false);
     }
-  }, [yearId, status, q]);
+  }, [yearId, waveId, status, q]);
 
   useEffect(() => {
     const t = setTimeout(() => void load(), q ? 350 : 0);
     return () => clearTimeout(t);
   }, [load, q]);
+
+  useEffect(() => {
+    void listAdminWaves().then(setWaves).catch(() => {});
+  }, []);
+
+  const wavesOfYear = waves.filter((w) => !yearId || w.academicYearId === yearId);
 
   async function run(fn: () => Promise<unknown>, ok: string) {
     setError(null);
@@ -240,11 +252,27 @@ export default function TitipanPage() {
       {/* Filter */}
       <div className="mb-4 flex flex-wrap items-end gap-3">
         <Field label="Tahun Ajaran" className="w-48">
-          <Select value={yearId} onChange={(e) => setYearId(e.target.value)}>
+          <Select
+            value={yearId}
+            onChange={(e) => {
+              setYearId(e.target.value);
+              setWaveId('');
+            }}
+          >
             <option value="">Semua</option>
             {summary.map((s) => (
               <option key={s.academicYearId} value={s.academicYearId}>
                 {s.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Gelombang" className="w-44">
+          <Select value={waveId} onChange={(e) => setWaveId(e.target.value)}>
+            <option value="">Semua</option>
+            {wavesOfYear.map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.name}
               </option>
             ))}
           </Select>
@@ -298,6 +326,9 @@ export default function TitipanPage() {
             </td>
             <td className="px-4 py-3 whitespace-nowrap text-sand-600">
               {e.academicYearName}
+              <p className="mt-0.5 text-xs text-sand-500">
+                {e.waveName ?? '— tanpa gelombang —'}
+              </p>
             </td>
             <td className="px-4 py-3 text-xs text-sand-600">
               <p>{phones(e)}</p>
@@ -361,6 +392,30 @@ export default function TitipanPage() {
                   >
                     Batal
                   </Button>
+                ) : null}
+                {e.status !== 'REGISTERED' ? (
+                  <Select
+                    aria-label="Pilih gelombang"
+                    className="h-8 w-auto text-xs"
+                    value={e.waveId ?? ''}
+                    disabled={busyId === e.id}
+                    onChange={(ev) => {
+                      const wid = ev.target.value;
+                      void run(
+                        () => setTitipanWave(e.id, wid || null),
+                        `${e.candidateName} ${wid ? 'ditugaskan ke gelombang' : 'dilepas dari gelombang'}.`,
+                      );
+                    }}
+                  >
+                    <option value="">— Gelombang…</option>
+                    {waves
+                      .filter((w) => w.academicYearId === e.academicYearId)
+                      .map((w) => (
+                        <option key={w.id} value={w.id}>
+                          {w.name}
+                        </option>
+                      ))}
+                  </Select>
                 ) : null}
                 {e.status !== 'REGISTERED' ? (
                   <Select

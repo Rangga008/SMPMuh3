@@ -403,3 +403,19 @@ export class PayRunDto {
   @IsUUID()
   cashAccountId!: string;
 }
+
+export class PayrollSettingsDto {
+  /** Potongan tetap per hari telat (Rp) — 0 = nonaktif. */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(10_000_000)
+  lateDeductionPerDay?: number;
+
+  /** Potongan per menit keterlambatan (Rp) — 0 = nonaktif. */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(1_000_000)
+  lateDeductionPerMin?: number;
+}

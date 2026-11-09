@@ -204,6 +204,9 @@ export interface TitipanEntryDto {
   id: string;
   academicYearId: string;
   academicYearName?: string | undefined;
+  /** Gelombang tujuan titipan — opsional, di-assign admin. */
+  waveId?: string | null | undefined;
+  waveName?: string | null | undefined;
   candidateId?: string | null | undefined;
   candidateName: string;
   birthPlace?: string | null | undefined;

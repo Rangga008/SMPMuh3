@@ -24,6 +24,7 @@ import {
   HonorTypeDto,
   PayRunDto,
   PayScaleDto,
+  PayrollSettingsDto,
   UpdateLoanDto,
   UpdatePayScaleDto,
 } from './dto/payroll.dto';
@@ -93,6 +94,23 @@ export class PayrollController {
   @RequirePermission(PERMISSIONS.PAYROLL_MANAGE)
   saveAttendance(@Body() dto: BulkAttendanceDto, @CurrentUser() user: AuthUser) {
     return this.payroll.upsertAttendance(dto.date, dto.entries, user.id);
+  }
+
+  // ---------- Pengaturan global ----------
+
+  @Get('settings')
+  @RequirePermission(PERMISSIONS.PAYROLL_READ)
+  settings() {
+    return this.payroll.getPayrollSettings();
+  }
+
+  @Patch('settings')
+  @RequirePermission(PERMISSIONS.PAYROLL_MANAGE)
+  updateSettings(
+    @Body() dto: PayrollSettingsDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.payroll.updatePayrollSettings(dto, user.id);
   }
 
   // ---------- Honor ----------

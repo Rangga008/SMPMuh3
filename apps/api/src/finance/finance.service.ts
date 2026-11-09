@@ -1166,7 +1166,11 @@ export class FinanceService {
       entityId: invoice.id,
       metadata: { number: invoice.number, studentId: dto.studentId, amount },
     });
-    return invoice;
+    const notification =
+      dto.notifyParent === false
+        ? { queued: false, reason: 'dimatikan' }
+        : await this.tryNotifyInvoice(invoice.id, actorId);
+    return { ...invoice, notification };
   }
 
   async updateInvoice(id: string, dto: UpdateInvoiceDto, actorId: string) {
@@ -1291,6 +1295,7 @@ export class FinanceService {
           })),
         },
       },
+      include: { invoices: { select: { id: true } } },
     });
     await this.audit.log({
       actorId,
@@ -1304,7 +1309,17 @@ export class FinanceService {
         skipped: skip.size,
       },
     });
-    return batch;
+    // Pengingat WA otomatis ke ortu tiap siswa — best-effort per invoice.
+    let notified = 0;
+    let notNotified = 0;
+    if (dto.notifyParents !== false) {
+      for (const inv of batch.invoices) {
+        const r = await this.tryNotifyInvoice(inv.id, actorId);
+        if (r.queued) notified += 1;
+        else notNotified += 1;
+      }
+    }
+    return { ...batch, notified, notNotified };
   }
 
   async listBatches(q: { academicYearId?: string | undefined }) {
@@ -1708,6 +1723,25 @@ export class FinanceService {
       metadata: { phone: phone.replace(/\d(?=\d{4})/g, '*'), remaining },
     });
     return { ...result, phone };
+  }
+
+  /**
+   * Notify versi aman untuk auto-kirim saat pembuatan tagihan — tidak melempar
+   * error (ortu tanpa HP / invoice lunas dilewati saja).
+   */
+  private async tryNotifyInvoice(invoiceId: string, actorId: string) {
+    try {
+      const r = await this.notifyInvoice(invoiceId, actorId);
+      return { queued: r.queued === true, reason: null as string | null };
+    } catch (e) {
+      return {
+        queued: false,
+        reason:
+          e instanceof BadRequestException || e instanceof NotFoundException
+            ? e.message
+            : 'gagal antre',
+      };
+    }
   }
 
   // ---------- Tabungan siswa ----------

@@ -398,7 +398,13 @@ export interface ParentAccountDetail extends Omit<ParentAccount, '_count'> {
   }[];
 }
 
-export const listParents = () => req<ParentAccount[]>('/admin/parents');
+export const listParents = (q: { waveId?: string | undefined; academicYearId?: string | undefined } = {}) => {
+  const s = new URLSearchParams();
+  if (q.waveId) s.set('waveId', q.waveId);
+  if (q.academicYearId) s.set('academicYearId', q.academicYearId);
+  const qs = s.toString();
+  return req<ParentAccount[]>(`/admin/parents${qs ? `?${qs}` : ''}`);
+};
 export const getParent = (id: string) =>
   req<ParentAccountDetail>(`/admin/parents/${id}`);
 export const updateParent = (
@@ -542,6 +548,251 @@ export const listEmployees = (type?: string) =>
   req<EmployeeDto[]>(`/employees${type ? `?type=${type}` : ''}`);
 export const createEmployee = (dto: Record<string, unknown>) =>
   req<EmployeeDto>('/employees', { method: 'POST', json: dto });
+
+// ---- absensi pegawai (Tata Usaha — mesin fingerprint) ----
+export type DeviceMode = 'ICLOCK' | 'PULL' | 'MANUAL';
+export interface AttendanceDevice {
+  id: string;
+  name: string;
+  serial: string;
+  mode: DeviceMode;
+  host?: string | null;
+  port: number;
+  commKey?: string | null;
+  location?: string | null;
+  isActive: boolean;
+  lastSeenAt?: string | null;
+  createdAt: string;
+  _count?: { logs: number };
+}
+export interface AttendanceLog {
+  id: string;
+  deviceKey: string;
+  pin: string;
+  punchedAt: string;
+  inOut: number;
+  source: 'DEVICE' | 'IMPORT' | 'MANUAL';
+  employee?: { id: string; name: string; nip?: string | null } | null;
+  device?: { id: string; name: string; serial: string } | null;
+}
+export interface DailyRow {
+  employee: { id: string; name: string; nip?: string | null; fingerPin?: string | null };
+  status: 'HADIR' | 'TELAT' | 'IZIN' | 'SAKIT' | 'ALPHA' | null;
+  checkInAt?: string | null;
+  checkOutAt?: string | null;
+  lateMinutes?: number | null;
+  source?: 'DEVICE' | 'IMPORT' | 'MANUAL' | null;
+  note?: string | null;
+}
+export interface AttendanceSettings {
+  workStart: string;
+  lateAfter: number;
+  checkOutFrom: string;
+  autoDerive: boolean;
+}
+export interface PinRow {
+  id: string;
+  nip?: string | null;
+  name: string;
+  type: string;
+  fingerPin?: string | null;
+}
+export interface AttendanceDeviceInput {
+  name?: string;
+  serial?: string;
+  mode?: DeviceMode;
+  host?: string | undefined;
+  port?: number;
+  commKey?: string | undefined;
+  location?: string | undefined;
+  isActive?: boolean;
+}
+export const listAttendanceDevices = () =>
+  req<AttendanceDevice[]>('/admin/attendance/devices');
+export const createAttendanceDevice = (dto: AttendanceDeviceInput) =>
+  req<AttendanceDevice>('/admin/attendance/devices', { method: 'POST', json: dto });
+export const updateAttendanceDevice = (id: string, dto: AttendanceDeviceInput) =>
+  req<AttendanceDevice>(`/admin/attendance/devices/${id}`, { method: 'PATCH', json: dto });
+export const deleteAttendanceDevice = (id: string) =>
+  req(`/admin/attendance/devices/${id}`, { method: 'DELETE' });
+export const pullAttendanceDevice = (id: string) =>
+  req<{ pulled: number; inserted: number; skipped: number }>(
+    `/admin/attendance/devices/${id}/pull`,
+    { method: 'POST' },
+  );
+export const getAttendanceSettings = () =>
+  req<AttendanceSettings>('/admin/attendance/settings');
+export const updateAttendanceSettings = (dto: Partial<AttendanceSettings>) =>
+  req<AttendanceSettings>('/admin/attendance/settings', { method: 'PATCH', json: dto });
+export const listAttendancePins = () => req<PinRow[]>('/admin/attendance/pins');
+export const setAttendancePin = (employeeId: string, pin?: string) =>
+  req<PinRow>('/admin/attendance/pins', {
+    method: 'POST',
+    json: { employeeId, ...(pin ? { pin } : {}) },
+  });
+export const listAttendanceLogs = (q: { date?: string; employeeId?: string; deviceKey?: string } = {}) => {
+  const p = new URLSearchParams();
+  if (q.date) p.set('date', q.date);
+  if (q.employeeId) p.set('employeeId', q.employeeId);
+  if (q.deviceKey) p.set('deviceKey', q.deviceKey);
+  return req<AttendanceLog[]>(`/admin/attendance/logs?${p}`);
+};
+export const listAttendanceDaily = (
+  date: string,
+  q: { employeeId?: string; status?: string } = {},
+) => {
+  const p = new URLSearchParams({ date });
+  if (q.employeeId) p.set('employeeId', q.employeeId);
+  if (q.status) p.set('status', q.status);
+  return req<DailyRow[]>(`/admin/attendance/daily?${p}`);
+};
+export const manualPunch = (dto: { employeeId: string; punchedAt: string; inOut?: 0 | 1 }) =>
+  req<{ inserted: number }>('/admin/attendance/manual', { method: 'POST', json: dto });
+export const rederiveAttendance = () =>
+  req<{ derived: number }>('/admin/attendance/rederive', { method: 'POST' });
+export const importAttendanceFile = (deviceKey: string, file: File) => {
+  const fd = new FormData();
+  fd.set('deviceKey', deviceKey);
+  fd.set('file', file);
+  return req<{ inserted: number; skipped: number; badLines: number }>(
+    '/admin/attendance/import',
+    { method: 'POST', body: fd },
+  );
+};
+
+// ---- shift kerja & kalender absensi pegawai ----
+export interface WorkShift {
+  id: string;
+  name: string;
+  startMinute: number;
+  endMinute: number;
+  lateAfter: number;
+  checkOutFrom: number;
+  isActive: boolean;
+  _count?: { assignments: number };
+}
+export interface EmployeeShift {
+  id: string;
+  employeeId: string;
+  shiftId: string;
+  dayOfWeek: number; // -1=semua hari; 0=Minggu…6=Sabtu
+  employee?: { id: string; name: string; nip?: string | null };
+  shift: WorkShift;
+}
+export interface AttendanceDayRow {
+  date: string;
+  status: 'HADIR' | 'TELAT' | 'IZIN' | 'SAKIT' | 'ALPHA';
+  checkInAt?: string | null;
+  checkOutAt?: string | null;
+  lateMinutes: number;
+  teachingMinutes: number;
+  source: 'DEVICE' | 'IMPORT' | 'MANUAL';
+  note?: string | null;
+}
+export interface EmployeeMonthly {
+  employee: {
+    id: string; name: string; nip?: string | null; type: string;
+    phone?: string | null; email?: string | null; isActive: boolean;
+    fingerPin?: string | null;
+  };
+  month: string;
+  days: AttendanceDayRow[];
+  shifts: { id: string; dayOfWeek: number; shift: WorkShift }[];
+}
+export const listWorkShifts = () => req<WorkShift[]>('/admin/attendance/shifts');
+export const createWorkShift = (dto: {
+  name: string; startTime: string; endTime: string; checkOutFrom: string; lateAfter?: number;
+}) => req<WorkShift>('/admin/attendance/shifts', { method: 'POST', json: dto });
+export const updateWorkShift = (id: string, dto: Record<string, unknown>) =>
+  req<WorkShift>(`/admin/attendance/shifts/${id}`, { method: 'PATCH', json: dto });
+export const deleteWorkShift = (id: string) =>
+  req(`/admin/attendance/shifts/${id}`, { method: 'DELETE' });
+export const listEmployeeShifts = (employeeId?: string) =>
+  req<EmployeeShift[]>(
+    `/admin/attendance/employee-shifts${employeeId ? `?employeeId=${employeeId}` : ''}`,
+  );
+export const assignEmployeeShift = (dto: {
+  employeeId: string; shiftId: string; dayOfWeek: number;
+}) => req<EmployeeShift>('/admin/attendance/employee-shifts', { method: 'POST', json: dto });
+export const removeEmployeeShift = (id: string) =>
+  req(`/admin/attendance/employee-shifts/${id}`, { method: 'DELETE' });
+export const getAttendanceMonthly = (employeeId: string, month: string) =>
+  req<EmployeeMonthly>(
+    `/admin/attendance/monthly?employeeId=${employeeId}&month=${month}`,
+  );
+
+// ---- kalender akademik ----
+export interface CalendarLesson {
+  employeeId: string;
+  employeeName: string;
+  subjectName: string;
+  className: string;
+  startMinute: number;
+  endMinute: number;
+  room?: string | null;
+}
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  type: 'LIBUR' | 'KEGIATAN' | 'UJIAN' | 'LAINNYA';
+  note?: string | null;
+}
+export interface CalendarDay {
+  date: string;
+  dayOfWeek: number;
+  lessons: CalendarLesson[];
+  events: CalendarEvent[];
+  isHoliday: boolean;
+}
+export interface AcademicCalendar {
+  month: string;
+  days: CalendarDay[];
+}
+export interface CalendarEventRow extends CalendarEvent {
+  date: string;
+  note?: string | null;
+  academicYearId?: string | null;
+  academicYear?: { name: string } | null;
+}
+export const getAcademicCalendar = (month: string) =>
+  req<AcademicCalendar>(`/academic-calendar?month=${month}`);
+export const listCalendarEvents = (from?: string, to?: string) => {
+  const p = new URLSearchParams();
+  if (from) p.set('from', from);
+  if (to) p.set('to', to);
+  const s = p.toString();
+  return req<CalendarEventRow[]>(`/academic-calendar/events${s ? `?${s}` : ''}`);
+};
+export const createCalendarEvent = (dto: {
+  date: string; title: string; type: string; note?: string; academicYearId?: string;
+}) => req<CalendarEventRow>('/academic-calendar/events', { method: 'POST', json: dto });
+export const updateCalendarEvent = (id: string, dto: Record<string, unknown>) =>
+  req<CalendarEventRow>(`/academic-calendar/events/${id}`, { method: 'PATCH', json: dto });
+export const deleteCalendarEvent = (id: string) =>
+  req(`/academic-calendar/events/${id}`, { method: 'DELETE' });
+
+// ---- detail pegawai & pengaturan payroll ----
+export interface EmployeeDetail extends EmployeeDto {
+  payScale?: { name: string; hourlyRate: number; transportRate: number } | null;
+  homeroomFor?: { id: string; name: string; academicYear: { name: string } }[];
+  assignments?: {
+    id: string;
+    subject: { id: string; code?: string | null; name: string };
+    class: { id: string; name: string; gradeLevel: number };
+    academicYear: { id: string; name: string; isActive: boolean };
+    schedules: { id: string; day: number; startMinute: number; endMinute: number; room?: string | null }[];
+  }[];
+}
+export const getEmployee = (id: string) => req<EmployeeDetail>(`/employees/${id}`);
+export interface PayrollSettings {
+  id: string;
+  lateDeductionPerDay: number;
+  lateDeductionPerMin: number;
+}
+export const getPayrollSettings = () =>
+  req<PayrollSettings>('/admin/payroll/settings');
+export const updatePayrollSettings = (dto: Partial<PayrollSettings>) =>
+  req<PayrollSettings>('/admin/payroll/settings', { method: 'PATCH', json: dto });
 
 // ---- roles ----
 export interface RoleOption {
@@ -1115,6 +1366,8 @@ export const deleteAcademicYear = (id: string) =>
 import type { TitipanEntryDto, TitipanStatus } from '@smpmuh3/types';
 
 export interface TitipanAdmin extends TitipanEntryDto {
+  waveId?: string | null;
+  waveName?: string | null;
   parentName?: string | null;
   parentEmail?: string | null;
   parentPhone?: string | null;
@@ -1133,6 +1386,7 @@ export interface TitipanSummary {
 export const titipanSummary = () => req<TitipanSummary[]>('/admin/titipan/summary');
 export const listTitipan = (q: {
   academicYearId?: string | undefined;
+  waveId?: string | undefined;
   status?: TitipanStatus | undefined;
   q?: string | undefined;
 }) => req<TitipanAdmin[]>(`/admin/titipan${qs(q)}`);
@@ -1152,6 +1406,9 @@ export const setTitipanStatus = (
   id: string,
   status: Exclude<TitipanStatus, 'REGISTERED'>,
 ) => req<TitipanAdmin>(`/admin/titipan/${id}`, { method: 'PATCH', json: { status } });
+/** Tugaskan gelombang ke entri titipan — null untuk melepas. */
+export const setTitipanWave = (id: string, waveId: string | null) =>
+  req<TitipanAdmin>(`/admin/titipan/${id}`, { method: 'PATCH', json: { waveId } });
 
 // ---------- Orang tua / wali (Kesiswaan) ----------
 export interface ParentListItem {
@@ -1444,7 +1701,11 @@ export interface EmpAttendance {
   date: string;
   status: 'HADIR' | 'TELAT' | 'IZIN' | 'SAKIT' | 'ALPHA';
   teachingMinutes: number;
+  lateMinutes?: number;
   note?: string | null;
+  checkInAt?: string | null;
+  checkOutAt?: string | null;
+  source?: 'DEVICE' | 'IMPORT' | 'MANUAL' | null;
   employee?: { name: string; nip?: string | null };
 }
 export interface HonorTypeView {

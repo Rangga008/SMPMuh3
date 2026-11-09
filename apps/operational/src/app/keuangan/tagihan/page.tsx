@@ -27,6 +27,7 @@ import {
   listStudentInvoices,
   listStudents,
   me,
+  notifyInvoice,
   recordBillingPayment,
   updateStudentInvoice,
   voidBillingBatch,
@@ -160,6 +161,38 @@ export default function TagihanPage() {
   }
 
   const activeAccounts = accounts.filter((a) => a.isActive);
+
+  async function onTagih(inv: StudentInvoice) {
+    if (!inv.student?.parent?.phone) {
+      setError(`Ortu ${inv.student?.name ?? 'siswa'} belum punya nomor HP — kirim manual.`);
+      return;
+    }
+    if (
+      !(await confirm(
+        `Kirim pengingat tagihan ${inv.number} (${rupiah(inv.remaining)}) via WhatsApp ke ${inv.student.parent.phone}?`,
+      ))
+    ) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await notifyInvoice(inv.id);
+      if (res.queued) {
+        setNotice(`Pengingat masuk antrean WhatsApp ke ${res.phone}.`);
+        if (res.waUrl) window.open(res.waUrl, '_blank', 'noopener');
+      } else if (res.waUrl) {
+        window.open(res.waUrl, '_blank', 'noopener');
+        setNotice('Pengingat diterbitkan — WhatsApp dibuka untuk dikirim manual.');
+      } else {
+        setNotice('Pengingat dikirim.');
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Gagal mengirim pengingat.');
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <Shell>
@@ -295,9 +328,19 @@ export default function TagihanPage() {
                 <td className="whitespace-nowrap px-5 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                   <span className="flex justify-end gap-2">
                     {inv.status === 'OPEN' || inv.status === 'PARTIAL' ? (
-                      <RowBtn tone="success" type="button" onClick={async () => setPayTarget(inv)}>
-                        Bayar
-                      </RowBtn>
+                      <>
+                        <RowBtn tone="success" type="button" onClick={async () => setPayTarget(inv)}>
+                          Bayar
+                        </RowBtn>
+                        <RowBtn
+                          type="button"
+                          disabled={busy}
+                          title="Kirim pengingat tagihan via WhatsApp"
+                          onClick={async () => void onTagih(inv)}
+                        >
+                          Tagih
+                        </RowBtn>
+                      </>
                     ) : null}
                     <RowBtn type="button" onClick={async () => setDetail(inv)}>
                       Detail
@@ -347,6 +390,7 @@ export default function TagihanPage() {
                   ...(f.get('dueAt') ? { dueAt: String(f.get('dueAt')) } : {}),
                   ...(f.get('note') ? { note: String(f.get('note')) } : {}),
                   items,
+                  notifyParent: f.get('notifyParent') === 'on',
                 }),
               'Tagihan dibuat.',
             ).then((ok) => {
@@ -406,6 +450,10 @@ export default function TagihanPage() {
           <Field label="Catatan">
             <Input name="note" placeholder="opsional" />
           </Field>
+          <label className="flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2.5 text-sm font-medium text-emerald-900">
+            <input type="checkbox" name="notifyParent" defaultChecked className="size-4 accent-emerald-600" />
+            Kirim pengingat tagihan ke WhatsApp ortu setelah dibuat
+          </label>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="ghost" onClick={async () => setCreateModal(false)}>Batal</Button>
             <Button type="submit" disabled={busy}>Simpan</Button>
@@ -431,6 +479,7 @@ export default function TagihanPage() {
                   itemLabel: String(f.get('itemLabel')),
                   amount: Number(f.get('amount')),
                   ...(f.get('dueAt') ? { dueAt: String(f.get('dueAt')) } : {}),
+                  notifyParents: f.get('notifyParents') === 'on',
                 }),
               'Tagihan massal dibuat.',
             ).then((ok) => {
@@ -499,6 +548,10 @@ export default function TagihanPage() {
           <Field label="Nama Komponen" hint="muncul di rincian kwitansi">
             <Input name="itemLabel" required placeholder="SPP Bulan November" />
           </Field>
+          <label className="flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2.5 text-sm font-medium text-emerald-900">
+            <input type="checkbox" name="notifyParents" defaultChecked className="size-4 accent-emerald-600" />
+            Kirim pengingat ke WhatsApp ortu tiap siswa setelah dibuat
+          </label>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="ghost" onClick={async () => setGenModal(false)}>Batal</Button>
             <Button type="submit" disabled={busy}>Buat Tagihan</Button>

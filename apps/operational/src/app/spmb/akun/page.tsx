@@ -9,11 +9,15 @@ import { useConfirm } from '@/components/confirm-dialog';
 import {
   deleteParent,
   getParent,
+  listAcademicYears,
+  listAdminWaves,
   listParents,
   updateParent,
+  type AcademicYear,
   type ParentAccount,
   type ParentAccountDetail,
 } from '@/lib/api';
+import type { WaveDto } from '@smpmuh3/types';
 
 const STATUS_LABEL: Record<string, string> = {
   ACTIVE: 'Aktif',
@@ -30,22 +34,38 @@ export default function AkunOrtuPage() {
   const [form, setForm] = useState({ name: '', phone: '', email: '', status: 'ACTIVE' });
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [years, setYears] = useState<AcademicYear[]>([]);
+  const [waves, setWaves] = useState<WaveDto[]>([]);
+  const [filterYear, setFilterYear] = useState('');
+  const [filterWave, setFilterWave] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setRows(await listParents());
+      setRows(
+        await listParents({
+          academicYearId: filterYear || undefined,
+          waveId: filterWave || undefined,
+        }),
+      );
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Gagal memuat data.');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [filterYear, filterWave]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    void listAcademicYears().then(setYears).catch(() => {});
+    void listAdminWaves().then(setWaves).catch(() => {});
+  }, []);
+
+  const wavesOfYear = waves.filter((w) => !filterYear || w.academicYearId === filterYear);
 
   const openEdit = (p: ParentAccount) => {
     setEditing(p);
@@ -114,6 +134,38 @@ export default function AkunOrtuPage() {
           {notice}
         </p>
       ) : null}
+
+      <div className="mb-4 grid gap-3 rounded-2xl border border-sand-200 bg-white p-4 sm:grid-cols-3">
+        <Field label="Tahun Ajaran">
+          <Select
+            value={filterYear}
+            onChange={(e) => {
+              setFilterYear(e.target.value);
+              setFilterWave('');
+            }}
+          >
+            <option value="">Semua tahun ajaran</option>
+            {years.map((y) => (
+              <option key={y.id} value={y.id}>
+                {y.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Gelombang">
+          <Select value={filterWave} onChange={(e) => setFilterWave(e.target.value)}>
+            <option value="">Semua gelombang</option>
+            {wavesOfYear.map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <div className="flex items-end">
+          <p className="text-sm text-sand-500">{rows.length} akun</p>
+        </div>
+      </div>
 
       <DataTable
         head={['Nama', 'Kontak', 'Pendaftaran', 'Status', 'Aksi']}

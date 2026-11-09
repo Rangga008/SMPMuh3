@@ -11,6 +11,7 @@ import { PrismaService } from '../core/prisma/prisma.service';
 import { normalizePhone } from '../identity/users/users.service';
 import type {
   AssessmentDto,
+  CalendarEventDto,
   ClassDto,
   CurriculumDto,
   EmployeeDto,
@@ -112,6 +113,195 @@ export class AcademicService {
     });
     await this.audit.log({ actorId, action: 'employee.update', entity: 'employee', entityId: id });
     return emp;
+  }
+
+  /** Detail pegawai — profil + wali kelas + penugasan mengajar. */
+  async employeeDetail(id: string) {
+    const emp = await this.prisma.employee.findUnique({
+      where: { id },
+      include: {
+        payScale: { select: { name: true, hourlyRate: true, transportRate: true } },
+        homeroomFor: {
+          select: { id: true, name: true, academicYear: { select: { name: true } } },
+        },
+        assignments: {
+          include: {
+            subject: { select: { id: true, code: true, name: true } },
+            class: { select: { id: true, name: true, gradeLevel: true } },
+            academicYear: { select: { id: true, name: true, isActive: true } },
+            schedules: { orderBy: [{ day: 'asc' }, { startMinute: 'asc' }] },
+          },
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    });
+    if (!emp) throw new NotFoundException('Pegawai tidak ditemukan.');
+    return emp;
+  }
+
+  // ---------- Kalender akademik ----------
+
+  /**
+   * Kalender sebulan: per tanggal — siapa mengajar apa di kelas mana
+   * (dari jadwal mingguan ScheduleEntry) + event (libur/kegiatan).
+   * ScheduleEntry.day: 1=Senin … 6=Sabtu; tanggal dikembalikan ISO.
+   */
+  async academicCalendar(month: string) {
+    const m = /^(\d{4})-(\d{2})$/.exec(month);
+    if (!m) throw new BadRequestException('Format bulan tidak valid (YYYY-MM).');
+    const year = Number(m[1]);
+    const mon = Number(m[2]) - 1;
+    const daysInMonth = new Date(year, mon + 1, 0).getDate();
+    const [entries, events, activeYear] = await Promise.all([
+      this.prisma.scheduleEntry.findMany({
+        include: {
+          assignment: {
+            select: {
+              employee: { select: { id: true, name: true } },
+              subject: { select: { code: true, name: true } },
+              class: { select: { id: true, name: true } },
+              academicYear: { select: { id: true, isActive: true } },
+            },
+          },
+        },
+        orderBy: [{ day: 'asc' }, { startMinute: 'asc' }],
+      }),
+      this.prisma.academicCalendarEvent.findMany({
+        where: {
+          date: {
+            gte: new Date(Date.UTC(year, mon, 1)),
+            lt: new Date(Date.UTC(year, mon + 1, 1)),
+          },
+        },
+        orderBy: { date: 'asc' },
+      }),
+      this.prisma.academicYear.findFirst({
+        where: { isActive: true },
+        select: { id: true },
+      }),
+    ]);
+    // Jadwal hanya untuk TA aktif (bila ada) — hindari jadwal basi dari TA lama.
+    const activeEntries = activeYear
+      ? entries.filter((e) => e.assignment.academicYear.isActive)
+      : entries;
+    const days: {
+      date: string;
+      dayOfWeek: number;
+      lessons: {
+        employeeId: string;
+        employeeName: string;
+        subjectName: string;
+        className: string;
+        startMinute: number;
+        endMinute: number;
+        room: string | null;
+      }[];
+      events: { id: string; title: string; type: string; note: string | null }[];
+      isHoliday: boolean;
+    }[] = [];
+    for (let d = 1; d <= daysInMonth; d++) {
+      const jsDate = new Date(Date.UTC(year, mon, d));
+      const dow = jsDate.getUTCDay(); // 0=Min…6=Sab — jadwal pakai 1..6
+      const lessons = activeEntries
+        .filter((e) => e.day === dow)
+        .map((e) => ({
+          employeeId: e.assignment.employee.id,
+          employeeName: e.assignment.employee.name,
+          subjectName: e.assignment.subject.name,
+          className: e.assignment.class.name,
+          startMinute: e.startMinute,
+          endMinute: e.endMinute,
+          room: e.room,
+        }));
+      const dayEvents = events
+        .filter((ev) => ev.date.getUTCDate() === d)
+        .map((ev) => ({ id: ev.id, title: ev.title, type: ev.type, note: ev.note }));
+      days.push({
+        date: `${m[1]}-${m[2]}-${String(d).padStart(2, '0')}`,
+        dayOfWeek: dow,
+        lessons,
+        events: dayEvents,
+        isHoliday:
+          dow === 0 || dayEvents.some((ev) => ev.type === 'LIBUR'),
+      });
+    }
+    return { month, days };
+  }
+
+  listCalendarEvents(from?: string, to?: string) {
+    return this.prisma.academicCalendarEvent.findMany({
+      where: {
+        ...(from || to
+          ? {
+              date: {
+                ...(from ? { gte: new Date(`${from}T00:00:00Z`) } : {}),
+                ...(to ? { lte: new Date(`${to}T23:59:59Z`) } : {}),
+              },
+            }
+          : {}),
+      },
+      include: { academicYear: { select: { name: true } } },
+      orderBy: { date: 'asc' },
+      take: 500,
+    });
+  }
+
+  async createCalendarEvent(dto: CalendarEventDto, actorId: string) {
+    const ev = await this.prisma.academicCalendarEvent.create({
+      data: {
+        date: new Date(`${dto.date}T00:00:00Z`),
+        title: dto.title.trim(),
+        type: dto.type,
+        note: dto.note ?? null,
+        academicYearId: dto.academicYearId ?? null,
+      },
+    });
+    await this.audit.log({
+      actorId,
+      action: 'calendar.event.create',
+      entity: 'academic_calendar_event',
+      entityId: ev.id,
+      metadata: { date: dto.date, title: ev.title, type: ev.type },
+    });
+    return ev;
+  }
+
+  async updateCalendarEvent(id: string, dto: Partial<CalendarEventDto>, actorId: string) {
+    const existing = await this.prisma.academicCalendarEvent.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Event tidak ditemukan.');
+    const ev = await this.prisma.academicCalendarEvent.update({
+      where: { id },
+      data: {
+        ...(dto.date !== undefined ? { date: new Date(`${dto.date}T00:00:00Z`) } : {}),
+        ...(dto.title !== undefined ? { title: dto.title.trim() } : {}),
+        ...(dto.type !== undefined ? { type: dto.type } : {}),
+        ...(dto.note !== undefined ? { note: dto.note } : {}),
+        ...(dto.academicYearId !== undefined
+          ? { academicYearId: dto.academicYearId }
+          : {}),
+      },
+    });
+    await this.audit.log({
+      actorId,
+      action: 'calendar.event.update',
+      entity: 'academic_calendar_event',
+      entityId: id,
+    });
+    return ev;
+  }
+
+  async deleteCalendarEvent(id: string, actorId: string) {
+    const existing = await this.prisma.academicCalendarEvent.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Event tidak ditemukan.');
+    await this.prisma.academicCalendarEvent.delete({ where: { id } });
+    await this.audit.log({
+      actorId,
+      action: 'calendar.event.delete',
+      entity: 'academic_calendar_event',
+      entityId: id,
+      metadata: { title: existing.title },
+    });
+    return { deleted: true };
   }
 
   // ---------- Curriculum & subjects ----------

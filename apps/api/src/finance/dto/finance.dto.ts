@@ -273,6 +273,13 @@ export class CreateInvoiceDto {
   @MaxLength(300)
   note?: string;
 
+  /** Kirim pengingat WA ke ortu setelah tagihan dibuat (default: ya). */
+  @emptyToUndefined()
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  notifyParent?: boolean;
+
   @ValidateNested({ each: true })
   @Type(() => InvoiceItemInput)
   @IsArray()
@@ -360,6 +367,13 @@ export class GenerateBillingDto {
   @IsOptional()
   @IsDateString()
   dueAt?: string;
+
+  /** Kirim pengingat WA ke ortu tiap siswa (default: ya). */
+  @emptyToUndefined()
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  notifyParents?: boolean;
 }
 
 export class PaymentAllocationInput {

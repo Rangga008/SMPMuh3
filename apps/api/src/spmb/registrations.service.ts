@@ -105,16 +105,26 @@ export class RegistrationsService {
       }
       waveId = wave.id;
     } else {
-      const waves = await this.prisma.registrationWave.findMany({
-        where: { academicYearId: year.id, isActive: true },
-        orderBy: { order: 'asc' },
-      });
-      if (waves.length > 1) {
-        throw new BadRequestException(
-          `Tahun ajaran ${year.name} punya beberapa gelombang — pilih salah satu.`,
-        );
+      // Prioritas: gelombang yang dipasang admin di entri titipan —
+      // ortu tak perlu memilih lagi.
+      if (entry.waveId) {
+        const assigned = await this.prisma.registrationWave.findFirst({
+          where: { id: entry.waveId, academicYearId: year.id, isActive: true },
+        });
+        waveId = assigned?.id ?? null;
       }
-      waveId = waves[0]?.id ?? null;
+      if (!waveId) {
+        const waves = await this.prisma.registrationWave.findMany({
+          where: { academicYearId: year.id, isActive: true },
+          orderBy: { order: 'asc' },
+        });
+        if (waves.length > 1) {
+          throw new BadRequestException(
+            `Tahun ajaran ${year.name} punya beberapa gelombang — pilih salah satu.`,
+          );
+        }
+        waveId = waves[0]?.id ?? null;
+      }
     }
 
     const existing = await this.prisma.registration.findUnique({
@@ -165,6 +175,8 @@ export class RegistrationsService {
           parentId,
           candidateId: dto.candidateId,
           registrationId: created.id,
+          // Sinkron gelombang entri dengan gelombang pendaftaran yang dipilih.
+          waveId,
         },
       });
       if (claimed.count === 0) {

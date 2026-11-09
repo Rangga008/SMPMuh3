@@ -21,6 +21,7 @@ import { WhatsappService } from './whatsapp.service';
 
 const entryInclude = {
   academicYear: { select: { id: true, name: true, quota: true } },
+  wave: { select: { id: true, name: true } },
   parent: { select: { id: true, name: true, email: true, phone: true } },
   candidate: { select: { id: true, name: true } },
 } satisfies Prisma.TitipanEntryInclude;
@@ -61,14 +62,21 @@ export class TitipanService {
     );
   }
 
-  /** Papan antrean publik (pola data-titipan SPMB) — nama tampil, kontak tidak. */
+  /**
+   * Papan antrean publik — nama tampil, kontak tidak. Hanya antrean aktif:
+   * entri yang sudah jadi pendaftaran/dibatalkan tidak tampil lagi (mereka
+   * sudah pindah ke data pendaftar). Urutan antrean: posisi 1 teratas.
+   */
   async publicBoard(academicYearId?: string) {
+    await this.reconcileRegistered();
     const entries = await this.prisma.titipanEntry.findMany({
       where: {
-        status: { not: 'CANCELLED' },
+        // Antrean + yang menunggu verifikasi; REGISTERED/CANCELLED tidak
+        // tampil — sudah pindah ke data pendaftar / keluar antrean.
+        status: { notIn: ['REGISTERED', 'CANCELLED'] },
         ...(academicYearId ? { academicYearId } : {}),
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ academicYearId: 'asc' }, { queueNo: 'asc' }],
       include: entryInclude,
       take: 500,
     });
@@ -87,6 +95,7 @@ export class TitipanService {
     const year = await this.assertYearOpen(dto.academicYearId);
     const entry = await this.allocate({
       academicYearId: year.id,
+      waveId: await this.resolveWaveId(year.id, dto.waveId),
       candidateName: dto.candidateName.trim(),
       birthPlace: dto.birthPlace,
       birthDate: dto.birthDate ? new Date(dto.birthDate) : undefined,
@@ -100,11 +109,12 @@ export class TitipanService {
 
   // ---------- Orang tua (login) ----------
 
-  listForParent(parentId: string) {
+  async listForParent(parentId: string) {
+    await this.reconcileRegistered();
     return this.prisma.titipanEntry
       .findMany({
         where: { parentId },
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ academicYearId: 'asc' }, { queueNo: 'asc' }],
         include: entryInclude,
       })
       .then(async (entries) => {
@@ -141,6 +151,7 @@ export class TitipanService {
     const contact = dto.guardianPhone ?? parent.phone ?? undefined;
     const entry = await this.allocate({
       academicYearId: year.id,
+      waveId: await this.resolveWaveId(year.id, dto.waveId),
       parentId,
       candidateId: candidate.id,
       candidateName: candidate.name,
@@ -177,12 +188,17 @@ export class TitipanService {
 
   async listForAdmin(options: {
     academicYearId?: string | undefined;
+    waveId?: string | undefined;
     status?: TitipanStatus | undefined;
     search?: string | undefined;
   }) {
+    await this.reconcileRegistered();
     const where: Prisma.TitipanEntryWhereInput = {};
     if (options.academicYearId) where.academicYearId = options.academicYearId;
-    if (options.status) where.status = options.status;
+    if (options.waveId) where.waveId = options.waveId;
+    // Tanpa filter status → antrean aktif saja; REGISTERED/CANCELLED
+    // tetap bisa dilihat lewat filter status (riwayat, bukan antrean).
+    where.status = options.status ?? { notIn: ['REGISTERED', 'CANCELLED'] };
     if (options.search) {
       where.OR = [
         { candidateName: { contains: options.search, mode: 'insensitive' } },
@@ -205,6 +221,7 @@ export class TitipanService {
 
   /** Ringkasan per tahun ajaran (kuota, antrean, kode). */
   async adminSummary() {
+    await this.reconcileRegistered();
     const years = await this.prisma.academicYear.findMany({
       orderBy: { startDate: 'asc' },
     });
@@ -348,6 +365,22 @@ export class TitipanService {
     }
     const data: Prisma.TitipanEntryUpdateInput = {};
     if (dto.note !== undefined) data.note = dto.note;
+    if (dto.waveId !== undefined) {
+      // null/lepas → kosongkan; id → harus gelombang milik TA entri
+      if (dto.waveId === null || dto.waveId === '') {
+        data.wave = { disconnect: true };
+      } else {
+        const wave = await this.prisma.registrationWave.findFirst({
+          where: { id: dto.waveId, academicYearId: entry.academicYearId },
+        });
+        if (!wave) {
+          throw new BadRequestException(
+            'Gelombang tidak ditemukan di tahun ajaran entri ini.',
+          );
+        }
+        data.wave = { connect: { id: wave.id } };
+      }
+    }
     if (dto.status !== undefined) {
       data.status = dto.status;
       if (dto.status === 'WAITING' && entry.status === 'PENDING') {
@@ -388,6 +421,100 @@ export class TitipanService {
 
   // ---------- intern ----------
 
+  /**
+   * Rekonsiliasi: entri aktif (PENDING/WAITING/CODE_SENT) yang calon muridnya
+   * sudah punya pendaftaran di tahun ajaran yang sama → tandai REGISTERED dan
+   * tautkan registrationId. Menutup celah saat pendaftaran dibuat di luar
+   * alur redeem kode (mis. kode dari entri lain atau dibuat admin) — entri
+   * tak lagi "nyangkut" di antrean padahal anaknya sudah mendaftar.
+   */
+  private async reconcileRegistered() {
+    const stale = await this.prisma.titipanEntry.findMany({
+      where: { status: { in: [...TITIPAN_ACTIVE_STATUSES] } },
+      select: {
+        id: true,
+        candidateId: true,
+        candidateName: true,
+        guardianPhone: true,
+        academicYearId: true,
+        parent: { select: { phone: true } },
+      },
+    });
+    if (stale.length === 0) return;
+    const yearIds = [...new Set(stale.map((s) => s.academicYearId))];
+    const regs = await this.prisma.registration.findMany({
+      where: { academicYearId: { in: yearIds } },
+      select: {
+        id: true,
+        candidateId: true,
+        parentId: true,
+        academicYearId: true,
+        candidate: { select: { id: true, name: true } },
+        parent: { select: { phone: true } },
+      },
+    });
+    // Kunci 1: candidateId langsung (entri akun). Kunci 2 untuk entri guest
+    // (candidateId null): nama saling-memuat per TA — nama pendaftaran yang
+    // seluruh katanya ada di nama titipan (atau sebaliknya) dianggap sama;
+    // HP bila keduanya punya harus cocok agar tak salah taut ke saudara.
+    const words = (s: string) =>
+      new Set(s.trim().toUpperCase().split(/\s+/).filter(Boolean));
+    const subset = (a: Set<string>, b: Set<string>) =>
+      [...a].every((w) => b.has(w));
+    const regByCand = new Map(
+      regs.map((r) => [`${r.academicYearId}:${r.candidateId}`, r] as const),
+    );
+    const groups = new Map<
+      string,
+      { registrationId: string; candidateId: string; parentId: string; ids: string[] }
+    >();
+    const push = (hit: (typeof regs)[number], entryId: string) => {
+      const g = groups.get(hit.id) ?? {
+        registrationId: hit.id,
+        candidateId: hit.candidateId,
+        parentId: hit.parentId,
+        ids: [],
+      };
+      g.ids.push(entryId);
+      groups.set(hit.id, g);
+    };
+    for (const s of stale) {
+      if (s.candidateId) {
+        const hit = regByCand.get(`${s.academicYearId}:${s.candidateId}`);
+        if (hit) push(hit, s.id);
+        continue;
+      }
+      const entryWords = words(s.candidateName);
+      // HP <9 digit = data tak valid → diabaikan sebagai sinyal pencocokan.
+      const usable = (p: string | null | undefined) =>
+        p && p.replace(/\D/g, '').length >= 9 ? p : null;
+      const entryPhone = usable(s.guardianPhone ?? s.parent?.phone);
+      const hit = regs.find((r) => {
+        if (r.academicYearId !== s.academicYearId) return false;
+        const candWords = words(r.candidate.name);
+        if (!subset(entryWords, candWords) && !subset(candWords, entryWords)) {
+          return false;
+        }
+        const regPhone = usable(r.parent?.phone);
+        return !entryPhone || !regPhone || entryPhone === regPhone;
+      });
+      if (hit) push(hit, s.id);
+    }
+    for (const g of groups.values()) {
+      await this.prisma.titipanEntry.updateMany({
+        where: { id: { in: g.ids } },
+        data: {
+          status: 'REGISTERED',
+          registrationId: g.registrationId,
+          // Entri guest hasil nama-cocok sekalian ditautkan ke kandidat &
+          // akun ortu — tampil di "Daftar Titipan Saya" sebagai Sudah Daftar.
+          candidateId: g.candidateId,
+          parentId: g.parentId,
+        },
+      });
+    }
+  }
+
   private async mustGet(id: string) {
     const entry = await this.prisma.titipanEntry.findUnique({
       where: { id },
@@ -409,9 +536,33 @@ export class TitipanService {
     return year;
   }
 
+  /**
+   * Gelombang sasaran entri: pakai pilihan caller bila valid (milik TA & aktif),
+   * kalau kosong ambil gelombang aktif pertama tahun ajaran tsb; null bila belum ada.
+   */
+  private async resolveWaveId(academicYearId: string, waveId?: string) {
+    if (waveId) {
+      const wave = await this.prisma.registrationWave.findFirst({
+        where: { id: waveId, academicYearId, isActive: true },
+      });
+      if (!wave) {
+        throw new BadRequestException(
+          'Gelombang tidak valid untuk tahun ajaran ini.',
+        );
+      }
+      return wave.id;
+    }
+    const first = await this.prisma.registrationWave.findFirst({
+      where: { academicYearId, isActive: true },
+      orderBy: [{ order: 'asc' }, { startDate: 'asc' }],
+    });
+    return first?.id ?? null;
+  }
+
   /** Alokasi nomor antre per tahun ajaran (retry bila balapan unik). */
   private async allocate(data: {
     academicYearId: string;
+    waveId?: string | null;
     parentId?: string | undefined;
     candidateId?: string | undefined;
     candidateName: string;
@@ -422,7 +573,7 @@ export class TitipanService {
     guardianPhone?: string | null | undefined;
     infoSource?: string | null | undefined;
   }) {
-    const { academicYearId, parentId, candidateId, ...rest } = data;
+    const { academicYearId, waveId, parentId, candidateId, ...rest } = data;
     for (let attempt = 0; attempt < 5; attempt++) {
       const max = await this.prisma.titipanEntry.aggregate({
         where: { academicYearId },
@@ -440,6 +591,7 @@ export class TitipanService {
             infoSource: rest.infoSource ?? null,
             queueNo: (max._max.queueNo ?? 0) + 1,
             academicYear: { connect: { id: academicYearId } },
+            ...(waveId ? { wave: { connect: { id: waveId } } } : {}),
             ...(parentId ? { parent: { connect: { id: parentId } } } : {}),
             ...(candidateId
               ? { candidate: { connect: { id: candidateId } } }
@@ -555,6 +707,8 @@ export class TitipanService {
       id: e.id,
       academicYearId: e.academicYearId,
       academicYearName: e.academicYear.name,
+      waveId: e.waveId,
+      waveName: e.wave?.name ?? null,
       candidateId: e.candidateId,
       candidateName: e.candidateName,
       birthPlace: e.birthPlace,

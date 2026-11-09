@@ -69,10 +69,21 @@ export class UsersService {
     });
   }
 
-  /** List akun orang tua SPMB beserta ringkasan pendaftarannya. */
-  listParents() {
+  /**
+   * List akun orang tua SPMB beserta ringkasan pendaftarannya.
+   * Filter gelombang/TA menyaring ortu yang punya pendaftaran di cakupan tsb.
+   */
+  listParents(filter?: { waveId?: string | undefined; academicYearId?: string | undefined }) {
+    const regFilter: { waveId?: string; academicYearId?: string } = {};
+    if (filter?.waveId) regFilter.waveId = filter.waveId;
+    if (filter?.academicYearId) regFilter.academicYearId = filter.academicYearId;
     return this.prisma.user.findMany({
-      where: { roles: { some: { role: { key: 'spmb_parent' } } } },
+      where: {
+        roles: { some: { role: { key: 'spmb_parent' } } },
+        ...(Object.keys(regFilter).length
+          ? { registrations: { some: regFilter } }
+          : {}),
+      },
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,

@@ -90,6 +90,22 @@ export const NAV: NavItem[] = [
         enabled: true,
       },
       {
+        key: 'tu-absensi',
+        label: 'Absensi Pegawai',
+        icon: '•',
+        href: '/tata-usaha/absensi',
+        permission: PERMISSIONS.TATAUSAHA_READ,
+        enabled: true,
+      },
+      {
+        key: 'tu-kalender',
+        label: 'Kalender Akademik',
+        icon: '•',
+        href: '/tata-usaha/kalender',
+        permission: PERMISSIONS.EMPLOYEE_READ,
+        enabled: true,
+      },
+      {
         key: 'surat',
         label: 'Surat Menyurat',
         icon: '•',
@@ -223,7 +239,7 @@ export const NAV: NavItem[] = [
       },
       {
         key: 'keuangan-payroll',
-        label: 'Payroll',
+        label: 'Gaji & Honor',
         icon: '•',
         href: '/keuangan/payroll',
         permission: PERMISSIONS.PAYROLL_READ,
@@ -231,7 +247,7 @@ export const NAV: NavItem[] = [
       },
       {
         key: 'keuangan-payroll-absensi',
-        label: 'Absensi Pegawai',
+        label: 'Absensi (Sinkron Gaji)',
         icon: '•',
         href: '/keuangan/payroll/absensi',
         permission: PERMISSIONS.PAYROLL_READ,
@@ -239,7 +255,7 @@ export const NAV: NavItem[] = [
       },
       {
         key: 'keuangan-payroll-pengaturan',
-        label: 'Pengaturan Payroll',
+        label: 'Pengaturan Gaji',
         icon: '•',
         href: '/keuangan/payroll/pengaturan',
         permission: PERMISSIONS.PAYROLL_READ,

@@ -96,6 +96,41 @@ export class PayrollService {
     return { deleted: true };
   }
 
+  /** Pengaturan payroll global — tarif potongan keterlambatan dari data absensi. */
+  getPayrollSettings() {
+    return this.prisma.payrollSetting.upsert({
+      where: { id: 'global' },
+      update: {},
+      create: { id: 'global' },
+    });
+  }
+
+  async updatePayrollSettings(
+    dto: { lateDeductionPerDay?: number; lateDeductionPerMin?: number },
+    actorId: string,
+  ) {
+    const s = await this.prisma.payrollSetting.upsert({
+      where: { id: 'global' },
+      update: {
+        ...(dto.lateDeductionPerDay !== undefined
+          ? { lateDeductionPerDay: Math.max(0, dto.lateDeductionPerDay) }
+          : {}),
+        ...(dto.lateDeductionPerMin !== undefined
+          ? { lateDeductionPerMin: Math.max(0, dto.lateDeductionPerMin) }
+          : {}),
+      },
+      create: { id: 'global' },
+    });
+    await this.audit.log({
+      actorId,
+      action: 'payroll.settings.update',
+      entity: 'payroll_setting',
+      entityId: 'global',
+      metadata: JSON.parse(JSON.stringify(dto)) as Record<string, number>,
+    });
+    return s;
+  }
+
   /** Pengaturan payroll pegawai: golongan, masa kerja, jam wajib, tarif. */
   async updateEmployeeSettings(employeeId: string, dto: EmployeePayrollSettingsDto, actorId: string) {
     const emp = await this.prisma.employee.findUnique({ where: { id: employeeId } });
@@ -619,6 +654,9 @@ export class PayrollService {
       where: { isActive: true },
       include: { deductionType: true },
     });
+    const payrollSettings = await tx.payrollSetting.findUnique({
+      where: { id: 'global' },
+    });
     const loans = await tx.loan.findMany({
       where: { status: 'ACTIVE', startMonth: { lte: month } },
     });
@@ -718,6 +756,26 @@ export class PayrollService {
         const kind = d.deductionType.key === PENSION_KEY ? 'PENSION' : 'DEDUCTION';
         lines.push({ kind, label: d.deductionType.name, amount: -amt, refId: d.id });
         ded += amt;
+      }
+
+      // Potongan keterlambatan otomatis — dari rekap absensi mesin/manual.
+      const lateDays = att.filter((a) => a.status === 'TELAT').length;
+      const lateMin = att.reduce((s, a) => s + (a.lateMinutes ?? 0), 0);
+      const lateDed =
+        lateDays * (payrollSettings?.lateDeductionPerDay ?? 0) +
+        lateMin * (payrollSettings?.lateDeductionPerMin ?? 0);
+      if (lateDed > 0) {
+        const parts: string[] = [];
+        if (lateDays > 0 && (payrollSettings?.lateDeductionPerDay ?? 0) > 0)
+          parts.push(`${lateDays} hari`);
+        if (lateMin > 0 && (payrollSettings?.lateDeductionPerMin ?? 0) > 0)
+          parts.push(`${lateMin} menit`);
+        lines.push({
+          kind: 'DEDUCTION',
+          label: `Potongan keterlambatan${parts.length ? ` — ${parts.join(' + ')}` : ''}`,
+          amount: -lateDed,
+        });
+        ded += lateDed;
       }
 
       for (const l of loans.filter((x) => x.employeeId === emp.id)) {

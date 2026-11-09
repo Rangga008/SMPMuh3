@@ -31,11 +31,19 @@ export function getTokens(): AuthTokens | null {
     return null;
   }
 }
+/** Event yang didengar HeaderAuth agar tombol akun langsung sinkron. */
+const AUTH_EVENT = 'spmb:auth-changed';
+const emitAuthChange = () =>
+  window.dispatchEvent(new Event(AUTH_EVENT));
+export { AUTH_EVENT };
+
 export function setTokens(t: AuthTokens) {
   localStorage.setItem(TOKEN_KEY, JSON.stringify(t));
+  emitAuthChange();
 }
 export function clearTokens() {
   localStorage.removeItem(TOKEN_KEY);
+  emitAuthChange();
 }
 
 export class ApiError extends Error {

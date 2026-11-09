@@ -1,22 +1,24 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { buttonClasses } from '@smpmuh3/ui';
 import { spmbConfig } from '@/config/spmb.config';
-import { getTokens, logout, me } from '@/lib/api';
+import { AUTH_EVENT, getTokens, logout, me } from '@/lib/api';
 
 /**
  * Auth-aware header actions — "Cek Status" selalu tampil sebagai tombol
- * khusus; tombol akun berubah sesuai sesi. Sesi divalidasi di background:
- * token basi → dibersihkan, tampilan kembali ke Masuk/Daftar.
+ * khusus; tombol akun berubah sesuai sesi. Status dicek ulang tiap ada
+ * event auth (login/logout di halaman mana pun) dan tiap pindah halaman,
+ * karena header di layout tidak ikut re-mount saat navigasi client-side.
  */
 export function HeaderAuth({ mobile = false }: { mobile?: boolean }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [authed, setAuthed] = useState<boolean | null>(null);
 
-  useEffect(() => {
+  const check = useCallback(() => {
     if (!getTokens()?.accessToken) {
       setAuthed(false);
       return;
@@ -29,6 +31,13 @@ export function HeaderAuth({ mobile = false }: { mobile?: boolean }) {
       () => setAuthed(false),
     );
   }, []);
+
+  useEffect(check, [check, pathname]);
+
+  useEffect(() => {
+    window.addEventListener(AUTH_EVENT, check);
+    return () => window.removeEventListener(AUTH_EVENT, check);
+  }, [check]);
 
   const wrap = mobile
     ? 'mt-3 flex flex-col gap-2'
