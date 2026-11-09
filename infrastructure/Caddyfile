@@ -1,0 +1,42 @@
+# Caddy — reverse proxy + HTTPS otomatis (Let's Encrypt) untuk produksi.
+# Cert diterbitkan otomatis begitu DNS A-record mengarah ke server ini.
+{
+	email admin@smpm3bdg.sch.id
+	admin off
+}
+
+(common) {
+	encode zstd gzip
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		X-Frame-Options SAMEORIGIN
+		Referrer-Policy strict-origin-when-cross-origin
+	}
+}
+
+# Apex + www → SPMB (satu-satunya frontend publik yang ada saat ini;
+# public-web masih stub). Ganti target ke public-web bila app itu sudah ada.
+smpm3bdg.sch.id, www.smpm3bdg.sch.id {
+	import common
+	reverse_proxy spmb:3001
+}
+
+spmb.smpm3bdg.sch.id {
+	import common
+	reverse_proxy spmb:3001
+}
+
+op.smpm3bdg.sch.id {
+	import common
+	reverse_proxy operational:3002
+}
+
+api.smpm3bdg.sch.id {
+	import common
+	# Upload dokumen/selfie lewat API — izinkan body s/d 25 MB.
+	request_body {
+		max_size 25MB
+	}
+	reverse_proxy api:4000
+}
