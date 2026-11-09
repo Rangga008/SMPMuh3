@@ -43,7 +43,9 @@ import { OpsModule } from './ops/ops.module';
       {
         name: 'default',
         ttl: 60_000,
-        limit: 100,
+        // 300/menit per IP — satu IP publik sekolah (NAT) dipakai puluhan
+        // guru; limit 100 terlalu ketat untuk jam sibuk (absen pagi).
+        limit: 300,
       },
     ]),
     CoreModule,

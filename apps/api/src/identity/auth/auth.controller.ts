@@ -14,6 +14,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import type { AuthTokens, AuthUser } from '@smpmuh3/types';
 import { CurrentUser } from '../decorators/current-user.decorator';
@@ -33,7 +34,10 @@ import { RefreshDto } from './dto/refresh.dto';
 export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
+  // Endpoint tanpa auth diperketat (20/menit/IP) — mitigasi brute force,
+  // sementara limit global longgar untuk traffic NAT sekolah.
   @Public()
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post('register')
   register(@Body() dto: RegisterDto, @Req() req: Request): Promise<AuthTokens> {
     return this.auth.register(dto.name, dto.phone, dto.email, dto.password, {
@@ -43,6 +47,7 @@ export class AuthController {
   }
 
   @Public()
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
   forgotPassword(
@@ -56,6 +61,7 @@ export class AuthController {
   }
 
   @Public()
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
   resetPassword(@Body() dto: ResetPasswordDto): Promise<void> {
@@ -63,6 +69,7 @@ export class AuthController {
   }
 
   @Public()
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post('login')
   @HttpCode(HttpStatus.OK)
   login(@Body() dto: LoginDto, @Req() req: Request): Promise<AuthTokens> {
