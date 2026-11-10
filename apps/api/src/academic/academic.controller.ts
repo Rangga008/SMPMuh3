@@ -163,6 +163,7 @@ export class AcademicController {
       throw new BadRequestException('File tidak dapat dibaca');
     }
     const rows: Parameters<AcademicService['importEmployees']>[0] = [];
+    let foundHeader = false;
     const normType = (v: string) => {
       const t = v.toUpperCase().replace(/\s+/g, '_');
       if (/^(GURU|TEACHER)/.test(t)) return 'TEACHER';
@@ -189,6 +190,7 @@ export class AcademicController {
         return /^(nama|name)/.test(first) && r.some((c) => /nip|nuptk/i.test(String(c)));
       });
       if (hi < 0) continue;
+      foundHeader = true;
       const header = (aoa[hi] ?? []).map((c) => String(c).toLowerCase());
       const col = (...keys: string[]) => header.findIndex((h) => keys.some((k) => h.includes(k)));
       const ix = {
@@ -217,7 +219,13 @@ export class AcademicController {
         });
       }
     }
-    if (!rows.length) throw new BadRequestException('File tidak berisi baris data.');
+    if (!rows.length) {
+      throw new BadRequestException(
+        foundHeader
+          ? 'File hanya berisi header/baris contoh — isi data pegawai mulai BARIS 8 lalu import ulang.'
+          : 'Baris header tidak ditemukan — unduh template lewat tombol "Unduh Template" lalu isi datanya.',
+      );
+    }
     return this.academic.importEmployees(rows, u.id, {
       dryRun: dry === '1' || dry === 'true',
       createAccounts: accounts === '1' || accounts === 'true',

@@ -214,7 +214,7 @@ export function Shell({ children }: { children: ReactNode }) {
   }, [router]);
 
   const nav = useMemo(
-    () => (user ? navFor(user.permissions) : []),
+    () => (user ? navFor(user.permissions, user.roles) : []),
     [user],
   );
 

@@ -11,9 +11,21 @@ export interface NavItem {
   icon: string; // emoji glyph — swap for an icon system later
   href?: string;
   permission?: string;
+  /** Hanya tampil bila user punya salah satu role ini (menu bidang). */
+  roles?: string[];
+  /** Sembunyikan bila user punya salah satu role ini (versi ringkas item). */
+  hideRoles?: string[];
   enabled: boolean;
   children?: NavItem[];
 }
+
+/** Role pengelola tiap bidang — admin & kepsek melihat semua. */
+const ADM = ['superadmin', 'ops_admin', 'kepala_sekolah'];
+const KESISWAAN_ROLES = [...ADM, 'staff_kesiswaan'];
+const TU_ROLES = [...ADM, 'kepala_tu', 'staff_tu'];
+const KEUANGAN_ROLES = [...ADM, 'bendahara'];
+const KEPEGAWAIAN_ROLES = [...ADM, 'kepala_tu', 'staff_tu'];
+const SPMB_ROLES = [...ADM, 'spmb_admin'];
 
 export const NAV: NavItem[] = [
   { key: 'dashboard', label: 'Dashboard', icon: '⌂', href: '/', enabled: true },
@@ -58,6 +70,7 @@ export const NAV: NavItem[] = [
     icon: '👤',
     href: '/kepegawaian',
     permission: PERMISSIONS.EMPLOYEE_READ,
+    roles: KEPEGAWAIAN_ROLES,
     enabled: true,
   },
   {
@@ -126,10 +139,20 @@ export const NAV: NavItem[] = [
     ],
   },
   {
+    key: 'data-siswa',
+    label: 'Data Siswa',
+    icon: '🎓',
+    href: '/kesiswaan',
+    permission: PERMISSIONS.STUDENT_READ,
+    hideRoles: KESISWAAN_ROLES,
+    enabled: true,
+  },
+  {
     key: 'kesiswaan',
     label: 'Kesiswaan',
     icon: '🎓',
     permission: PERMISSIONS.STUDENT_READ,
+    roles: KESISWAAN_ROLES,
     enabled: true,
     children: [
       {
@@ -154,6 +177,7 @@ export const NAV: NavItem[] = [
     key: 'tata-usaha',
     label: 'Tata Usaha',
     icon: '📁',
+    roles: TU_ROLES,
     enabled: true,
     children: [
       {
@@ -211,6 +235,7 @@ export const NAV: NavItem[] = [
     label: 'SPMB',
     icon: '📋',
     permission: PERMISSIONS.SPMB_REGISTRATION_READ,
+    roles: SPMB_ROLES,
     children: [
       {
         key: 'spmb-pendaftar',
@@ -254,6 +279,7 @@ export const NAV: NavItem[] = [
     label: 'Keuangan',
     icon: '💰',
     permission: PERMISSIONS.FINANCE_READ,
+    roles: KEUANGAN_ROLES,
     enabled: true,
     children: [
       {
@@ -447,10 +473,16 @@ export const NAV: NavItem[] = [
   },
 ];
 
-/** Filter the nav tree by the user's permission set. */
-export function navFor(permissions: readonly string[]): NavItem[] {
+/** Filter the nav tree by the user's permission set + role (menu bidang). */
+export function navFor(
+  permissions: readonly string[],
+  roles: readonly string[] = [],
+): NavItem[] {
   const has = (p?: string) => !p || permissions.includes(p);
-  return NAV.filter((item) => has(item.permission))
+  const roleOk = (item: NavItem) =>
+    (!item.roles || item.roles.some((r) => roles.includes(r))) &&
+    !(item.hideRoles?.some((r) => roles.includes(r)));
+  return NAV.filter((item) => has(item.permission) && roleOk(item))
     .map((item) =>
       item.children
         ? { ...item, children: item.children.filter((c) => has(c.permission)) }
