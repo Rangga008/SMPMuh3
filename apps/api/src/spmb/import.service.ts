@@ -40,7 +40,13 @@ export class SpmbImportService {
     private readonly storage: StorageService,
   ) {}
 
-  async importExcel(buffer: Buffer, actorId: string) {
+  /**
+   * dry=true → hanya mem-parsing & memvalidasi (tidak menulis apa pun).
+   * Mengembalikan `rows` per-baris untuk pratinjau di frontend.
+   * Anti-dobel: baris ganda di file + pendaftar dengan nama & no HP ortu
+   * yang sama di tahun ajaran ini dilewati.
+   */
+  async importExcel(buffer: Buffer, actorId: string, dry = false) {
     let workbook: XLSX.WorkBook;
     try {
       workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true });
@@ -59,7 +65,22 @@ export class SpmbImportService {
     const parentRole = await this.prisma.role.findUniqueOrThrow({
       where: { key: 'spmb_parent' },
     });
-    const results = { created: 0, skipped: 0, errors: [] as string[] };
+    interface RowResult {
+      row: number;
+      sheet: string;
+      nama: string;
+      noHp: string;
+      status: 'BARU' | 'LEWATI';
+      msg: string;
+    }
+    const results = {
+      created: 0,
+      skipped: 0,
+      errors: [] as string[],
+      rows: [] as RowResult[],
+    };
+    // Kunci dedup dalam file: no_hp ortu + nama calon.
+    const seen = new Set<string>();
 
     // Semua sheet diproses — nama sheet = gelombang bila cocok.
     for (const sheetName of workbook.SheetNames) {
@@ -75,6 +96,15 @@ export class SpmbImportService {
 
       for (const [i, raw] of rows.entries()) {
         const line = i + 2; // header = baris 1
+        const push = (status: RowResult['status'], msg: string, r?: Partial<RowResult>) =>
+          results.rows.push({
+            row: line,
+            sheet: sheetName,
+            nama: r?.nama ?? '',
+            noHp: r?.noHp ?? '',
+            status,
+            msg,
+          });
         try {
           const row = this.parseRow(raw, line);
           const wave = row.gelombang
@@ -83,54 +113,102 @@ export class SpmbImportService {
               )
             : sheetWave;
 
-        // Akun ortu — cari by no_hp; buat baru (password acak) jika belum ada.
-        let parent = await this.prisma.user.findUnique({
-          where: { phone: row.noHp },
-        });
-        if (!parent) {
-          parent = await this.prisma.user.create({
+          const key = `${row.noHp}|${row.nama.toLowerCase()}`;
+          if (seen.has(key)) {
+            results.skipped++;
+            push('LEWATI', 'ganda di file — baris sebelumnya sudah memuat data ini', {
+              nama: row.nama,
+              noHp: row.noHp,
+            });
+            continue;
+          }
+          seen.add(key);
+
+          // Akun ortu — cari by no_hp; buat baru (password acak) jika belum ada.
+          let parent = await this.prisma.user.findUnique({
+            where: { phone: row.noHp },
+          });
+
+          // Sudah ada pendaftaran calon (nama sama) dari ortu ini di TA ini?
+          if (parent) {
+            const dup = await this.prisma.registration.findFirst({
+              where: {
+                academicYearId: year.id,
+                parentId: parent.id,
+                candidate: {
+                  name: { equals: row.nama, mode: 'insensitive' },
+                },
+              },
+              select: { number: true },
+            });
+            if (dup) {
+              results.skipped++;
+              push('LEWATI', `sudah terdaftar (${dup.number})`, {
+                nama: row.nama,
+                noHp: row.noHp,
+              });
+              continue;
+            }
+          }
+
+          if (dry) {
+            results.created++;
+            push('BARU', parent ? 'akun ortu sudah ada — dipakai' : 'akun ortu baru dibuat', {
+              nama: row.nama,
+              noHp: row.noHp,
+            });
+            continue;
+          }
+
+          if (!parent) {
+            parent = await this.prisma.user.create({
+              data: {
+                name: row.namaOrtu.toUpperCase(),
+                phone: row.noHp,
+                email: row.emailOrtu ?? null,
+                passwordHash: await argon2.hash(
+                  randomBytes(24).toString('hex'),
+                ),
+                roles: { create: { roleId: parentRole.id } },
+              },
+            });
+          }
+
+          const candidate = await this.prisma.candidate.create({
             data: {
-              name: row.namaOrtu.toUpperCase(),
-              phone: row.noHp,
-              email: row.emailOrtu ?? null,
-              passwordHash: await argon2.hash(randomBytes(24).toString('hex')),
-              roles: { create: { roleId: parentRole.id } },
+              parentId: parent.id,
+              name: row.nama.toUpperCase(),
+              gender: row.jenisKelamin,
+              birthDate: row.tanggalLahir,
+              previousSchool: row.asalSekolah,
             },
           });
-        }
-
-        const candidate = await this.prisma.candidate.create({
-          data: {
-            parentId: parent.id,
-            name: row.nama.toUpperCase(),
-            gender: row.jenisKelamin,
-            birthDate: row.tanggalLahir,
-            previousSchool: row.asalSekolah,
-          },
-        });
-        await this.prisma.registration.create({
-          data: {
-            number: `SPMB-${year.name.split('/')[0]}-${String(randomInt(0, 1_000_000)).padStart(6, '0')}`,
-            candidateId: candidate.id,
-            parentId: parent.id,
-            academicYearId: year.id,
-            waveId: wave?.id ?? null,
-            pathway: 'reguler',
-            status: 'SUBMITTED',
-            submittedAt: new Date(),
-          },
-        });
-        results.created++;
+          await this.prisma.registration.create({
+            data: {
+              number: `SPMB-${year.name.split('/')[0]}-${String(randomInt(0, 1_000_000)).padStart(6, '0')}`,
+              candidateId: candidate.id,
+              parentId: parent.id,
+              academicYearId: year.id,
+              waveId: wave?.id ?? null,
+              pathway: 'reguler',
+              status: 'SUBMITTED',
+              submittedAt: new Date(),
+            },
+          });
+          results.created++;
+          push('BARU', 'terdaftar', { nama: row.nama, noHp: row.noHp });
         } catch (e) {
           results.skipped++;
-          results.errors.push(
-            `[${sheetName}] baris ${line}: ${e instanceof Error ? e.message : 'error'}`,
-          );
+          const msg = e instanceof Error ? e.message : 'error';
+          results.errors.push(`[${sheetName}] baris ${line}: ${msg}`);
+          push('LEWATI', msg);
         }
       }
     }
-    if (results.created === 0 && results.skipped === 0) {
-      throw new BadRequestException('File Excel kosong');
+    if (results.rows.length === 0) {
+      throw new BadRequestException(
+        'File hanya berisi header — isi data pendaftar lalu import ulang.',
+      );
     }
     return results;
   }

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Badge, Button, Field, Input, Modal } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { PageTitle } from '@/components/widgets';
+import { DataTable } from '@/components/data-table';
 import { useConfirm } from '@/components/confirm-dialog';
 import {
   createStaffUser,
@@ -196,19 +197,10 @@ export default function AccountSettingsPage() {
         <p className="mb-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{notice}</p>
       ) : null}
 
-      <div className="overflow-x-auto rounded-3xl border border-sand-200 bg-white shadow-sm">
-        <table className="w-full min-w-[44rem] text-sm">
-          <thead>
-            <tr className="border-b border-sand-200 bg-sand-50 text-left text-xs uppercase tracking-wide text-sand-500">
-              <th className="px-5 py-3">Akun</th>
-              <th className="px-5 py-3">Kontak</th>
-              <th className="px-5 py-3">Role</th>
-              <th className="px-5 py-3">Pegawai</th>
-              <th className="px-5 py-3">Status</th>
-              <th className="px-5 py-3 text-right">Aksi</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-sand-100">
+      <DataTable
+        head={['Akun', 'Kontak', 'Role', 'Pegawai', 'Status', '']}
+        empty={users.length === 0 ? 'Belum ada akun staf.' : undefined}
+      >
             {users.map((u) => (
               <tr key={u.id} className="align-top">
                 <td className="px-5 py-3.5">
@@ -283,16 +275,7 @@ export default function AccountSettingsPage() {
                 </td>
               </tr>
             ))}
-            {users.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="px-5 py-10 text-center text-sand-400">
-                  Belum ada akun staf.
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
+      </DataTable>
 
       {/* Tambah akun */}
       <Modal open={showNew} onClose={() => setShowNew(false)} title="Akun Staf Baru">

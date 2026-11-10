@@ -50,7 +50,7 @@ export default function BidangPage() {
                   </Link>
                 </td>
                 <td className="px-5 py-2.5">{m.nip ?? '—'}</td>
-                <td className="px-5 py-2.5">{m.type === 'TEACHER' ? 'Guru' : 'Staf'}</td>
+                <td className="px-5 py-2.5">{m.staffKind ? m.staffKind : m.type === 'TEACHER' ? 'Guru' : 'Tendik'}</td>
                 <td className="px-5 py-2.5">{m.phone ?? m.email ?? '—'}</td>
                 <td className="px-5 py-2.5">{m.isDeptHead ? <Badge tone="primary">Kepala Bidang</Badge> : '—'}</td>
               </tr>

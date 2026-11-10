@@ -38,6 +38,18 @@ export class EmployeeDto {
   @IsIn(EMPLOYEE_TYPES)
   type?: EmployeeType;
 
+  /** Jabatan pokok tendik — TU, LAYSUS, SATPAM, KEPALA_SEKOLAH. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  staffKind?: string;
+
+  /** Tugas tambahan — WAKASEK_KURIKULUM, KEPALA_TU, BENDAHARA_BOS, dst. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  additionalDuty?: string;
+
   @IsOptional()
   @IsEmail()
   email?: string;

@@ -183,7 +183,7 @@ export default function PayrollPengaturanPage() {
               <tr key={e.id}>
                 <td className="px-5 py-3">
                   <p className="font-medium text-sand-900">{e.name}</p>
-                  <p className="text-[10px] text-sand-400">{e.nip ?? ''} · {e.type === 'TEACHER' ? 'Guru' : 'Staf'}</p>
+                  <p className="text-[10px] text-sand-400">{e.nip ?? ''} · {e.staffKind ? e.staffKind : e.type === 'TEACHER' ? 'Guru' : 'Tendik'}</p>
                 </td>
                 <td className="px-5 py-3 text-sand-600">{e.serviceYears !== null && e.serviceYears !== undefined ? `${e.serviceYears} th` : '—'}</td>
                 <td className="px-5 py-3 text-sand-800">{e.payScale?.name ?? '—'}</td>

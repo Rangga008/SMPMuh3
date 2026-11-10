@@ -362,12 +362,20 @@ async function main() {
   // Password diambil dari STAFF_PASSWORD (default dev: staff123).
   const staffPassword = process.env.STAFF_PASSWORD ?? 'staff123';
   const staffHash = await argon2.hash(staffPassword);
-  const deptAccounts: { email: string; name: string; role: string; dept: string; isHead: boolean }[] = [
-    { email: 'kepsek@smpmuh3.sch.id', name: 'Kepala Sekolah', role: 'kepala_sekolah', dept: 'LAINNYA', isHead: true },
-    { email: 'kurikulum@smpmuh3.sch.id', name: 'Wakasek Kurikulum', role: 'staff_kurikulum', dept: 'KURIKULUM', isHead: true },
-    { email: 'kesiswaan@smpmuh3.sch.id', name: 'Wakasek Kesiswaan', role: 'staff_kesiswaan', dept: 'KESISWAAN', isHead: true },
-    { email: 'tu@smpmuh3.sch.id', name: 'Kepala Tata Usaha', role: 'kepala_tu', dept: 'TATA_USAHA', isHead: true },
-    { email: 'bendahara@smpmuh3.sch.id', name: 'Bendahara', role: 'bendahara', dept: 'KEUANGAN', isHead: true },
+  const deptAccounts: {
+    email: string; name: string; role: string; dept: string; isHead: boolean;
+    gtk: { type: 'TEACHER' | 'TENDIK'; staffKind?: string; additionalDuty?: string };
+  }[] = [
+    { email: 'kepsek@smpmuh3.sch.id', name: 'Kepala Sekolah', role: 'kepala_sekolah', dept: 'LAINNYA', isHead: true,
+      gtk: { type: 'TENDIK', staffKind: 'KEPALA_SEKOLAH' } },
+    { email: 'kurikulum@smpmuh3.sch.id', name: 'Wakasek Kurikulum', role: 'staff_kurikulum', dept: 'KURIKULUM', isHead: true,
+      gtk: { type: 'TEACHER', additionalDuty: 'WAKASEK_KURIKULUM' } },
+    { email: 'kesiswaan@smpmuh3.sch.id', name: 'Wakasek Kesiswaan', role: 'staff_kesiswaan', dept: 'KESISWAAN', isHead: true,
+      gtk: { type: 'TEACHER', additionalDuty: 'WAKASEK_KESISWAAN' } },
+    { email: 'tu@smpmuh3.sch.id', name: 'Kepala Tata Usaha', role: 'kepala_tu', dept: 'TATA_USAHA', isHead: true,
+      gtk: { type: 'TENDIK', staffKind: 'TU', additionalDuty: 'KEPALA_TU' } },
+    { email: 'bendahara@smpmuh3.sch.id', name: 'Bendahara', role: 'bendahara', dept: 'KEUANGAN', isHead: true,
+      gtk: { type: 'TENDIK', staffKind: 'TU', additionalDuty: 'BENDAHARA_BOS' } },
   ];
   for (const acc of deptAccounts) {
     const role = roles[acc.role];
@@ -388,12 +396,9 @@ async function main() {
       await prisma.employee.create({
         data: {
           name: acc.name,
-          type:
-            acc.role === 'kepala_sekolah' ? 'PRINCIPAL'
-            : acc.role === 'staff_kurikulum' ? 'KURIKULUM'
-            : acc.role === 'staff_kesiswaan' ? 'KESISWAAN'
-            : acc.role === 'bendahara' ? 'KEUANGAN'
-            : 'TU',
+          type: acc.gtk.type,
+          staffKind: acc.gtk.staffKind ?? null,
+          additionalDuty: acc.gtk.additionalDuty ?? null,
           department: acc.dept,
           isDeptHead: acc.isHead,
           email: acc.email,

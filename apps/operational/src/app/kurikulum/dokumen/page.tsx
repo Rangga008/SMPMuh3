@@ -268,7 +268,7 @@ export default function DokumenPage() {
                         onChange={(ev) => setPicked((p) => (ev.target.checked ? [...p, e.id] : p.filter((x) => x !== e.id)))} />
                       <span className="flex-1">{e.name}</span>
                       <span className="text-[10px] font-semibold text-sand-400">
-                        {[e.type === 'TEACHER' ? 'Guru' : 'Staf', e.department].filter(Boolean).join(' · ')}
+                        {[e.type === 'TEACHER' ? 'Guru' : 'Tendik', e.department].filter(Boolean).join(' · ')}
                       </span>
                     </label>
                   ))}

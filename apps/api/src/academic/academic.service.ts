@@ -39,6 +39,7 @@ export class AcademicService {
   /** Bidang diturunkan dari jenis pegawai — satu sumber, tak ada kolom ganda. */
   private static readonly DEPT_OF_TYPE: Record<string, string | null> = {
     TEACHER: null,
+    TENDIK: 'TATA_USAHA',
     STAFF: 'TATA_USAHA',
     TU: 'TATA_USAHA',
     KESISWAAN: 'KESISWAAN',
@@ -49,29 +50,182 @@ export class AcademicService {
     PRINCIPAL: null,
   };
 
-  listEmployees(type?: string, search?: string, department?: string) {
+  /** Tugas tambahan → bidang (GTK model Dapodik). */
+  private static readonly DUTY_TO_DEPT: Record<string, string> = {
+    WAKASEK_KURIKULUM: 'KURIKULUM',
+    WAKASEK_KESISWAAN: 'KESISWAAN',
+    WAKASEK_SARPRAS: 'SARPRAS',
+    KEPALA_TU: 'TATA_USAHA',
+    BENDAHARA_BOS: 'KEUANGAN',
+    BENDAHARA_RMP: 'KEUANGAN',
+    OPERATOR_DAPODIK: 'TATA_USAHA',
+    KONTEN_KREATOR: 'TATA_USAHA',
+  };
+
+  /** Tugas tambahan yang menjadikan pemegangnya kepala bidang. */
+  private static readonly HEAD_DUTIES = new Set([
+    'WAKASEK_KURIKULUM',
+    'WAKASEK_KESISWAAN',
+    'WAKASEK_SARPRAS',
+    'KEPALA_TU',
+  ]);
+
+  /** Jabatan pokok tendik → bidang. */
+  private static readonly KIND_TO_DEPT: Record<string, string | null> = {
+    TU: 'TATA_USAHA',
+    LAYSUS: 'LAYSUS',
+    SATPAM: 'LAYSUS',
+    KEPALA_SEKOLAH: null,
+  };
+
+  private static readonly VALID_DEPTS = new Set([
+    'TATA_USAHA',
+    'KESISWAAN',
+    'KURIKULUM',
+    'KEUANGAN',
+    'SARPRAS',
+    'LAYSUS',
+  ]);
+
+  /** Kelompok GTK — type lama dipetakan ke Guru/Tendik untuk filter tab. */
+  private static readonly GTK_GROUP: Record<string, string> = {
+    TEACHER: 'TEACHER',
+    KURIKULUM: 'TEACHER',
+    KESISWAAN: 'TEACHER',
+    TENDIK: 'TENDIK',
+    TU: 'TENDIK',
+    STAFF: 'TENDIK',
+    KEUANGAN: 'TENDIK',
+    SARPRAS: 'TENDIK',
+    LAYSUS: 'TENDIK',
+    PRINCIPAL: 'TENDIK',
+  };
+
+  /**
+   * Bidang efektif — urutan: tugas tambahan (wakasek/kepala TU/bendahara…)
+   * → nilai tersimpan yang valid → jabatan tendik → jenis.
+   */
+  static effectiveDept(e: {
+    type: string;
+    department: string | null;
+    staffKind?: string | null;
+    additionalDuty?: string | null;
+  }) {
+    if (e.additionalDuty && AcademicService.DUTY_TO_DEPT[e.additionalDuty]) {
+      return AcademicService.DUTY_TO_DEPT[e.additionalDuty];
+    }
+    if (e.department && AcademicService.VALID_DEPTS.has(e.department)) {
+      return e.department;
+    }
+    if (e.staffKind && e.staffKind in AcademicService.KIND_TO_DEPT) {
+      return AcademicService.KIND_TO_DEPT[e.staffKind] ?? null;
+    }
+    return AcademicService.DEPT_OF_TYPE[e.type] ?? null;
+  }
+
+  /** Kepala bidang efektif — flag tersimpan atau tugas tambahan kepala. */
+  static effectiveHead(e: { isDeptHead?: boolean; additionalDuty?: string | null }) {
+    return !!e.isDeptHead || AcademicService.HEAD_DUTIES.has(e.additionalDuty ?? '');
+  }
+
+  /** Role akun login dari GTK — tugas tambahan dulu, lalu jabatan, lalu bidang/jenis. */
+  static roleForGtk(e: {
+    type?: string | null;
+    staffKind?: string | null;
+    additionalDuty?: string | null;
+    department?: string | null;
+  }): string {
+    switch (e.additionalDuty) {
+      case 'WAKASEK_KURIKULUM':
+        return 'staff_kurikulum';
+      case 'WAKASEK_KESISWAAN':
+        return 'staff_kesiswaan';
+      case 'WAKASEK_SARPRAS':
+        return 'staff_tu';
+      case 'KEPALA_TU':
+        return 'kepala_tu';
+      case 'BENDAHARA_BOS':
+      case 'BENDAHARA_RMP':
+        return 'bendahara';
+      case 'OPERATOR_DAPODIK':
+      case 'KONTEN_KREATOR':
+        return 'staff_tu';
+    }
+    switch (e.staffKind) {
+      case 'KEPALA_SEKOLAH':
+        return 'kepala_sekolah';
+      case 'TU':
+        return 'staff_tu';
+      case 'LAYSUS':
+        return 'staff_kesiswaan';
+      case 'SATPAM':
+        return 'staff_tu';
+    }
+    switch (e.department) {
+      case 'KURIKULUM':
+        return 'staff_kurikulum';
+      case 'KESISWAAN':
+        return 'staff_kesiswaan';
+      case 'KEUANGAN':
+        return 'bendahara';
+      case 'TATA_USAHA':
+      case 'SARPRAS':
+        return 'staff_tu';
+      case 'LAYSUS':
+        return 'staff_kesiswaan';
+    }
+    // Type lama non-GTK → role bidangnya; guru → guru_mapel.
+    const legacy = AcademicService.GTK_GROUP[e.type ?? ''] ?? e.type;
+    return legacy === 'TEACHER' ? 'guru_mapel' : 'staff_tu';
+  }
+
+  async listEmployees(type?: string, search?: string, department?: string, kind?: string) {
     const where: Prisma.EmployeeWhereInput = {};
-    if (type) where.type = type as import('@prisma/client').EmployeeType;
+    if (type === 'TEACHER' || type === 'TENDIK') {
+      // Filter GTK — type lama yang segolongan ikut terbawa.
+      const group = Object.keys(AcademicService.GTK_GROUP).filter(
+        (t) => AcademicService.GTK_GROUP[t] === type,
+      );
+      where.type = { in: group } as Prisma.EnumEmployeeTypeFilter<'Employee'>;
+    } else if (type) {
+      where.type = type as import('@prisma/client').EmployeeType;
+    }
     if (search) {
       where.OR = [
         { name: { contains: search, mode: 'insensitive' } },
         { nip: { contains: search, mode: 'insensitive' } },
       ];
     }
-    if (department) where.department = department;
-    return this.prisma.employee.findMany({ where, orderBy: { name: 'asc' } });
+    const rows = await this.prisma.employee.findMany({
+      where,
+      orderBy: { name: 'asc' },
+    });
+    return rows
+      .map((e) => ({
+        ...e,
+        department: AcademicService.effectiveDept(e),
+        isDeptHead: AcademicService.effectiveHead(e),
+      }))
+      .filter(
+        (e) =>
+          (!department || e.department === department) &&
+          (!kind || e.staffKind === kind),
+      );
   }
 
   /** Anggota bidang dari pegawai yang login — untuk kepala bidang. */
   async myDepartment(userId: string) {
     const me = await this.prisma.employee.findUnique({ where: { userId } });
     if (!me) throw new NotFoundException('Akun ini belum tertaut ke data pegawai.');
-    if (!me.department) return { department: null, isHead: me.isDeptHead, members: [] };
-    const members = await this.prisma.employee.findMany({
-      where: { department: me.department, isActive: true },
-      orderBy: [{ isDeptHead: 'desc' }, { name: 'asc' }],
-    });
-    return { department: me.department, isHead: me.isDeptHead, members };
+    const dept = AcademicService.effectiveDept(me);
+    if (!dept) return { department: null, isHead: AcademicService.effectiveHead(me), members: [] };
+    const members = (
+      await this.prisma.employee.findMany({
+        where: { isActive: true },
+        orderBy: [{ isDeptHead: 'desc' }, { name: 'asc' }],
+      })
+    ).filter((e) => AcademicService.effectiveDept(e) === dept);
+    return { department: dept, isHead: AcademicService.effectiveHead(me), members };
   }
 
   async createEmployee(dto: EmployeeDto, actorId: string) {
@@ -117,18 +271,27 @@ export class AcademicService {
       userId = user.id;
     }
 
+    const type = dto.type ?? 'TEACHER';
+    const staffKind = dto.staffKind || null;
+    const additionalDuty = dto.additionalDuty || null;
     const emp = await this.prisma.employee.create({
       data: {
         name: dto.name.trim(),
         nip: dto.nip ?? null,
-        type: dto.type ?? 'TEACHER',
+        type,
+        staffKind,
+        additionalDuty,
         email: dto.email ?? null,
         phone: dto.phone ?? null,
         department:
+          AcademicService.DUTY_TO_DEPT[additionalDuty ?? ''] ??
           dto.department ??
-          AcademicService.DEPT_OF_TYPE[dto.type ?? 'TEACHER'] ??
+          AcademicService.KIND_TO_DEPT[staffKind ?? ''] ??
+          AcademicService.DEPT_OF_TYPE[type] ??
           null,
-        isDeptHead: dto.isDeptHead ?? false,
+        isDeptHead:
+          dto.isDeptHead ??
+          AcademicService.HEAD_DUTIES.has(additionalDuty ?? ''),
         isActive: dto.isActive ?? true,
         userId,
       },
@@ -152,6 +315,13 @@ export class AcademicService {
     if (existing.userId) {
       await this.assertLoginFree(dto.email, dto.phone, existing.userId);
     }
+    const type = dto.type ?? existing.type;
+    const staffKind =
+      dto.staffKind !== undefined ? dto.staffKind || null : existing.staffKind;
+    const additionalDuty =
+      dto.additionalDuty !== undefined
+        ? dto.additionalDuty || null
+        : existing.additionalDuty;
     const emp = await this.prisma.employee.update({
       where: { id },
       data: {
@@ -159,13 +329,21 @@ export class AcademicService {
         nip: dto.nip ?? null,
         email: dto.email ?? null,
         phone: dto.phone ?? null,
-        ...(dto.type !== undefined ? { type: dto.type } : {}),
-        ...(dto.department !== undefined
-          ? { department: dto.department || null }
-          : dto.type !== undefined
-            ? { department: AcademicService.DEPT_OF_TYPE[dto.type] ?? null }
-            : {}),
-        ...(dto.isDeptHead !== undefined ? { isDeptHead: dto.isDeptHead } : {}),
+        type,
+        staffKind,
+        additionalDuty,
+        // Bidang mengikuti tugas tambahan/jabatan/jenis — kecuali admin
+        // mengisi bidang secara eksplisit.
+        department:
+          AcademicService.DUTY_TO_DEPT[additionalDuty ?? ''] ??
+          (dto.department !== undefined
+            ? dto.department || null
+            : AcademicService.KIND_TO_DEPT[staffKind ?? ''] ??
+              AcademicService.DEPT_OF_TYPE[type] ??
+              null),
+        isDeptHead:
+          dto.isDeptHead ??
+          AcademicService.HEAD_DUTIES.has(additionalDuty ?? ''),
         ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
       },
     });
@@ -213,6 +391,8 @@ export class AcademicService {
       name: string;
       nip?: string | undefined;
       type?: string | undefined;
+      staffKind?: string | undefined;
+      additionalDuty?: string | undefined;
       email?: string | undefined;
       phone?: string | undefined;
       department?: string | undefined;
@@ -228,6 +408,7 @@ export class AcademicService {
     const preview: {
       row: number; name: string; nip: string | null; email: string | null;
       phone: string | null; department: string | null;
+      type?: string | null; staffKind?: string | null; additionalDuty?: string | null;
       action: 'BARU' | 'UPDATE' | 'LEWATI'; error?: string;
     }[] = [];
     const accounts: { name: string; login: string; password: string }[] = [];
@@ -246,6 +427,13 @@ export class AcademicService {
       const nip = raw.nip?.trim() || null;
       const email = raw.email?.trim().toLowerCase() || null;
       const phone = raw.phone ? normalizePhone(raw.phone) : null;
+      // Bidang efektif — ditampilkan di pratinjau sama seperti yang disimpan.
+      const dept =
+        AcademicService.DUTY_TO_DEPT[raw.additionalDuty ?? ''] ??
+        raw.department ??
+        AcademicService.KIND_TO_DEPT[raw.staffKind ?? ''] ??
+        AcademicService.DEPT_OF_TYPE[raw.type ?? 'TEACHER'] ??
+        null;
       // Duplikat di dalam file import sendiri.
       const dup =
         (nip && seenNip.has(nip) && `NIP/NUPTK ${nip} dobel di file ini`) ||
@@ -254,7 +442,7 @@ export class AcademicService {
         null;
       if (dup) {
         errors.push({ row, name, error: dup });
-        preview.push({ row, name, nip, email, phone, department: raw.department ?? null, action: 'LEWATI', error: dup });
+        preview.push({ row, name, nip, email, phone, department: dept, type: raw.type ?? null, staffKind: raw.staffKind ?? null, additionalDuty: raw.additionalDuty ?? null, action: 'LEWATI', error: dup });
         continue;
       }
       if (nip) seenNip.add(nip);
@@ -279,7 +467,7 @@ export class AcademicService {
         if (nipOwner && nipOwner.id !== existing.id) {
           const msg = `NIP/NUPTK ${nip} sudah dipakai ${nipOwner.name}`;
           errors.push({ row, name, error: msg });
-          preview.push({ row, name, nip, email, phone, department: raw.department ?? null, action: 'LEWATI', error: msg });
+          preview.push({ row, name, nip, email, phone, department: dept, type: raw.type ?? null, staffKind: raw.staffKind ?? null, additionalDuty: raw.additionalDuty ?? null, action: 'LEWATI', error: msg });
           continue;
         }
       }
@@ -295,7 +483,8 @@ export class AcademicService {
       }
 
       preview.push({
-        row, name, nip, email, phone, department: raw.department ?? null,
+        row, name, nip, email, phone, department: dept,
+        type: raw.type ?? null, staffKind: raw.staffKind ?? null, additionalDuty: raw.additionalDuty ?? null,
         action: existing ? 'UPDATE' : 'BARU',
         ...(accountNote ? { error: accountNote } : {}),
       });
@@ -306,36 +495,31 @@ export class AcademicService {
         ...(nip ? { nip } : {}),
         email,
         phone,
-        ...(raw.type ? { type: raw.type as import('@prisma/client').EmployeeType } : {}),
-        department:
-          raw.department ??
-          AcademicService.DEPT_OF_TYPE[raw.type ?? 'TEACHER'] ??
-          null,
-        ...(raw.isDeptHead !== undefined ? { isDeptHead: raw.isDeptHead } : {}),
+        type: (raw.type ?? existing?.type ?? 'TEACHER') as import('@prisma/client').EmployeeType,
+        staffKind: raw.staffKind ?? null,
+        additionalDuty: raw.additionalDuty ?? null,
+        department: dept,
+        isDeptHead:
+          raw.isDeptHead ??
+          AcademicService.HEAD_DUTIES.has(raw.additionalDuty ?? ''),
       };
 
       if (existing) {
         await this.prisma.employee.update({ where: { id: existing.id }, data });
         updated++;
       } else {
-        // Akun login sekaligus — role dari jenis pegawai. Password dari kolom
-        // `password` di Excel bila diisi; kosong → digenerate acak.
+        // Akun login sekaligus — role dari tugas/jabatan pegawai.
+        // Password dari kolom `password` di Excel bila diisi; kosong → acak.
         let userId: string | null = null;
         if (opts.createAccounts && (email || phone) && !accountNote) {
-          // Role akun mengikuti jenis pegawai — bidangnya menentukan akses.
-          const ROLE_BY_TYPE: Record<string, string> = {
-            TEACHER: 'guru_mapel',
-            STAFF: 'staff_tu',
-            TU: 'staff_tu',
-            KESISWAAN: 'staff_kesiswaan',
-            KURIKULUM: 'staff_kurikulum',
-            KEUANGAN: 'bendahara',
-            SARPRAS: 'staff_tu',
-            LAYSUS: 'staff_kesiswaan',
-            PRINCIPAL: 'kepala_sekolah',
-          };
+          const roleKey = AcademicService.roleForGtk({
+            type: data.type,
+            staffKind: data.staffKind,
+            additionalDuty: data.additionalDuty,
+            department: dept,
+          });
           const role = await this.prisma.role.findUnique({
-            where: { key: ROLE_BY_TYPE[data.type ?? 'TEACHER'] ?? 'staff_tu' },
+            where: { key: roleKey },
           });
           const custom = raw.password?.trim();
           const password = custom || `m3${Math.random().toString(36).slice(2, 8)}`;
@@ -352,7 +536,7 @@ export class AcademicService {
           accounts.push({ name, login: email ?? phone ?? '', password });
         }
         await this.prisma.employee.create({
-          data: { name, nip, email, phone, type: data.type ?? 'TEACHER', department: data.department ?? null, ...(data.isDeptHead !== undefined ? { isDeptHead: data.isDeptHead } : {}), userId },
+          data: { ...data, userId },
         });
         created++;
       }

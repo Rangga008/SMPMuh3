@@ -3,7 +3,18 @@
 import Link from 'next/link';
 import { use, useCallback, useEffect, useState } from 'react';
 import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
-import { PERMISSIONS } from '@smpmuh3/types';
+import {
+  ADDITIONAL_DUTIES,
+  ADDITIONAL_DUTY_LABELS,
+  GTK_GROUP,
+  GTK_TYPE_LABELS,
+  PERMISSIONS,
+  STAFF_KINDS,
+  STAFF_KIND_LABELS,
+  type AdditionalDuty,
+  type GtkType,
+  type StaffKind,
+} from '@smpmuh3/types';
 import { Shell } from '@/components/shell';
 import { PageTitle, Widget } from '@/components/widgets';
 import {
@@ -32,8 +43,13 @@ const minToHHMM = (m: number) =>
 const thisMonth = () => new Date().toISOString().slice(0, 7);
 const DEPT_LABEL: Record<string, string> = {
   KURIKULUM: 'Kurikulum', KESISWAAN: 'Kesiswaan', TATA_USAHA: 'Tata Usaha',
-  KEUANGAN: 'Keuangan', LAINNYA: 'Lainnya',
+  KEUANGAN: 'Keuangan', SARPRAS: 'Sarpras', LAYSUS: 'Laysus', LAINNYA: 'Lainnya',
 };
+const gtkLabel = (t: string) => GTK_TYPE_LABELS[GTK_GROUP[t] ?? 'TENDIK'] ?? t;
+const kindLabel = (k?: string | null) =>
+  k ? (STAFF_KIND_LABELS[k as StaffKind] ?? k) : '—';
+const dutyLabel = (d?: string | null) =>
+  d ? (ADDITIONAL_DUTY_LABELS[d as AdditionalDuty] ?? d) : '—';
 
 export default function EmployeeDetailPage({
   params,
@@ -48,6 +64,7 @@ export default function EmployeeDetailPage({
   const [error, setError] = useState<string | null>(null);
   const [canManage, setCanManage] = useState(false);
   const [editModal, setEditModal] = useState(false);
+  const [editJenis, setEditJenis] = useState<GtkType>('TEACHER');
   const [busy, setBusy] = useState(false);
 
   const loadEmp = useCallback(() => {
@@ -80,14 +97,15 @@ export default function EmployeeDetailPage({
     setBusy(true);
     setError(null);
     try {
+      const t = String(f.get('type') ?? 'TEACHER') as GtkType;
       await updateEmployee(emp.id, {
         name: String(f.get('name') ?? emp.name),
         nip: String(f.get('nip') ?? '') || undefined,
-        type: String(f.get('type') ?? emp.type),
+        type: t,
+        staffKind: t === 'TENDIK' ? String(f.get('staffKind') ?? '') || null : null,
+        additionalDuty: String(f.get('additionalDuty') ?? '') || null,
         email: String(f.get('email') ?? '') || undefined,
         phone: String(f.get('phone') ?? '') || undefined,
-        department: String(f.get('department') ?? '') || null,
-        isDeptHead: f.get('isDeptHead') === 'on',
         isActive: f.get('isActive') === 'on',
       });
       setEditModal(false);
@@ -133,12 +151,19 @@ export default function EmployeeDetailPage({
           <div className="mt-2">
             <PageTitle
               title={emp.name}
-              subtitle={`${emp.type === 'TEACHER' ? 'Guru' : 'Staf'}${emp.nip ? ` · NIP/NUPTK ${emp.nip}` : ''}`}
+              subtitle={`${gtkLabel(emp.type)}${emp.staffKind ? ` · ${kindLabel(emp.staffKind)}` : ''}${emp.additionalDuty ? ` · ${dutyLabel(emp.additionalDuty)}` : ''}${emp.nip ? ` · NIP/NUPTK ${emp.nip}` : ''}`}
               actions={
                 <span className="flex items-center gap-2">
                   <Badge tone={emp.isActive ? 'primary' : 'neutral'}>{emp.isActive ? 'Aktif' : 'Nonaktif'}</Badge>
                   {canManage ? (
-                    <Button size="sm" variant="outline" onClick={() => setEditModal(true)}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setEditJenis(GTK_GROUP[emp.type] ?? 'TENDIK');
+                        setEditModal(true);
+                      }}
+                    >
                       Edit Data
                     </Button>
                   ) : null}
@@ -163,7 +188,11 @@ export default function EmployeeDetailPage({
                 <dt className="text-sand-500">NIP/NUPTK</dt>
                 <dd className="font-medium text-sand-900">{emp.nip ?? '—'}</dd>
                 <dt className="text-sand-500">Jenis</dt>
-                <dd className="font-medium text-sand-900">{emp.type === 'TEACHER' ? 'Guru' : 'Staf'}</dd>
+                <dd className="font-medium text-sand-900">{gtkLabel(emp.type)}</dd>
+                <dt className="text-sand-500">Jabatan</dt>
+                <dd className="font-medium text-sand-900">{emp.staffKind ? kindLabel(emp.staffKind) : '—'}</dd>
+                <dt className="text-sand-500">Tugas Tambahan</dt>
+                <dd className="font-medium text-sand-900">{dutyLabel(emp.additionalDuty)}</dd>
                 <dt className="text-sand-500">Telepon</dt>
                 <dd className="font-medium text-sand-900">{emp.phone ?? '—'}</dd>
                 <dt className="text-sand-500">Email</dt>
@@ -294,10 +323,31 @@ export default function EmployeeDetailPage({
               <Field label="NIP/NUPTK" hint="Kosongkan untuk menghapus NIP/NUPTK">
                 <Input name="nip" defaultValue={emp.nip ?? ''} />
               </Field>
-              <Field label="Jenis">
-                <Select name="type" defaultValue={emp.type}>
+              <Field label="Jenis" hint="Guru atau Tendik (tenaga kependidikan)">
+                <Select
+                  name="type"
+                  value={editJenis}
+                  onChange={(e) => setEditJenis(e.target.value as GtkType)}
+                >
                   <option value="TEACHER">Guru</option>
-                  <option value="STAFF">Staf</option>
+                  <option value="TENDIK">Tendik</option>
+                </Select>
+              </Field>
+              {editJenis === 'TENDIK' ? (
+                <Field label="Jabatan" hint="Jabatan pokok tendik">
+                  <Select name="staffKind" defaultValue={emp.staffKind ?? 'TU'}>
+                    {STAFF_KINDS.map((k) => (
+                      <option key={k} value={k}>{STAFF_KIND_LABELS[k]}</option>
+                    ))}
+                  </Select>
+                </Field>
+              ) : null}
+              <Field label="Tugas Tambahan" hint="Mis. Wakasek Kurikulum, Kepala TU, Bendahara BOS">
+                <Select name="additionalDuty" defaultValue={emp.additionalDuty ?? ''}>
+                  <option value="">— Tidak ada —</option>
+                  {ADDITIONAL_DUTIES.map((d) => (
+                    <option key={d} value={d}>{ADDITIONAL_DUTY_LABELS[d]}</option>
+                  ))}
                 </Select>
               </Field>
               <Field label="Email" hint={emp.userId ? 'Tersinkron ke akun login — harus unik' : undefined}>
@@ -306,19 +356,10 @@ export default function EmployeeDetailPage({
               <Field label="Telepon" hint={emp.userId ? 'Tersinkron ke akun login — harus unik' : undefined}>
                 <Input name="phone" defaultValue={emp.phone ?? ''} />
               </Field>
-              <Field label="Bidang">
-                <Select name="department" defaultValue={emp.department ?? ''}>
-                  <option value="">— Belum ditugaskan —</option>
-                  {Object.entries(DEPT_LABEL).map(([k, v]) => (
-                    <option key={k} value={k}>{v}</option>
-                  ))}
-                </Select>
-              </Field>
+              <p className="sm:col-span-2 -my-1 text-xs text-sand-500">
+                Bidang mengikuti tugas tambahan/jabatan otomatis — wakasek Kurikulum → Kurikulum, Bendahara → Keuangan, TU → Tata Usaha.
+              </p>
               <div className="grid gap-2">
-                <label className="flex items-center gap-2 text-sm font-semibold text-sand-700">
-                  <input type="checkbox" name="isDeptHead" defaultChecked={emp.isDeptHead} className="size-4 accent-primary-700" />
-                  Kepala bidang
-                </label>
                 <label className="flex items-center gap-2 text-sm font-semibold text-sand-700">
                   <input type="checkbox" name="isActive" defaultChecked={emp.isActive} className="size-4 accent-primary-700" />
                   Aktif

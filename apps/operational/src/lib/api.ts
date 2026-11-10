@@ -374,13 +374,23 @@ export const deleteQuestion = (id: string) =>
   req(`/admin/spmb/questions/${id}`, { method: 'DELETE' });
 
 // ---- import/export ----
-export function importRegistrations(file: File) {
+export interface SpmbImportRow {
+  row: number;
+  sheet: string;
+  nama: string;
+  noHp: string;
+  status: 'BARU' | 'LEWATI';
+  msg: string;
+}
+export function importRegistrations(file: File, dry = false) {
   const form = new FormData();
   form.append('file', file);
-  return req<{ created: number; skipped: number; errors: string[] }>(
-    '/admin/spmb/import',
-    { method: 'POST', body: form },
-  );
+  return req<{
+    created: number;
+    skipped: number;
+    errors: string[];
+    rows: SpmbImportRow[];
+  }>(`/admin/spmb/import${dry ? '?dry=1' : ''}`, { method: 'POST', body: form });
 }
 export const exportRegistrationPdf = (id: string) =>
   `${API}/admin/registrations/${id}/export.pdf`;
@@ -550,7 +560,9 @@ export interface EmployeeDto {
   id: string;
   nip?: string | null;
   name: string;
-  type: 'TEACHER' | 'STAFF';
+  type: string;
+  staffKind?: string | null;
+  additionalDuty?: string | null;
   email?: string | null;
   phone?: string | null;
   isActive: boolean;
@@ -558,11 +570,17 @@ export interface EmployeeDto {
   department?: string | null;
   isDeptHead?: boolean;
 }
-export const listEmployees = (type?: string, search?: string, department?: string) => {
+export const listEmployees = (
+  type?: string,
+  search?: string,
+  department?: string,
+  kind?: string,
+) => {
   const p = new URLSearchParams();
   if (type) p.set('type', type);
   if (search) p.set('search', search);
   if (department) p.set('department', department);
+  if (kind) p.set('kind', kind);
   return req<EmployeeDto[]>(`/employees?${p}`);
 };
 export const createEmployee = (dto: Record<string, unknown>) =>
@@ -2012,6 +2030,7 @@ export const updateEmployee = (id: string, dto: Record<string, unknown>) =>
 export interface EmployeeImportPreviewRow {
   row: number; name: string; nip: string | null; email: string | null;
   phone: string | null; department: string | null;
+  type?: string | null; staffKind?: string | null; additionalDuty?: string | null;
   action: 'BARU' | 'UPDATE' | 'LEWATI'; error?: string;
 }
 export interface EmployeeImportResult {

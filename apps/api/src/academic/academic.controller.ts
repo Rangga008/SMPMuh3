@@ -65,8 +65,9 @@ export class AcademicController {
     @Query('type') type?: string,
     @Query('search') search?: string,
     @Query('department') department?: string,
+    @Query('kind') kind?: string,
   ) {
-    return this.academic.listEmployees(type, search, department);
+    return this.academic.listEmployees(type, search, department, kind);
   }
 
   /** Anggota bidang milik pegawai yang login — untuk kepala bidang. */
@@ -95,31 +96,32 @@ export class AcademicController {
   @Get('employees/import-template')
   @RequirePermission(ER)
   importTemplate(@Res({ passthrough: true }) res: Response) {
-    // Sheet utama berbahasa Indonesia — blok keterangan di atas header
-    // (baris 1-5), header di baris 6, contoh di baris 7, data mulai baris 8.
+    // Sheet utama berbahasa Indonesia — model GTK ala Dapodik.
+    // Blok keterangan baris 1-5, header baris 6, contoh baris 7, data mulai 8.
     const ws = XLSX.utils.aoa_to_sheet([
-      ['TEMPLATE IMPORT PEGAWAI — isi data mulai BARIS 8 (baris keterangan & contoh abaikan, jangan diubah/dihapus)'],
-      ['Jenis pegawai  : GURU / TU / KESISWAAN / KURIKULUM / KEUANGAN / SARPRAS / LAYSUS / KS (kosong = GURU)'],
-      ['Bidang         : OTOMATIS mengikuti jenis — TU→Tata Usaha, Kesiswaan→Kesiswaan, dst'],
-      ['Kepala Bidang  : isi "ya" bila wakasek/kepala TU — kosongkan bila bukan'],
-      ['Password       : untuk akun login — DIISI = dipakai apa adanya; KOSONG = digenerate acak & tampil di hasil import'],
+      ['TEMPLATE IMPORT GTK — isi data mulai BARIS 8 (baris keterangan & contoh abaikan, jangan diubah/dihapus)'],
+      ['Jenis          : GURU / TENDIK (kosong = GURU)'],
+      ['Jabatan        : khusus TENDIK — TU / LAYSUS / SATPAM / KEPALA_SEKOLAH (kosongkan untuk GURU)'],
+      ['Tugas Tambahan : WAKASEK_KURIKULUM / WAKASEK_KESISWAAN / WAKASEK_SARPRAS / KEPALA_TU / BENDAHARA_BOS / BENDAHARA_RMP / OPERATOR_DAPODIK / KONTEN_KREATOR (kosongkan bila tidak ada)'],
+      ['Bidang & akses : OTOMATIS dari tugas tambahan/jabatan — wakasek Kurikulum→bidang Kurikulum, Bendahara→Keuangan, dst'],
       [],
-      ['Nama Lengkap', 'NIP/NUPTK', 'Jenis', 'Telepon/HP', 'Email', 'Password', 'Kepala Bidang'],
-      ['CONTOH — Ahmad Hidayat, S.Pd. (hapus baris ini)', '19750101001', 'GURU', '081234567890', 'ahmad@smpmuh3.sch.id', 'guru123', 'ya'],
+      ['Nama Lengkap', 'NIP/NUPTK', 'Jenis', 'Jabatan', 'Tugas Tambahan', 'Telepon/HP', 'Email', 'Password'],
+      ['CONTOH — Ahmad Hidayat, S.Pd. (hapus baris ini)', '19750101001', 'GURU', '', 'WAKASEK_KURIKULUM', '081234567890', 'ahmad@smpmuh3.sch.id', 'guru123'],
     ]);
-    ws['!cols'] = [{ wch: 34 }, { wch: 16 }, { wch: 12 }, { wch: 16 }, { wch: 28 }, { wch: 14 }, { wch: 14 }];
+    ws['!cols'] = [{ wch: 34 }, { wch: 16 }, { wch: 10 }, { wch: 16 }, { wch: 20 }, { wch: 16 }, { wch: 28 }, { wch: 14 }];
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Pegawai');
+    XLSX.utils.book_append_sheet(wb, ws, 'GTK');
     const guide = XLSX.utils.json_to_sheet([
       { kolom: 'Nama Lengkap', wajib: 'YA', keterangan: 'Nama lengkap pegawai — contoh: Ahmad Hidayat, S.Pd.' },
       { kolom: 'NIP/NUPTK', wajib: 'tidak', keterangan: 'NIP atau NUPTK — dipakai untuk dedup; jangan dobel — contoh: 19750101001' },
-      { kolom: 'Jenis', wajib: 'tidak', keterangan: 'GURU / TU / KESISWAAN / KURIKULUM / KEUANGAN / SARPRAS / LAYSUS / KS (kepala sekolah) — kosong = GURU' },
+      { kolom: 'Jenis', wajib: 'tidak', keterangan: 'GURU atau TENDIK (Tenaga Kependidikan) — kosong = GURU' },
+      { kolom: 'Jabatan', wajib: 'khusus TENDIK', keterangan: 'TU / LAYSUS / SATPAM / KEPALA_SEKOLAH — kosongkan untuk GURU' },
+      { kolom: 'Tugas Tambahan', wajib: 'tidak', keterangan: 'Guru menjabat wakasek → WAKASEK_KURIKULUM / WAKASEK_KESISWAAN / WAKASEK_SARPRAS; tendik → KEPALA_TU / BENDAHARA_BOS / BENDAHARA_RMP / OPERATOR_DAPODIK / KONTEN_KREATOR' },
       { kolom: 'Telepon/HP', wajib: 'tidak*', keterangan: 'No. HP — dipakai login akun; harus unik — contoh: 081234567890' },
       { kolom: 'Email', wajib: 'tidak*', keterangan: 'Email — dipakai login akun; harus unik — contoh: ahmad@smpmuh3.sch.id' },
       { kolom: 'Password', wajib: 'tidak', keterangan: 'Password akun — diisi = dipakai; KOSONG = digenerate acak & tampil di hasil import — contoh: guru123' },
-      { kolom: 'Bidang', wajib: '-', keterangan: 'Otomatis dari jenis — TU→Tata Usaha, Kesiswaan→Kesiswaan, Kurikulum→Kurikulum, Keuangan→Keuangan, Sarpras→Sarpras, Laysus→Laysus, Guru/KS→kosong' },
-      { kolom: 'Kepala Bidang', wajib: 'tidak', keterangan: 'Isi "ya" bila kepala bidang (wakasek/kepala TU)' },
-      { kolom: '*akun', wajib: '-', keterangan: 'Akun login dibuat bila email/HP diisi & opsi "buat akun" dicentang' },
+      { kolom: 'Bidang', wajib: '-', keterangan: 'Otomatis: tugas tambahan → bidang (wakasek Kurikulum→Kurikulum, Bendahara→Keuangan); jabatan → bidang (TU→Tata Usaha, Laysus/Satpam→Laysus)' },
+      { kolom: '*akun', wajib: '-', keterangan: 'Akun login dibuat bila email/HP diisi & opsi "buat akun" dicentang — role mengikuti tugas/jabatan' },
       { kolom: '*dedup', wajib: '-', keterangan: 'NIP-NUPTK/email/HP yang sudah terdata = data DIPERBARUI, bukan dibuat dobel' },
     ]);
     guide['!cols'] = [{ wch: 16 }, { wch: 8 }, { wch: 90 }];
@@ -164,19 +166,63 @@ export class AcademicController {
     }
     const rows: Parameters<AcademicService['importEmployees']>[0] = [];
     let foundHeader = false;
-    const normType = (v: string) => {
+    /**
+     * Jenis → {type, staffKind?, additionalDuty?} — menerima istilah GTK baru
+     * (GURU/TENDIK) maupun type lama (TU, KESISWAAN, KS, dst) dari template usang.
+     */
+    const normJenis = (v: string): {
+      type: string;
+      staffKind?: string;
+      additionalDuty?: string;
+    } => {
       const t = v.toUpperCase().replace(/\s+/g, '_');
-      if (/^(GURU|TEACHER)/.test(t)) return 'TEACHER';
-      if (/^(STAF|STAFF|TENDIK|TU|TATA_?USAHA)/.test(t)) return 'TU';
-      if (/^(KS|KEPSEK|KEPALA_?SEKOLAH|PRINCIPAL)/.test(t)) return 'PRINCIPAL';
-      if (/^(KESISWAAN|KURIKULUM|KEUANGAN|SARPRAS|LAYSUS)/.test(t)) return t;
-      if (/^BENDAHARA/.test(t)) return 'KEUANGAN';
-      return t || undefined;
+      if (!t) return { type: 'TEACHER' };
+      if (/^(GURU|TEACHER)/.test(t)) return { type: 'TEACHER' };
+      if (/^(KS|KEPSEK|KEPALA_?SEKOLAH|PRINCIPAL)/.test(t))
+        return { type: 'TENDIK', staffKind: 'KEPALA_SEKOLAH' };
+      if (/^KURIKULUM/.test(t))
+        return { type: 'TEACHER', additionalDuty: 'WAKASEK_KURIKULUM' };
+      if (/^KESISWAAN/.test(t))
+        return { type: 'TEACHER', additionalDuty: 'WAKASEK_KESISWAAN' };
+      if (/^KEUANGAN|^BENDAHARA/.test(t))
+        return { type: 'TENDIK', staffKind: 'TU', additionalDuty: 'BENDAHARA_BOS' };
+      if (/^SARPRAS/.test(t)) return { type: 'TENDIK', staffKind: 'LAYSUS' };
+      if (/^LAYSUS/.test(t)) return { type: 'TENDIK', staffKind: 'LAYSUS' };
+      if (/^SATPAM|^KEAMANAN|^SECURITY/.test(t))
+        return { type: 'TENDIK', staffKind: 'SATPAM' };
+      if (/^(STAF|STAFF|TENDIK|TU|TATA_?USAHA)/.test(t))
+        return { type: 'TENDIK', staffKind: 'TU' };
+      return { type: 'TEACHER' };
+    };
+    const normKind = (v: string) => {
+      const k = v.toUpperCase().replace(/\s+/g, '_');
+      if (/^(TU|TATA_?USAHA)/.test(k)) return 'TU';
+      if (/^LAYSUS|^LAYANAN_?KHUSUS/.test(k)) return 'LAYSUS';
+      if (/^SATPAM|^KEAMANAN|^SECURITY|^PENJAGA/.test(k)) return 'SATPAM';
+      if (/^(KS|KEPSEK|KEPALA_?SEKOLAH|PRINCIPAL)/.test(k)) return 'KEPALA_SEKOLAH';
+      return undefined;
+    };
+    const normDuty = (v: string) => {
+      const d = v.toUpperCase().replace(/[\s-]+/g, '_');
+      if (/^WAKASEK_?KURIKULUM|^WAKIL_?KEPALA_?SEKOLAH_?KURIKULUM|^WAKA_?KUR/.test(d))
+        return 'WAKASEK_KURIKULUM';
+      if (/^WAKASEK_?KESISWAAN|^WAKA_?KES/.test(d)) return 'WAKASEK_KESISWAAN';
+      if (/^WAKASEK_?SARPRAS|^WAKA_?SAR/.test(d)) return 'WAKASEK_SARPRAS';
+      if (/^KEPALA_?(TU|TATA_?USAHA)|^KATU\b/.test(d)) return 'KEPALA_TU';
+      if (/^BENDAHARA_?BOS/.test(d)) return 'BENDAHARA_BOS';
+      if (/^BENDAHARA_?RMP/.test(d)) return 'BENDAHARA_RMP';
+      if (/^BENDAHARA/.test(d)) return 'BENDAHARA_BOS';
+      if (/^OPERATOR_?DAPODIK|^OPERATOR/.test(d)) return 'OPERATOR_DAPODIK';
+      if (/^KONTEN_?KREATOR|^KONTEN|^ADMIN_?(MEDSOS|SOSMED)/.test(d))
+        return 'KONTEN_KREATOR';
+      return undefined;
     };
     const normDept = (v: string) => {
       const d = v.toUpperCase().replace(/\s+/g, '_');
       if (/^(TU|TATA_?USAHA)/.test(d)) return 'TATA_USAHA';
-      return d || undefined;
+      if (/^(KESISWAAN|KURIKULUM|KEUANGAN|SARPRAS|LAYSUS)/.test(d)) return d;
+      // Nilai tak dikenal (mis. "ya") → kosong, bidang diturunkan dari jenis.
+      return undefined;
     };
     for (const sn of wb.SheetNames) {
       if (sn.toLowerCase() === 'petunjuk') continue;
@@ -197,20 +243,35 @@ export class AcademicController {
         name: col('nama', 'name'),
         nip: col('nip', 'nuptk'),
         type: col('jenis', 'type'),
+        kind: header.findIndex(
+          (h) => h.includes('jabatan') && !h.includes('tambahan'),
+        ),
+        duty: header.findIndex(
+          (h) => h.includes('tugas') || h.includes('tambahan'),
+        ),
         phone: col('telepon', 'telp', 'hp', 'phone'),
         email: col('email'),
         password: col('password', 'sandi', 'kata_sandi'),
-        department: col('bidang', 'department', 'departemen'),
+        department: header.findIndex(
+          (h) =>
+            (h.includes('bidang') ||
+              h.includes('department') ||
+              h.includes('departemen')) &&
+            !h.includes('kepala'),
+        ),
         deptHead: col('kepala', 'is_dept_head', 'dept_head'),
       };
       for (const r of aoa.slice(hi + 1)) {
         const cell = (i: number) => (i >= 0 ? String(r[i] ?? '').trim() : '');
         const name = cell(ix.name);
         if (!name || /^contoh/i.test(name)) continue; // abaikan baris contoh template
+        const jenis = normJenis(cell(ix.type));
         rows.push({
           name,
           nip: cell(ix.nip) || undefined,
-          type: normType(cell(ix.type)),
+          type: jenis.type,
+          staffKind: normKind(cell(ix.kind)) ?? jenis.staffKind,
+          additionalDuty: normDuty(cell(ix.duty)) ?? jenis.additionalDuty,
           email: cell(ix.email) || undefined,
           phone: cell(ix.phone) || undefined,
           password: cell(ix.password) || undefined,

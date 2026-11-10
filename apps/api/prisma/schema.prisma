@@ -1241,8 +1241,9 @@ enum StudentStatus {
 }
 
 enum EmployeeType {
-  TEACHER
-  STAFF // legacy — baris lama dimigrasi ke TU
+  TEACHER // Guru
+  TENDIK // Tenaga Kependidikan — jabatan di staffKind
+  STAFF // legacy — baris lama dimigrasi ke TENDIK
   TU
   KESISWAAN
   KURIKULUM
@@ -1315,6 +1316,10 @@ model Employee {
   nip       String?      @unique
   name      String
   type      EmployeeType @default(TEACHER)
+  // GTK model Dapodik — jabatan pokok tendik (TU/LAYSUS/SATPAM/KEPALA_SEKOLAH)
+  staffKind      String? @map("staff_kind")
+  // Tugas tambahan — WAKASEK_*/KEPALA_TU/BENDAHARA_*/OPERATOR_DAPODIK/dst
+  additionalDuty String? @map("additional_duty")
   email     String?
   phone     String?
   address   String?

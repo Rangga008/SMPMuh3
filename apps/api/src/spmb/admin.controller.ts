@@ -426,12 +426,13 @@ export class AdminSpmbController {
         .build({ fileIsRequired: true }),
     )
     file: Express.Multer.File,
+    @Query('dry') dry?: string,
   ) {
     const name = file.originalname.toLowerCase();
     if (!name.endsWith('.xlsx') && !name.endsWith('.xls')) {
       throw new BadRequestException('Hanya file Excel (.xlsx/.xls)');
     }
-    return this.importer.importExcel(file.buffer, user.id);
+    return this.importer.importExcel(file.buffer, user.id, dry === '1' || dry === 'true');
   }
 
   @Get('registrations/:id/export.pdf')

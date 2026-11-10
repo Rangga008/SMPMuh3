@@ -9,7 +9,7 @@ import {
   type RegistrationStatus,
   type WaveDto,
 } from '@smpmuh3/types';
-import { Badge, Button, Input, Select } from '@smpmuh3/ui';
+import { Badge, Button, Input, Modal, Select } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { useConfirm } from '@/components/confirm-dialog';
 import { DataTable } from '@/components/data-table';
@@ -20,6 +20,7 @@ import {
   exportDocumentsZip,
   exportRegistrationsXlsx,
   importRegistrations,
+  type SpmbImportRow,
   listAcademicYears,
   listAdminRegistrations,
   listAdminWaves,
@@ -62,6 +63,8 @@ function SpmbList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [importMsg, setImportMsg] = useState<string | null>(null);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importPreview, setImportPreview] = useState<SpmbImportRow[] | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkStatus, setBulkStatus] = useState<RegistrationStatus>('ACCEPTED');
   const [bulkNote, setBulkNote] = useState('');
@@ -122,14 +125,37 @@ function SpmbList() {
     if (!file) return;
     setImportMsg(null);
     setError(null);
+    setImportFile(file);
+    setImportPreview(null);
+    setBusy(true);
     try {
-      const res = await importRegistrations(file);
+      // Langkah 1 — pratinjau (dry-run, tidak menulis data).
+      const res = await importRegistrations(file, true);
+      setImportPreview(res.rows);
+    } catch (err) {
+      setImportFile(null);
+      setError(err instanceof Error ? err.message : 'File tidak dapat dibaca.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function commitImport() {
+    if (!importFile) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await importRegistrations(importFile);
       setImportMsg(
         `Import selesai: ${res.created} dibuat, ${res.skipped} dilewati.${res.errors.length ? ` ${res.errors.length} baris bermasalah.` : ''}`,
       );
+      setImportFile(null);
+      setImportPreview(null);
       load({ status, waveId, academicYearId: yearId, search });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Import gagal.');
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -216,8 +242,13 @@ function SpmbList() {
             >
               Export Berkas (ZIP)
             </Button>
-            <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()}>
-              Import Excel
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={busy}
+              onClick={() => fileRef.current?.click()}
+            >
+              {busy && importFile && !importPreview ? 'Membaca file…' : 'Import Excel'}
             </Button>
           </>
         }
@@ -456,6 +487,82 @@ function SpmbList() {
           </tr>
         ))}
       </DataTable>
+      {/* Pratinjau import — data belum ditulis sampai dikonfirmasi. */}
+      <Modal
+        open={importPreview !== null}
+        onClose={() => {
+          setImportFile(null);
+          setImportPreview(null);
+        }}
+        title="Pratinjau Import Pendaftar"
+        size="xl"
+      >
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <p className="font-bold">Periksa dulu sebelum menambahkan:</p>
+          <ul className="mt-1 list-disc pl-5">
+            <li>Baris <b>BARU</b> akan dibuat pendaftarannya; <b>LEWATI</b> = ganda di file atau sudah terdaftar — tidak ditulis.</li>
+            <li>Akun orang tua dicari dari no HP — dibuat otomatis bila belum ada.</li>
+          </ul>
+        </div>
+        {importPreview ? (
+          <div className="mt-4 max-h-72 overflow-auto rounded-xl border border-sand-200">
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-sand-50 text-left text-sand-500">
+                <tr>
+                  <th className="px-3 py-2">Sheet/Baris</th>
+                  <th className="px-3 py-2">Nama</th>
+                  <th className="px-3 py-2">No. HP Ortu</th>
+                  <th className="px-3 py-2">Hasil Cek</th>
+                </tr>
+              </thead>
+              <tbody>
+                {importPreview.map((p, i) => (
+                  <tr
+                    key={`${p.sheet}-${p.row}-${i}`}
+                    className={p.status === 'BARU' ? '' : 'bg-red-50/60 text-red-800'}
+                  >
+                    <td className="px-3 py-1.5">{p.sheet} · {p.row}</td>
+                    <td className="px-3 py-1.5 font-semibold">{p.nama || '—'}</td>
+                    <td className="px-3 py-1.5">{p.noHp || '—'}</td>
+                    <td className="px-3 py-1.5">
+                      <span className={`mr-1 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${p.status === 'BARU' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                        {p.status}
+                      </span>
+                      {p.msg}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+        <div className="mt-4 flex items-center justify-between gap-2">
+          <p className="text-xs text-sand-500">
+            {importPreview
+              ? `${importPreview.filter((p) => p.status === 'BARU').length} baru · ${importPreview.filter((p) => p.status === 'LEWATI').length} dilewati`
+              : ''}
+          </p>
+          <div className="flex gap-2">
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setImportFile(null);
+                setImportPreview(null);
+              }}
+            >
+              Batal
+            </Button>
+            <Button
+              disabled={busy || !importPreview?.some((p) => p.status === 'BARU')}
+              onClick={commitImport}
+            >
+              {busy
+                ? 'Mengimport…'
+                : `Import ${importPreview?.filter((p) => p.status === 'BARU').length ?? 0} pendaftar`}
+            </Button>
+          </div>
+        </div>
+      </Modal>
       {dialog}
     </Shell>
   );

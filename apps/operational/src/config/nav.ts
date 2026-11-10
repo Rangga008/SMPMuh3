@@ -65,13 +65,30 @@ export const NAV: NavItem[] = [
     enabled: true,
   },
   {
-    key: 'kepegawaian',
-    label: 'Kepegawaian',
+    key: 'gtk',
+    label: 'GTK',
     icon: '👤',
-    href: '/kepegawaian',
     permission: PERMISSIONS.EMPLOYEE_READ,
     roles: KEPEGAWAIAN_ROLES,
     enabled: true,
+    children: [
+      {
+        key: 'gtk-guru',
+        label: 'Guru',
+        icon: '•',
+        href: '/kepegawaian/guru',
+        permission: PERMISSIONS.EMPLOYEE_READ,
+        enabled: true,
+      },
+      {
+        key: 'gtk-tendik',
+        label: 'Tendik',
+        icon: '•',
+        href: '/kepegawaian/tendik',
+        permission: PERMISSIONS.EMPLOYEE_READ,
+        enabled: true,
+      },
+    ],
   },
   {
     key: 'kurikulum',
