@@ -7,6 +7,7 @@ import { PageTitle, Widget } from '@/components/widgets';
 import { DataTable } from '@/components/data-table';
 import { RowBtn } from '@/components/row-btn';
 import { FilePick } from '@/components/file-pick';
+import { useConfirm } from '@/components/confirm-dialog';
 import {
   collectionItemUrl, createCollection, deleteStaffDoc, listCollections,
   listPolicies, listStaffDocs, listUniforms, policyFileUrl, staffDocUrl,
@@ -36,6 +37,7 @@ export default function DokumenPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const { confirm, dialog } = useConfirm();
   const [yearId, setYearId] = useState('');
 
   const load = useCallback(() => {
@@ -139,7 +141,7 @@ export default function DokumenPage() {
               <td className="px-5 py-2.5 text-right">
                 <span className="flex justify-end gap-2">
                   <RowBtn type="button" onClick={() => window.open(staffDocUrl(d.id), '_blank')}>Detail</RowBtn>
-                  <RowBtn tone="danger" type="button" onClick={() => run(() => deleteStaffDoc(d.id), 'Dokumen dihapus.')}>Hapus</RowBtn>
+                  <RowBtn tone="danger" type="button" onClick={async () => { if (await confirm(`Hapus dokumen "${d.title}"? File yang tersimpan ikut terhapus.`)) run(() => deleteStaffDoc(d.id), 'Dokumen dihapus.'); }}>Hapus</RowBtn>
                 </span>
               </td>
             </tr>
@@ -295,6 +297,7 @@ export default function DokumenPage() {
           <div className="flex justify-end gap-2"><Button type="submit" disabled={busy}>Upload</Button></div>
         </form>
       </Modal>
+      {dialog}
     </Shell>
   );
 }

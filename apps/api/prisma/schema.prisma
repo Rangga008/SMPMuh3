@@ -1242,7 +1242,14 @@ enum StudentStatus {
 
 enum EmployeeType {
   TEACHER
-  STAFF
+  STAFF // legacy — baris lama dimigrasi ke TU
+  TU
+  KESISWAAN
+  KURIKULUM
+  KEUANGAN
+  SARPRAS
+  LAYSUS
+  PRINCIPAL // kepala sekolah
 }
 
 enum AttendanceStatus {
@@ -1310,6 +1317,8 @@ model Employee {
   type      EmployeeType @default(TEACHER)
   email     String?
   phone     String?
+  address   String?
+  photoUrl  String?      @map("photo_url") // foto profil pegawai (key storage)
   isActive  Boolean      @default(true) @map("is_active")
   userId    String?      @unique @map("user_id") @db.Uuid // optional login link
   // payroll

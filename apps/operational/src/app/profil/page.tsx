@@ -1,26 +1,25 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { AuthUser } from '@smpmuh3/types';
-import { Badge, Button, Field, Input, Modal } from '@smpmuh3/ui';
+import { EMPLOYEE_TYPE_LABELS } from '@smpmuh3/types';
+import { Badge, Button, Field, Input, Modal, Textarea } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { PageTitle, Widget } from '@/components/widgets';
 import {
   changeMyPassword,
+  employeePhotoUrl,
   logout,
   me,
   myEmployee,
   updateMe,
+  updateMyEmployee,
+  uploadMyEmployeePhoto,
   type MyEmployee,
 } from '@/lib/api';
 
-const EMPLOYEE_TYPE: Record<string, string> = {
-  TEACHER: 'Guru',
-  STAFF: 'Staf / TU',
-  PRINCIPAL: 'Kepala Sekolah',
-  OTHER: 'Lainnya',
-};
+const EMPLOYEE_TYPE = EMPLOYEE_TYPE_LABELS as Record<string, string>;
 
 function Row({ label, value }: { label: string; value: string | null | undefined }) {
   return (
@@ -45,6 +44,9 @@ export default function ProfilePage() {
   const [busy, setBusy] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [pwOpen, setPwOpen] = useState(false);
+  const [empOpen, setEmpOpen] = useState(false);
+  const [photoVer, setPhotoVer] = useState(0);
+  const photoRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     try {
@@ -116,26 +118,91 @@ export default function ProfilePage() {
           </Widget>
 
           {/* ---------- Data Pegawai ---------- */}
-          <Widget title="Data Pegawai">
+          <Widget
+            title="Data Pegawai"
+            action={
+              employee ? (
+                <Button size="sm" variant="outline" onClick={() => setEmpOpen(true)}>
+                  Ubah Kontak
+                </Button>
+              ) : undefined
+            }
+          >
             {employee ? (
               <>
+                <div className="mb-4 flex items-center gap-4">
+                  {employee.photoUrl ? (
+                    <img
+                      src={`${employeePhotoUrl(employee.id)}?v=${photoVer}`}
+                      alt={`Foto ${employee.name}`}
+                      className="size-16 rounded-2xl border border-sand-200 object-cover"
+                    />
+                  ) : (
+                    <span
+                      aria-hidden="true"
+                      className="flex size-16 items-center justify-center rounded-2xl bg-sand-200 text-xl font-extrabold text-sand-500"
+                    >
+                      {(employee.name || '?').slice(0, 1).toUpperCase()}
+                    </span>
+                  )}
+                  <div className="min-w-0">
+                    <p className="truncate text-base font-extrabold text-sand-900">
+                      {employee.name}
+                    </p>
+                    <p className="text-xs text-sand-500">
+                      {EMPLOYEE_TYPE[employee.type] ?? employee.type}
+                      {employee.department ? ` · ${employee.department}` : ''}
+                      {employee.isDeptHead ? ' · Kepala Bidang' : ''}
+                    </p>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="mt-1.5"
+                      disabled={busy}
+                      onClick={() => photoRef.current?.click()}
+                    >
+                      {employee.photoUrl ? 'Ganti Foto' : 'Unggah Foto'}
+                    </Button>
+                    <input
+                      ref={photoRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = '';
+                        if (!file) return;
+                        setBusy(true);
+                        setError(null);
+                        try {
+                          await uploadMyEmployeePhoto(file);
+                          setPhotoVer((v) => v + 1);
+                          const next = await myEmployee().catch(() => null);
+                          if (next) setEmployee(next);
+                          setNotice('Foto profil diperbarui.');
+                        } catch (err) {
+                          setError(err instanceof Error ? err.message : 'Gagal mengunggah foto.');
+                        } finally {
+                          setBusy(false);
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
                 <dl>
-                  <Row label="Nama" value={employee.name} />
                   <Row label="NIP/NUPTK" value={employee.nip} />
-                  <Row
-                    label="Jenis"
-                    value={EMPLOYEE_TYPE[employee.type] ?? employee.type}
-                  />
+                  <Row label="Bidang" value={employee.department} />
                   <Row label="Email Pegawai" value={employee.email} />
                   <Row label="No. HP Pegawai" value={employee.phone} />
+                  <Row label="Alamat" value={employee.address} />
                   <Row
                     label="Status"
                     value={employee.isActive ? 'Aktif' : 'Nonaktif'}
                   />
                 </dl>
                 <p className="mt-3 text-xs leading-relaxed text-sand-400">
-                  Data kepegawaian dikelola oleh admin Kepegawaian — hubungi
-                  admin bila ada yang perlu dikoreksi.
+                  Kontak &amp; alamat bisa diubah sendiri lewat "Ubah Kontak".
+                  Nama/NIP/jenis/bidang dikelola admin Kepegawaian.
                 </p>
               </>
             ) : (
@@ -203,6 +270,54 @@ export default function ProfilePage() {
             </Field>
             <div className="flex justify-end gap-2">
               <Button type="button" variant="ghost" onClick={() => setEditOpen(false)}>
+                Batal
+              </Button>
+              <Button type="submit" disabled={busy}>
+                {busy ? 'Menyimpan…' : 'Simpan'}
+              </Button>
+            </div>
+          </form>
+        ) : null}
+      </Modal>
+
+      {/* ---------- Modal ubah kontak pegawai ---------- */}
+      <Modal open={empOpen} onClose={() => setEmpOpen(false)} title="Ubah Kontak Pegawai">
+        {employee ? (
+          <form
+            className="space-y-4"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const f = new FormData(e.currentTarget);
+              setBusy(true);
+              setError(null);
+              try {
+                await updateMyEmployee({
+                  email: String(f.get('empEmail') || ''),
+                  phone: String(f.get('empPhone') || ''),
+                  address: String(f.get('empAddress') || ''),
+                });
+                const next = await myEmployee().catch(() => null);
+                if (next) setEmployee(next);
+                setEmpOpen(false);
+                setNotice('Kontak pegawai diperbarui.');
+              } catch (err) {
+                setError(err instanceof Error ? err.message : 'Gagal menyimpan.');
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            <Field label="Email Pegawai" hint="Email khusus kepegawaian — bisa berbeda dari email akun.">
+              <Input name="empEmail" type="email" defaultValue={employee.email ?? ''} />
+            </Field>
+            <Field label="No. HP Pegawai">
+              <Input name="empPhone" defaultValue={employee.phone ?? ''} placeholder="08xxxxxxxxxx" />
+            </Field>
+            <Field label="Alamat">
+              <Textarea name="empAddress" rows={3} defaultValue={employee.address ?? ''} />
+            </Field>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={() => setEmpOpen(false)}>
                 Batal
               </Button>
               <Button type="submit" disabled={busy}>

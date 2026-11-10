@@ -35,9 +35,23 @@ export class AcademicService {
   ) {}
 
   // ---------- Employees ----------
+
+  /** Bidang diturunkan dari jenis pegawai — satu sumber, tak ada kolom ganda. */
+  private static readonly DEPT_OF_TYPE: Record<string, string | null> = {
+    TEACHER: null,
+    STAFF: 'TATA_USAHA',
+    TU: 'TATA_USAHA',
+    KESISWAAN: 'KESISWAAN',
+    KURIKULUM: 'KURIKULUM',
+    KEUANGAN: 'KEUANGAN',
+    SARPRAS: 'SARPRAS',
+    LAYSUS: 'LAYSUS',
+    PRINCIPAL: null,
+  };
+
   listEmployees(type?: string, search?: string, department?: string) {
     const where: Prisma.EmployeeWhereInput = {};
-    if (type) where.type = type as 'TEACHER' | 'STAFF';
+    if (type) where.type = type as import('@prisma/client').EmployeeType;
     if (search) {
       where.OR = [
         { name: { contains: search, mode: 'insensitive' } },
@@ -110,7 +124,10 @@ export class AcademicService {
         type: dto.type ?? 'TEACHER',
         email: dto.email ?? null,
         phone: dto.phone ?? null,
-        department: dto.department ?? null,
+        department:
+          dto.department ??
+          AcademicService.DEPT_OF_TYPE[dto.type ?? 'TEACHER'] ??
+          null,
         isDeptHead: dto.isDeptHead ?? false,
         isActive: dto.isActive ?? true,
         userId,
@@ -143,7 +160,11 @@ export class AcademicService {
         email: dto.email ?? null,
         phone: dto.phone ?? null,
         ...(dto.type !== undefined ? { type: dto.type } : {}),
-        ...(dto.department !== undefined ? { department: dto.department || null } : {}),
+        ...(dto.department !== undefined
+          ? { department: dto.department || null }
+          : dto.type !== undefined
+            ? { department: AcademicService.DEPT_OF_TYPE[dto.type] ?? null }
+            : {}),
         ...(dto.isDeptHead !== undefined ? { isDeptHead: dto.isDeptHead } : {}),
         ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
       },
@@ -285,10 +306,11 @@ export class AcademicService {
         ...(nip ? { nip } : {}),
         email,
         phone,
-        ...(raw.type ? { type: raw.type as 'TEACHER' | 'STAFF' } : {}),
-        ...(raw.department !== undefined
-          ? { department: raw.department || null }
-          : {}),
+        ...(raw.type ? { type: raw.type as import('@prisma/client').EmployeeType } : {}),
+        department:
+          raw.department ??
+          AcademicService.DEPT_OF_TYPE[raw.type ?? 'TEACHER'] ??
+          null,
         ...(raw.isDeptHead !== undefined ? { isDeptHead: raw.isDeptHead } : {}),
       };
 
@@ -300,8 +322,20 @@ export class AcademicService {
         // `password` di Excel bila diisi; kosong → digenerate acak.
         let userId: string | null = null;
         if (opts.createAccounts && (email || phone) && !accountNote) {
+          // Role akun mengikuti jenis pegawai — bidangnya menentukan akses.
+          const ROLE_BY_TYPE: Record<string, string> = {
+            TEACHER: 'guru_mapel',
+            STAFF: 'staff_tu',
+            TU: 'staff_tu',
+            KESISWAAN: 'staff_kesiswaan',
+            KURIKULUM: 'staff_kurikulum',
+            KEUANGAN: 'bendahara',
+            SARPRAS: 'staff_tu',
+            LAYSUS: 'staff_kesiswaan',
+            PRINCIPAL: 'kepala_sekolah',
+          };
           const role = await this.prisma.role.findUnique({
-            where: { key: data.type === 'STAFF' ? 'staff_tu' : 'guru_mapel' },
+            where: { key: ROLE_BY_TYPE[data.type ?? 'TEACHER'] ?? 'staff_tu' },
           });
           const custom = raw.password?.trim();
           const password = custom || `m3${Math.random().toString(36).slice(2, 8)}`;
@@ -318,7 +352,7 @@ export class AcademicService {
           accounts.push({ name, login: email ?? phone ?? '', password });
         }
         await this.prisma.employee.create({
-          data: { name, nip, email, phone, type: data.type ?? 'TEACHER', ...(data.department !== undefined ? { department: data.department } : {}), ...(data.isDeptHead !== undefined ? { isDeptHead: data.isDeptHead } : {}), userId },
+          data: { name, nip, email, phone, type: data.type ?? 'TEACHER', department: data.department ?? null, ...(data.isDeptHead !== undefined ? { isDeptHead: data.isDeptHead } : {}), userId },
         });
         created++;
       }

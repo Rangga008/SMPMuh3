@@ -9,6 +9,7 @@ import { RowBtn } from '@/components/row-btn';
 import { PageTitle, Widget } from '@/components/widgets';
 import { PERMISSIONS } from '@smpmuh3/types';
 import { usePermission } from '@/lib/use-permission';
+import { useConfirm } from '@/components/confirm-dialog';
 import {
   assignEmployeeShift,
   listEmployees,
@@ -69,7 +70,10 @@ export default function PenugasanShiftPage() {
     if (r !== undefined) { setAssignModal(false); load(); }
   }
 
+  const { confirm, dialog } = useConfirm();
+
   async function onUnassign(id: string) {
+    if (!(await confirm('Lepas penugasan shift pegawai ini?'))) return;
     const r = await run(() => removeEmployeeShift(id), 'Penugasan dilepas.');
     if (r !== undefined) load();
   }
@@ -166,6 +170,7 @@ export default function PenugasanShiftPage() {
           </div>
         </form>
       </Modal>
+      {dialog}
     </Shell>
   );
 }

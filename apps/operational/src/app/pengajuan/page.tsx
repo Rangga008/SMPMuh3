@@ -10,7 +10,7 @@ import { FilePick } from '@/components/file-pick';
 import { createSubmission, listSubmissions, reviewSubmission, submissionFileUrl, type ProgramSubmissionView } from '@/lib/api-ops';
 
 const KINDS = ['RKS', 'PROKER', 'RENCANA', 'REALISASI'];
-const DEPTS = ['KURIKULUM', 'KESISWAAN', 'TATA_USAHA', 'KEUANGAN', 'HUMAS', 'LAINNYA'];
+const DEPTS = ['KURIKULUM', 'KESISWAAN', 'TATA_USAHA', 'KEUANGAN', 'LAINNYA'];
 const rp = (n: number) => `Rp${n.toLocaleString('id-ID')}`;
 const TONE = { PENDING: 'accent', APPROVED: 'primary', REJECTED: 'danger' } as const;
 

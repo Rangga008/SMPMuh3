@@ -7,6 +7,7 @@ import type { AuthUser } from '@smpmuh3/types';
 import { cn } from '@smpmuh3/ui';
 import { navFor, type NavItem } from '@/config/nav';
 import { ScrollKeeper } from '@/components/scroll-keeper';
+import { useConfirm } from '@/components/confirm-dialog';
 import { getSchool, getTokens, logout, me, type School } from '@/lib/api';
 
 function NavLink({ item, active }: { item: NavItem; active: boolean }) {
@@ -152,6 +153,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const [school, setSchool] = useState<School | null>(cachedSchool ?? null);
   const [open, setOpen] = useState(false);
   const [dark, setDark] = useState(false);
+  const { confirm, dialog } = useConfirm();
 
   // Tema gelap/terang — disimpan di localStorage, diterapkan via class
   // `.dark` di <html> (token warna di styles.css otomatis beradaptasi).
@@ -313,7 +315,8 @@ export function Shell({ children }: { children: ReactNode }) {
         </Link>
         <button
           type="button"
-          onClick={() => {
+          onClick={async () => {
+            if (!(await confirm('Keluar dari akun ini sekarang?'))) return;
             cachedUser = null;
             logout();
             router.push('/masuk');
@@ -346,6 +349,7 @@ export function Shell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen bg-sand-100/70">
+      {dialog}
       {/* Mobile topbar */}
       <header className="pattern-islami-light sticky top-0 z-40 flex items-center gap-3 border-b border-white/10 bg-primary-950 px-4 py-3 lg:hidden">
         <button

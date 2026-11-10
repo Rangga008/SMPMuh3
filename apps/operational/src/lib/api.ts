@@ -117,9 +117,21 @@ export interface MyEmployee {
   type: string;
   email: string | null;
   phone: string | null;
+  address: string | null;
+  photoUrl: string | null;
+  department: string | null;
+  isDeptHead: boolean;
   isActive: boolean;
 }
 export const myEmployee = () => req<MyEmployee | null>('/auth/me/employee');
+export const updateMyEmployee = (dto: { email?: string; phone?: string; address?: string }) =>
+  req('/auth/me/employee', { method: 'PATCH', json: dto });
+export const uploadMyEmployeePhoto = (file: File) => {
+  const fd = new FormData();
+  fd.set('file', file);
+  return req<{ photoUrl: string }>('/auth/me/employee/photo', { method: 'POST', body: fd });
+};
+export const employeePhotoUrl = (id: string) => `${API}/auth/employees/${id}/photo`;
 export async function logout() {
   const t = getTokens();
   if (t) {

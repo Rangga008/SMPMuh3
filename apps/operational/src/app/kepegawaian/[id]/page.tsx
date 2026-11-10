@@ -32,7 +32,7 @@ const minToHHMM = (m: number) =>
 const thisMonth = () => new Date().toISOString().slice(0, 7);
 const DEPT_LABEL: Record<string, string> = {
   KURIKULUM: 'Kurikulum', KESISWAAN: 'Kesiswaan', TATA_USAHA: 'Tata Usaha',
-  KEUANGAN: 'Keuangan', HUMAS: 'Humas', LAINNYA: 'Lainnya',
+  KEUANGAN: 'Keuangan', LAINNYA: 'Lainnya',
 };
 
 export default function EmployeeDetailPage({

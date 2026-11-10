@@ -1,0 +1,2 @@
+ALTER TABLE "employees" ADD COLUMN IF NOT EXISTS "address" TEXT;
+ALTER TABLE "employees" ADD COLUMN IF NOT EXISTS "photo_url" TEXT;

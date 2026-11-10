@@ -6,6 +6,7 @@ import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { DataTable } from '@/components/data-table';
 import { PageTitle, Widget } from '@/components/widgets';
+import { useConfirm } from '@/components/confirm-dialog';
 import {
   createFinanceCategory,
   deleteFinanceCategory,
@@ -31,6 +32,7 @@ export default function KategoriPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [catModal, setCatModal] = useState(false);
+  const { confirm, dialog } = useConfirm();
 
   const load = useCallback(() => {
     listFinanceCategories().then(setCategories).catch(() => setError('Gagal memuat kategori.'));
@@ -128,7 +130,7 @@ export default function KategoriPage() {
                     <RowBtn type="button" onClick={() => void run( () => updateFinanceCategory(c.id, { isActive: c.isActive === false }), c.isActive === false ? 'Kategori diaktifkan.' : 'Kategori dinonaktifkan.', ) }>
                       {c.isActive === false ? 'Aktifkan' : 'Nonaktifkan'}
                     </RowBtn>
-                    <RowBtn tone="danger" type="button" onClick={() => { if (window.confirm(`Hapus kategori "${c.name}"? Hanya bisa bila belum dipakai transaksi.`)) void run(() => deleteFinanceCategory(c.id), 'Kategori dihapus.'); }}>
+                    <RowBtn tone="danger" type="button" onClick={async () => { if (await confirm(`Hapus kategori "${c.name}"? Hanya bisa bila belum dipakai transaksi.`)) void run(() => deleteFinanceCategory(c.id), 'Kategori dihapus.'); }}>
                       Hapus
                     </RowBtn>
                   </span>
@@ -161,6 +163,7 @@ export default function KategoriPage() {
           <Button type="submit" disabled={busy}>Simpan</Button>
         </form>
       </Modal>
+      {dialog}
     </Shell>
   );
 }

@@ -376,7 +376,12 @@ async function main() {
       await prisma.employee.create({
         data: {
           name: acc.name,
-          type: 'STAFF',
+          type:
+            acc.role === 'kepala_sekolah' ? 'PRINCIPAL'
+            : acc.role === 'staff_kurikulum' ? 'KURIKULUM'
+            : acc.role === 'staff_kesiswaan' ? 'KESISWAAN'
+            : acc.role === 'bendahara' ? 'KEUANGAN'
+            : 'TU',
           department: acc.dept,
           isDeptHead: acc.isHead,
           email: acc.email,

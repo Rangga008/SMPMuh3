@@ -13,7 +13,8 @@ const DEPT_LABELS: Record<string, string> = {
   KESISWAAN: 'Kesiswaan',
   TATA_USAHA: 'Tata Usaha',
   KEUANGAN: 'Keuangan',
-  HUMAS: 'Humas',
+  SARPRAS: 'Sarpras',
+  LAYSUS: 'Laysus',
   LAINNYA: 'Lainnya',
 };
 

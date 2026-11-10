@@ -13,6 +13,7 @@ import {
 import { Shell } from '@/components/shell';
 import { DataTable } from '@/components/data-table';
 import { PageTitle, Widget } from '@/components/widgets';
+import { useConfirm } from '@/components/confirm-dialog';
 import {
   ApiError,
   cancelWaMessage,
@@ -42,6 +43,7 @@ export default function WhatsappSettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const { confirm, dialog } = useConfirm();
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -318,7 +320,7 @@ export default function WhatsappSettingsPage() {
                       </RowBtn>
                     ) : null}
                     {m.status === 'QUEUED' ? (
-                      <RowBtn tone="danger" type="button" onClick={() => void act(() => cancelWaMessage(m.id), 'Pesan dibatalkan.') }>
+                      <RowBtn tone="danger" type="button" onClick={async () => { if (await confirm('Batalkan pesan WhatsApp ini? Pesan tidak akan dikirim.')) void act(() => cancelWaMessage(m.id), 'Pesan dibatalkan.'); }}>
                         Batalkan
                       </RowBtn>
                     ) : null}
@@ -328,6 +330,7 @@ export default function WhatsappSettingsPage() {
             ))}
           </DataTable>
         </Widget>
+      {dialog}
     </Shell>
   );
 }

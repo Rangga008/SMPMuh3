@@ -2,6 +2,7 @@ import {
   ConflictException,
   Injectable,
   Logger,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -11,6 +12,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { AuditService } from '../../audit/audit.service';
 import { EnvService } from '../../core/config/env.service';
 import { PrismaService } from '../../core/prisma/prisma.service';
+import { StorageService } from '../../core/storage/storage.service';
 import { normalizePhone, UsersService } from '../users/users.service';
 
 interface RequestMeta {
@@ -28,6 +30,7 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly env: EnvService,
     private readonly audit: AuditService,
+    private readonly storage: StorageService,
   ) {}
 
   async login(
@@ -278,9 +281,45 @@ export class AuthService {
         type: true,
         email: true,
         phone: true,
+        address: true,
+        photoUrl: true,
+        department: true,
+        isDeptHead: true,
         isActive: true,
       },
     });
+  }
+
+  /** Pegawai memperbarui kontak/alamatnya sendiri (field identitas tetap admin). */
+  updateMyEmployee(userId: string, dto: { email?: string; phone?: string; address?: string }) {
+    return this.prisma.employee.updateMany({
+      where: { userId },
+      data: {
+        ...(dto.email !== undefined ? { email: dto.email || null } : {}),
+        ...(dto.phone !== undefined ? { phone: dto.phone || null } : {}),
+        ...(dto.address !== undefined ? { address: dto.address || null } : {}),
+      },
+    });
+  }
+
+  /** Unggah foto profil pegawai — disimpan di storage, URL endpoint publik. */
+  async uploadMyEmployeePhoto(userId: string, file: Express.Multer.File) {
+    const emp = await this.prisma.employee.findFirst({ where: { userId } });
+    if (!emp) throw new NotFoundException('Akun belum terhubung ke data pegawai.');
+    const ext = file.mimetype === 'image/png' ? 'png' : file.mimetype === 'image/webp' ? 'webp' : 'jpg';
+    const key = `employees/${emp.id}/photo.${ext}`;
+    await this.storage.putObject(key, file.buffer, file.mimetype);
+    await this.prisma.employee.update({ where: { id: emp.id }, data: { photoUrl: key } });
+    return { photoUrl: key };
+  }
+
+  /** Foto pegawai — endpoint publik seperti logo sekolah. */
+  async employeePhoto(employeeId: string) {
+    const emp = await this.prisma.employee.findUniqueOrThrow({ where: { id: employeeId } });
+    if (!emp.photoUrl) throw new NotFoundException('Pegawai belum punya foto.');
+    const buf = await this.storage.getObjectBuffer(emp.photoUrl);
+    const ext = emp.photoUrl.split('.').pop() ?? 'jpg';
+    return { buf, mime: ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg', name: `foto-${emp.name}.${ext}` };
   }
 
   private async issueTokens(

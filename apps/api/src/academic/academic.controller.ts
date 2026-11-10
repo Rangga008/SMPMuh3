@@ -95,24 +95,34 @@ export class AcademicController {
   @Get('employees/import-template')
   @RequirePermission(ER)
   importTemplate(@Res({ passthrough: true }) res: Response) {
+    // Sheet utama berbahasa Indonesia — blok keterangan di atas header
+    // (baris 1-5), header di baris 6, contoh di baris 7, data mulai baris 8.
     const ws = XLSX.utils.aoa_to_sheet([
-      ['name', 'nip', 'type', 'email', 'phone', 'password', 'department', 'is_dept_head'],
+      ['TEMPLATE IMPORT PEGAWAI — isi data mulai BARIS 8 (baris keterangan & contoh abaikan, jangan diubah/dihapus)'],
+      ['Jenis pegawai  : GURU / TU / KESISWAAN / KURIKULUM / KEUANGAN / SARPRAS / LAYSUS / KS (kosong = GURU)'],
+      ['Bidang         : OTOMATIS mengikuti jenis — TU→Tata Usaha, Kesiswaan→Kesiswaan, dst'],
+      ['Kepala Bidang  : isi "ya" bila wakasek/kepala TU — kosongkan bila bukan'],
+      ['Password       : untuk akun login — DIISI = dipakai apa adanya; KOSONG = digenerate acak & tampil di hasil import'],
+      [],
+      ['Nama Lengkap', 'NIP/NUPTK', 'Jenis', 'Telepon/HP', 'Email', 'Password', 'Kepala Bidang'],
+      ['CONTOH — Ahmad Hidayat, S.Pd. (hapus baris ini)', '19750101001', 'GURU', '081234567890', 'ahmad@smpmuh3.sch.id', 'guru123', 'ya'],
     ]);
-    ws['!cols'] = [{ wch: 28 }, { wch: 16 }, { wch: 10 }, { wch: 26 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 12 }];
+    ws['!cols'] = [{ wch: 34 }, { wch: 16 }, { wch: 12 }, { wch: 16 }, { wch: 28 }, { wch: 14 }, { wch: 14 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Pegawai');
     const guide = XLSX.utils.json_to_sheet([
-      { kolom: 'name', wajib: 'YA', keterangan: 'Nama lengkap pegawai — contoh: Ahmad Hidayat, S.Pd.' },
-      { kolom: 'nip', wajib: 'tidak', keterangan: 'NIP/NUPTK — dipakai untuk dedup; jangan dobel — contoh: 19750101001' },
-      { kolom: 'type', wajib: 'tidak', keterangan: 'TEACHER (guru) atau STAFF — default TEACHER' },
-      { kolom: 'email', wajib: 'tidak*', keterangan: 'Email — dipakai login akun; harus unik antar akun — contoh: ahmad@sekolah.sch.id' },
-      { kolom: 'phone', wajib: 'tidak*', keterangan: 'No. HP — dipakai login akun; harus unik — contoh: 081234567890' },
-      { kolom: 'password', wajib: 'tidak', keterangan: 'Password akun — diisi = dipakai apa adanya; KOSONG = digenerate acak & tampil di hasil import — contoh: guru123' },
-      { kolom: 'department', wajib: 'tidak', keterangan: 'KURIKULUM / KESISWAAN / TATA_USAHA / KEUANGAN / HUMAS / LAINNYA' },
-      { kolom: 'is_dept_head', wajib: 'tidak', keterangan: 'Isi "ya" bila kepala bidang (wakasek/kepala TU)' },
-      { kolom: '*akun', wajib: '-', keterangan: 'Akun login dibuat bila email/HP diisi & opsi "buat akun" dicentang — password dari kolom password atau acak, tampil di hasil import' },
+      { kolom: 'Nama Lengkap', wajib: 'YA', keterangan: 'Nama lengkap pegawai — contoh: Ahmad Hidayat, S.Pd.' },
+      { kolom: 'NIP/NUPTK', wajib: 'tidak', keterangan: 'NIP atau NUPTK — dipakai untuk dedup; jangan dobel — contoh: 19750101001' },
+      { kolom: 'Jenis', wajib: 'tidak', keterangan: 'GURU / TU / KESISWAAN / KURIKULUM / KEUANGAN / SARPRAS / LAYSUS / KS (kepala sekolah) — kosong = GURU' },
+      { kolom: 'Telepon/HP', wajib: 'tidak*', keterangan: 'No. HP — dipakai login akun; harus unik — contoh: 081234567890' },
+      { kolom: 'Email', wajib: 'tidak*', keterangan: 'Email — dipakai login akun; harus unik — contoh: ahmad@smpmuh3.sch.id' },
+      { kolom: 'Password', wajib: 'tidak', keterangan: 'Password akun — diisi = dipakai; KOSONG = digenerate acak & tampil di hasil import — contoh: guru123' },
+      { kolom: 'Bidang', wajib: '-', keterangan: 'Otomatis dari jenis — TU→Tata Usaha, Kesiswaan→Kesiswaan, Kurikulum→Kurikulum, Keuangan→Keuangan, Sarpras→Sarpras, Laysus→Laysus, Guru/KS→kosong' },
+      { kolom: 'Kepala Bidang', wajib: 'tidak', keterangan: 'Isi "ya" bila kepala bidang (wakasek/kepala TU)' },
+      { kolom: '*akun', wajib: '-', keterangan: 'Akun login dibuat bila email/HP diisi & opsi "buat akun" dicentang' },
+      { kolom: '*dedup', wajib: '-', keterangan: 'NIP-NUPTK/email/HP yang sudah terdata = data DIPERBARUI, bukan dibuat dobel' },
     ]);
-    guide['!cols'] = [{ wch: 14 }, { wch: 8 }, { wch: 80 }];
+    guide['!cols'] = [{ wch: 16 }, { wch: 8 }, { wch: 90 }];
     XLSX.utils.book_append_sheet(wb, guide, 'Petunjuk');
     const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
     res.set({
@@ -153,27 +163,57 @@ export class AcademicController {
       throw new BadRequestException('File tidak dapat dibaca');
     }
     const rows: Parameters<AcademicService['importEmployees']>[0] = [];
+    const normType = (v: string) => {
+      const t = v.toUpperCase().replace(/\s+/g, '_');
+      if (/^(GURU|TEACHER)/.test(t)) return 'TEACHER';
+      if (/^(STAF|STAFF|TENDIK|TU|TATA_?USAHA)/.test(t)) return 'TU';
+      if (/^(KS|KEPSEK|KEPALA_?SEKOLAH|PRINCIPAL)/.test(t)) return 'PRINCIPAL';
+      if (/^(KESISWAAN|KURIKULUM|KEUANGAN|SARPRAS|LAYSUS)/.test(t)) return t;
+      if (/^BENDAHARA/.test(t)) return 'KEUANGAN';
+      return t || undefined;
+    };
+    const normDept = (v: string) => {
+      const d = v.toUpperCase().replace(/\s+/g, '_');
+      if (/^(TU|TATA_?USAHA)/.test(d)) return 'TATA_USAHA';
+      return d || undefined;
+    };
     for (const sn of wb.SheetNames) {
       if (sn.toLowerCase() === 'petunjuk') continue;
       const sheet = wb.Sheets[sn];
       if (!sheet) continue;
-      for (const r of XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' })) {
-        const g = (...keys: string[]) => {
-          for (const k of keys) {
-            const v = r[k];
-            if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();
-          }
-          return '';
-        };
+      // Baca array-of-array lalu cari baris header (sel mengandung 'nama' & 'nip')
+      // — mendukung template Indonesia baru maupun header Inggris lama.
+      const aoa = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '', blankrows: false });
+      const hi = aoa.findIndex((r) => {
+        const first = String(r[0] ?? '').toLowerCase();
+        return /^(nama|name)/.test(first) && r.some((c) => /nip|nuptk/i.test(String(c)));
+      });
+      if (hi < 0) continue;
+      const header = (aoa[hi] ?? []).map((c) => String(c).toLowerCase());
+      const col = (...keys: string[]) => header.findIndex((h) => keys.some((k) => h.includes(k)));
+      const ix = {
+        name: col('nama', 'name'),
+        nip: col('nip', 'nuptk'),
+        type: col('jenis', 'type'),
+        phone: col('telepon', 'telp', 'hp', 'phone'),
+        email: col('email'),
+        password: col('password', 'sandi', 'kata_sandi'),
+        department: col('bidang', 'department', 'departemen'),
+        deptHead: col('kepala', 'is_dept_head', 'dept_head'),
+      };
+      for (const r of aoa.slice(hi + 1)) {
+        const cell = (i: number) => (i >= 0 ? String(r[i] ?? '').trim() : '');
+        const name = cell(ix.name);
+        if (!name || /^contoh/i.test(name)) continue; // abaikan baris contoh template
         rows.push({
-          name: g('name', 'nama', 'Nama'),
-          nip: g('nip', 'NIP', 'nuptk', 'NUPTK', 'nip_nuptk', 'nip/nuptk') || undefined,
-          type: g('type', 'jenis', 'Jenis').toUpperCase() || undefined,
-          email: g('email', 'Email') || undefined,
-          phone: g('phone', 'hp', 'telepon', 'Telepon', 'HP') || undefined,
-          password: g('password', 'sandi', 'kata_sandi', 'Password') || undefined,
-          department: g('department', 'bidang', 'Bidang').toUpperCase() || undefined,
-          isDeptHead: ['1', 'true', 'ya', 'yes', 'y'].includes(g('is_dept_head', 'kepala_bidang').toLowerCase()) || undefined,
+          name,
+          nip: cell(ix.nip) || undefined,
+          type: normType(cell(ix.type)),
+          email: cell(ix.email) || undefined,
+          phone: cell(ix.phone) || undefined,
+          password: cell(ix.password) || undefined,
+          department: normDept(cell(ix.department)),
+          isDeptHead: ['1', 'true', 'ya', 'yes', 'y'].includes(cell(ix.deptHead).toLowerCase()) || undefined,
         });
       }
     }

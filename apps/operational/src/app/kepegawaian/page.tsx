@@ -3,6 +3,11 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
+import {
+  EMPLOYEE_TYPE_LABELS,
+  EMPLOYEE_TYPES,
+  type EmployeeType,
+} from '@smpmuh3/types';
 import { Shell } from '@/components/shell';
 import { DataTable } from '@/components/data-table';
 import { PageTitle } from '@/components/widgets';
@@ -22,10 +27,12 @@ import {
 import { RowBtn } from '@/components/row-btn';
 import { useConfirm } from '@/components/confirm-dialog';
 
-const typeLabel = (t: string) => (t === 'TEACHER' ? 'Guru' : 'Staf');
+const typeLabel = (t: string) =>
+  EMPLOYEE_TYPE_LABELS[t as EmployeeType] ?? t;
 const DEPT_LABEL: Record<string, string> = {
   KURIKULUM: 'Kurikulum', KESISWAAN: 'Kesiswaan', TATA_USAHA: 'Tata Usaha',
-  KEUANGAN: 'Keuangan', HUMAS: 'Humas', LAINNYA: 'Lainnya',
+  KEUANGAN: 'Keuangan', SARPRAS: 'Sarpras', LAYSUS: 'Laysus',
+  LAINNYA: 'Lainnya',
 };
 
 export default function EmployeesPage() {
@@ -278,21 +285,11 @@ export default function EmployeesPage() {
             <Field label="NIP/NUPTK">
               <Input name="nip" />
             </Field>
-            <Field label="Jenis">
+            <Field label="Jenis" hint="Bidang mengikuti jenis — TU→Tata Usaha, Kesiswaan→Kesiswaan, dst.">
               <Select name="type" required defaultValue="TEACHER">
-                <option value="TEACHER">Guru</option>
-                <option value="STAFF">Staf</option>
-              </Select>
-            </Field>
-            <Field label="Bidang" hint="Untuk fitur Bidang Saya & kepala bidang">
-              <Select name="department" defaultValue="">
-                <option value="">— Belum ditugaskan —</option>
-                <option value="KURIKULUM">Kurikulum</option>
-                <option value="KESISWAAN">Kesiswaan</option>
-                <option value="TATA_USAHA">Tata Usaha</option>
-                <option value="KEUANGAN">Keuangan</option>
-                <option value="HUMAS">Humas</option>
-                <option value="LAINNYA">Lainnya</option>
+                {EMPLOYEE_TYPES.map((t) => (
+                  <option key={t} value={t}>{EMPLOYEE_TYPE_LABELS[t]}</option>
+                ))}
               </Select>
             </Field>
             <Field label="Jabatan Bidang">
@@ -354,8 +351,9 @@ export default function EmployeesPage() {
           <span className="text-xs font-bold uppercase tracking-wider text-sand-500">Jenis</span>
           <Select value={type} onChange={(e) => setType(e.target.value)}>
             <option value="">Semua</option>
-            <option value="TEACHER">Guru</option>
-            <option value="STAFF">Staf</option>
+            {EMPLOYEE_TYPES.map((t) => (
+              <option key={t} value={t}>{EMPLOYEE_TYPE_LABELS[t]}</option>
+            ))}
           </Select>
         </label>
         <label className="flex min-w-36 flex-col gap-1.5">

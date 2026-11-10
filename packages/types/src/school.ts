@@ -16,8 +16,30 @@ export const STUDENT_STATUS_LABELS: Record<StudentStatus, string> = {
   DROPPED: 'Keluar',
 };
 
-export const EMPLOYEE_TYPES = ['TEACHER', 'STAFF'] as const;
+export const EMPLOYEE_TYPES = [
+  'TEACHER',
+  'STAFF',
+  'TU',
+  'KESISWAAN',
+  'KURIKULUM',
+  'KEUANGAN',
+  'SARPRAS',
+  'LAYSUS',
+  'PRINCIPAL',
+] as const;
 export type EmployeeType = (typeof EMPLOYEE_TYPES)[number];
+
+export const EMPLOYEE_TYPE_LABELS: Record<EmployeeType, string> = {
+  TEACHER: 'Guru',
+  STAFF: 'Staf',
+  TU: 'Tata Usaha',
+  KESISWAAN: 'Kesiswaan',
+  KURIKULUM: 'Kurikulum',
+  KEUANGAN: 'Keuangan',
+  SARPRAS: 'Sarpras',
+  LAYSUS: 'Laysus',
+  PRINCIPAL: 'Kepala Sekolah',
+};
 
 export const ATTENDANCE_STATUSES = [
   'PRESENT',

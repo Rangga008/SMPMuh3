@@ -1,14 +1,20 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
   HttpCode,
   HttpStatus,
+  Param,
   Patch,
   Post,
   Req,
+  Res,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
-import type { Request } from 'express';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Request, Response } from 'express';
 import type { AuthTokens, AuthUser } from '@smpmuh3/types';
 import { CurrentUser } from '../decorators/current-user.decorator';
 import { Public } from '../decorators/public.decorator';
@@ -112,5 +118,34 @@ export class AuthController {
   @Get('me/employee')
   myEmployee(@CurrentUser() user: AuthUser) {
     return this.auth.myEmployee(user.id);
+  }
+
+  /** Pegawai mengubah kontak/alamatnya sendiri (identitas tetap dikelola admin). */
+  @Patch('me/employee')
+  updateMyEmployee(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: { email?: string; phone?: string; address?: string },
+  ) {
+    return this.auth.updateMyEmployee(user.id, dto);
+  }
+
+  @Post('me/employee/photo')
+  @UseInterceptors(FileInterceptor('file'))
+  uploadMyEmployeePhoto(@CurrentUser() user: AuthUser, @UploadedFile() file?: Express.Multer.File) {
+    if (!file) throw new BadRequestException('File foto wajib.');
+    if (!/^image\/(jpeg|png|webp)$/.test(file.mimetype)) {
+      throw new BadRequestException('Foto harus JPG, PNG, atau WebP.');
+    }
+    return this.auth.uploadMyEmployeePhoto(user.id, file);
+  }
+
+  /** Foto profil pegawai — publik agar <img> langsung bisa menampilkannya. */
+  @Get('employees/:id/photo')
+  @Public()
+  async employeePhoto(@Param('id') id: string, @Res() res: Response) {
+    const f = await this.auth.employeePhoto(id);
+    res.setHeader('Content-Type', f.mime);
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.send(f.buf);
   }
 }
