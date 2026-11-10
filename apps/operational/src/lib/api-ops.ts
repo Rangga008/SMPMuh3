@@ -126,7 +126,7 @@ export const submissionFileUrl = (id: string) => `/api/v1/ops/submissions/${id}/
 
 export interface ArchiveItemView {
   id: string; title: string; refNumber?: string | null; date?: string | null;
-  fileName: string; category?: { id: string; name: string } | null; createdAt: string;
+  fileName: string; categoryId?: string | null; category?: { id: string; name: string } | null; createdAt: string;
 }
 export const listArchiveCategories = () => req<{ id: string; name: string; _count: { items: number } }[]>('/ops/archives/categories');
 export const createArchiveCategory = (name: string) =>
@@ -167,7 +167,7 @@ export const createExamRoom = (dto: { name: string; period: string; academicYear
 export const assignClassToRoom = (roomId: string, classId: string) =>
   req<{ added: number; skipped: number }>(`/ops/exam-rooms/${roomId}/assign-class`, { method: 'POST', json: { classId } });
 export const getExamCards = (roomId: string) =>
-  req<{ room: ExamRoomView & { academicYear: AcademicYear }; school: { name: string; logoUrl?: string | null } | null }>(`/ops/exam-rooms/${roomId}/cards`);
+  req<{ room: ExamRoomView & { academicYear: AcademicYear }; school: { name: string; logoUrl?: string | null; npsn?: string | null } | null }>(`/ops/exam-rooms/${roomId}/cards`);
 
 export const uploadMutationLetter = (mutationId: string, file: File) => {
   const fd = new FormData(); fd.append('file', file);
@@ -181,23 +181,52 @@ export const getStudentRecord = (id: string) =>
     fatherName?: string | null; motherName?: string | null;
     parentOccupation?: string | null; parentPhone?: string | null;
     intelligenceNotes?: string | null; leavingNotes?: string | null; otherNotes?: string | null;
+    recordDetails?: Record<string, string | undefined> | null;
+    address?: string | null; gender?: string | null;
+    parent?: { name: string; phone?: string | null; email?: string | null } | null;
+    candidate?: { previousSchool?: string | null; address?: string | null; birthPlace?: string | null; birthDate?: string | null } | null;
     enrollments: { class?: { name: string; gradeLevel: number } | null; academicYear: { name: string } }[];
   }>(`/ops/students/${id}/record`);
-export const updateStudentRecord = (id: string, dto: Record<string, string>) =>
+export const updateStudentRecord = (id: string, dto: Record<string, unknown>) =>
   req(`/ops/students/${id}/record`, { method: 'PATCH', json: dto });
 
 export interface ImportResult {
   total: number; ok: number; failed: number;
   results: { row: number; name: string; ok: boolean; msg: string }[];
 }
-export const importStudentsDapodik = (academicYearId: string, classMap: Record<string, string>, file: File) => {
+export const importStudentsDapodik = (academicYearId: string, classMap: Record<string, string>, file: File, dry = false) => {
   const fd = new FormData();
   fd.append('academicYearId', academicYearId);
   fd.append('classMap', JSON.stringify(classMap));
+  if (dry) fd.append('dry', '1');
   fd.append('file', file);
   return req<ImportResult>('/ops/import/students', { method: 'POST', body: fd });
 };
-export const importEmployeesDapodik = (file: File) => {
-  const fd = new FormData(); fd.append('file', file);
-  return req<ImportResult>('/ops/import/employees', { method: 'POST', body: fd });
+// import pegawai memakai importEmployees (/employees/import) di api.ts — punya preview + pembuatan akun.
+
+// ---- Matriks jadwal & cetak ----
+export interface TimetableMatrix {
+  classes: { id: string; name: string }[];
+  teachers: { no: number; id: string; name: string; subject: string; dayCounts: Record<number, number>; total: number }[];
+  days: {
+    day: number;
+    rows: {
+      start: number; end: number;
+      block: { id: string; label: string } | null;
+      cells: ({ entryId: string; teacherNo: number; subject: string; teacher: string } | null)[];
+    }[];
+  }[];
+}
+export const getTimetableMatrix = (academicYearId: string) =>
+  req<TimetableMatrix>(`/ops/timetable-matrix?academicYearId=${encodeURIComponent(academicYearId)}`);
+export const attendanceRecapXlsxUrl = (academicYearId: string, year: number, month: number) =>
+  `/api/v1/ops/attendance/recap.xlsx?academicYearId=${academicYearId}&year=${year}&month=${month}`;
+
+// ---- Arsip edit/hapus ----
+export const updateArchive = (id: string, dto: { title?: string; categoryId?: string; refNumber?: string; date?: string }, file?: File) => {
+  const fd = new FormData();
+  Object.entries(dto).forEach(([k, v]) => { if (v !== undefined) fd.append(k, v); });
+  if (file) fd.append('file', file);
+  return req<ArchiveItemView>(`/ops/archives/${id}`, { method: 'PATCH', body: fd });
 };
+export const deleteArchive = (id: string) => req(`/ops/archives/${id}`, { method: 'DELETE' });

@@ -15,6 +15,8 @@ import {
   type TimetableSlot,
 } from '@/lib/api-ops';
 import { listAcademicYears, listClasses, type AcademicYear, type ClassView } from '@/lib/api';
+import { PERMISSIONS } from '@smpmuh3/types';
+import { usePermission } from '@/lib/use-permission';
 
 const DAY_NAMES = ['', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
 const mm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}.${String(m % 60).padStart(2, '0')}`;
@@ -35,6 +37,7 @@ export default function JadwalKelasPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const canManage = usePermission(PERMISSIONS.ACADEMIC_MANAGE);
 
   useEffect(() => {
     listAcademicYears().then((ys) => {
@@ -88,9 +91,14 @@ export default function JadwalKelasPage() {
         title="Jadwal Kelas & Blok Rutin"
         subtitle="Jadwal mingguan per kelas (berlaku satu semester) + blok non-mapel: Ishoma, Pembiasaan, Istirahat, Upacara."
         actions={
-          <Button variant="outline" size="sm" onClick={() => yearId && downloadTimetableXlsx(yearId, classId || undefined)}>
-            Export Excel
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => yearId && downloadTimetableXlsx(yearId, classId || undefined)}>
+              Export Excel
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => yearId && window.open(`/kurikulum/jadwal-kelas/cetak?year=${yearId}`, '_blank')}>
+              Cetak PDF
+            </Button>
+          </div>
         }
       />
       {dialog}
@@ -114,7 +122,7 @@ export default function JadwalKelasPage() {
       <Widget
         title="Blok Jadwal Rutin"
         subtitle="Berlaku untuk semua kelas — Ishoma, pembiasaan, istirahat, upacara. Rutin per hari atau tanggal tertentu."
-        action={<Button size="sm" onClick={() => setBlockModal(true)}>+ Blok</Button>}
+        action={canManage ? <Button size="sm" onClick={() => setBlockModal(true)}>+ Blok</Button> : undefined}
       >
         <div className="divide-y divide-sand-100">
           {blocks.length === 0 ? (
@@ -129,17 +137,19 @@ export default function JadwalKelasPage() {
                     <p className="text-xs text-sand-500">{mm(b.startMinute)}–{mm(b.endMinute)}{b.day ? ' · tiap minggu' : ''}</p>
                   </div>
                 </div>
-                <Button
-                  variant="ghost" size="sm"
-                  onClick={async () => {
-                    if (!(await confirm(`Hapus blok "${b.label}"?`))) return;
-                    await deleteScheduleBlock(b.id);
-                    setBlocks((bs) => bs.filter((x) => x.id !== b.id));
-                    loadTt();
-                  }}
-                >
-                  Hapus
-                </Button>
+                {canManage ? (
+                  <Button
+                    variant="ghost" size="sm"
+                    onClick={async () => {
+                      if (!(await confirm(`Hapus blok "${b.label}"?`))) return;
+                      await deleteScheduleBlock(b.id);
+                      setBlocks((bs) => bs.filter((x) => x.id !== b.id));
+                      loadTt();
+                    }}
+                  >
+                    Hapus
+                  </Button>
+                ) : null}
               </div>
             ))
           )}

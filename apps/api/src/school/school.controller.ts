@@ -81,6 +81,13 @@ export class UpdateSchoolDto {
   @IsString()
   @MaxLength(30)
   headmasterNip?: string | null;
+
+  /** NPSN — Nomor Pokok Satuan Pendidikan Nasional (identitas sekolah). */
+  @emptyToNull()
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  npsn?: string | null;
 }
 
 @Controller({ path: 'school', version: '1' })

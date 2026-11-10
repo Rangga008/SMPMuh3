@@ -78,6 +78,28 @@ export class OpsController {
     res.setHeader('Content-Disposition', 'attachment; filename="jadwal-kelas.xlsx"');
     res.send(buf);
   }
+  /** Matriks jadwal semua kelas — dipakai halaman cetak & bisa dijadikan PDF. */
+  @Get('timetable-matrix')
+  @RequirePermission(PERMISSIONS.ACADEMIC_READ)
+  timetableMatrix(@Query('academicYearId') y: string) {
+    if (!y) throw new BadRequestException('academicYearId wajib.');
+    return this.ops.timetableMatrix(y);
+  }
+  /** Rekap absen siswa bulanan — format Dapodik, satu sheet per kelas. */
+  @Get('attendance/recap.xlsx')
+  @RequirePermission(PERMISSIONS.ACADEMIC_READ)
+  async attendanceRecapXlsx(
+    @Res() res: Response,
+    @Query('academicYearId') y: string,
+    @Query('year') year: string,
+    @Query('month') month: string,
+  ) {
+    if (!y || !year || !month) throw new BadRequestException('academicYearId, year, month wajib.');
+    const buf = await this.ops.attendanceRecapXlsx(y, Number(year), Number(month));
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="absen-${year}-${String(month).padStart(2, '0')}.xlsx"`);
+    res.send(buf);
+  }
 
   // ---- Butir soal & analisis ----
   @Put('assessments/:id/questions')
@@ -261,6 +283,26 @@ export class OpsController {
   async archiveFile(@Param('id') id: string, @Res() res: Response) {
     sendFile(res, await this.ops.archiveFile(id));
   }
+  @Patch('archives/:id')
+  @RequirePermission(PERMISSIONS.TATAUSAHA_MANAGE)
+  @UseInterceptors(FileInterceptor('file'))
+  updateArchive(
+    @Param('id') id: string,
+    @Body() body: Record<string, string>,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    return this.ops.updateArchiveItem(id, {
+      ...(body.title !== undefined ? { title: body.title } : {}),
+      ...(body.categoryId !== undefined ? { categoryId: body.categoryId || null } : {}),
+      ...(body.refNumber !== undefined ? { refNumber: body.refNumber || null } : {}),
+      ...(body.date !== undefined ? { date: body.date || null } : {}),
+    }, file);
+  }
+  @Delete('archives/:id')
+  @RequirePermission(PERMISSIONS.TATAUSAHA_MANAGE)
+  deleteArchive(@Param('id') id: string) {
+    return this.ops.deleteArchiveItem(id);
+  }
 
   // ---- Policy docs ----
   @Get('policies')
@@ -337,7 +379,7 @@ export class OpsController {
   }
   @Patch('students/:id/record')
   @RequirePermission(PERMISSIONS.STUDENT_MANAGE)
-  updateStudentRecord(@Param('id') id: string, @Body() body: Record<string, string>) {
+  updateStudentRecord(@Param('id') id: string, @Body() body: Record<string, unknown>) {
     return this.ops.updateStudentRecord(id, body);
   }
 
@@ -349,6 +391,7 @@ export class OpsController {
     @UploadedFile() file: Express.Multer.File,
     @Body('academicYearId') y: string,
     @Body('classMap') classMapJson?: string,
+    @Body('dry') dry?: string,
   ) {
     if (!file) throw new BadRequestException('File wajib.');
     let classMap: Record<string, string> = {};
@@ -357,13 +400,6 @@ export class OpsController {
     } catch {
       throw new BadRequestException('classMap harus JSON valid.');
     }
-    return this.ops.importStudents(file.buffer, y, classMap);
-  }
-  @Post('import/employees')
-  @RequirePermission(PERMISSIONS.EMPLOYEE_MANAGE)
-  @UseInterceptors(FileInterceptor('file'))
-  importEmployees(@UploadedFile() file: Express.Multer.File) {
-    if (!file) throw new BadRequestException('File wajib.');
-    return this.ops.importEmployees(file.buffer);
+    return this.ops.importStudents(file.buffer, y, classMap, dry === '1' || dry === 'true');
   }
 }

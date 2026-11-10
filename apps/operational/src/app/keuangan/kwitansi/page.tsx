@@ -44,6 +44,7 @@ export default function KwitansiPage() {
         <div class="kop-text">
           <p class="kop-name">${s?.name ?? 'SMP Muhammadiyah 3 Kota Bandung'}</p>
           ${s?.tagline ? `<p class="kop-tag">${s.tagline}</p>` : ''}
+          ${s?.npsn ? `<p class="kop-tag">NPSN: ${s.npsn}</p>` : ''}
           <p class="kop-sub">${[s?.address, s?.phone ? `Telp. ${s.phone}` : null].filter(Boolean).join(' · ')}</p>
         </div>
       </div>`;

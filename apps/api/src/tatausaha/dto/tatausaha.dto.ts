@@ -42,6 +42,11 @@ export class LetterDto {
 
   @emptyToNull()
   @IsOptional()
+  @IsUUID()
+  categoryId?: string | null;
+
+  @emptyToNull()
+  @IsOptional()
   @IsString()
   @MaxLength(1000)
   description?: string | null;
@@ -69,6 +74,11 @@ export class UpdateLetterDto {
   @IsString()
   @MaxLength(200)
   party?: string | null;
+
+  @emptyToNull()
+  @IsOptional()
+  @IsUUID()
+  categoryId?: string | null;
 
   @emptyToNull()
   @IsOptional()
@@ -106,6 +116,11 @@ export class MutationDto {
   @IsString()
   @MaxLength(80)
   letterNumber?: string | null;
+
+  @emptyToNull()
+  @IsOptional()
+  @IsUUID()
+  categoryId?: string | null;
 
   @IsOptional()
   @IsIn(['PROCESS', 'DONE', 'CANCELLED'])
@@ -146,6 +161,11 @@ export class UpdateMutationDto {
   @IsString()
   @MaxLength(80)
   letterNumber?: string | null;
+
+  @emptyToNull()
+  @IsOptional()
+  @IsUUID()
+  categoryId?: string | null;
 
   @IsOptional()
   @IsIn(['PROCESS', 'DONE', 'CANCELLED'])

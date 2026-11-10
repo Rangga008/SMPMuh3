@@ -6,6 +6,7 @@ import { Shell } from '@/components/shell';
 import { PageTitle, Widget } from '@/components/widgets';
 import { DataTable } from '@/components/data-table';
 import { useConfirm } from '@/components/confirm-dialog';
+import { FilePick } from '@/components/file-pick';
 import { createSubmission, listSubmissions, reviewSubmission, submissionFileUrl, type ProgramSubmissionView } from '@/lib/api-ops';
 
 const KINDS = ['RKS', 'PROKER', 'RENCANA', 'REALISASI'];
@@ -128,7 +129,7 @@ export default function PengajuanPage() {
               </div>
             </div>
           </Field>
-          <Field label="Lampiran (opsional)"><Input name="file" type="file" /></Field>
+          <Field label="Lampiran (opsional)"><FilePick name="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xlsx,.xls" /></Field>
           <div className="flex justify-end gap-2"><Button type="submit" disabled={busy}>Kirim ke KS</Button></div>
         </form>
       </Modal>

@@ -1307,6 +1307,7 @@ export interface School {
   email: string | null;
   headmaster?: string | null;
   headmasterNip?: string | null;
+  npsn?: string | null;
   headmasterSignatureUrl?: string | null;
   logoUrl: string | null;
   updatedAt: string;
@@ -1595,14 +1596,29 @@ export interface Letter {
   subject: string;
   party?: string | null;
   description?: string | null;
+  categoryId?: string | null;
+  category?: { id: string; name: string } | null;
   fileName?: string | null;
   mimeType?: string | null;
   createdAt: string;
 }
-export const listLetters = (direction?: string, search?: string) => {
+export interface LetterCategory {
+  id: string;
+  kind: string;
+  name: string;
+  _count?: { letters: number; mutations: number };
+}
+export const listLetterCategories = (kind?: string) =>
+  req<LetterCategory[]>(`/tu/categories${kind ? `?kind=${kind}` : ''}`);
+export const createLetterCategory = (kind: string, name: string) =>
+  req<LetterCategory>('/tu/categories', { method: 'POST', json: { kind, name } });
+export const deleteLetterCategory = (id: string) =>
+  req(`/tu/categories/${id}`, { method: 'DELETE' });
+export const listLetters = (direction?: string, search?: string, categoryId?: string) => {
   const p = new URLSearchParams();
   if (direction) p.set('direction', direction);
   if (search) p.set('search', search);
+  if (categoryId) p.set('categoryId', categoryId);
   const s = p.toString();
   return req<Letter[]>(`/tu/letters${s ? `?${s}` : ''}`);
 };
@@ -1642,15 +1658,18 @@ export interface StudentMutation {
   date: string;
   school?: string | null;
   letterNumber?: string | null;
+  categoryId?: string | null;
+  category?: { id: string; name: string } | null;
   fileName?: string | null;
   status: 'PROCESS' | 'DONE' | 'CANCELLED';
   notes?: string | null;
   createdAt: string;
 }
-export const listMutations = (direction?: string, search?: string) => {
+export const listMutations = (direction?: string, search?: string, categoryId?: string) => {
   const p = new URLSearchParams();
   if (direction) p.set('direction', direction);
   if (search) p.set('search', search);
+  if (categoryId) p.set('categoryId', categoryId);
   const s = p.toString();
   return req<StudentMutation[]>(`/tu/mutations${s ? `?${s}` : ''}`);
 };
@@ -1978,12 +1997,29 @@ export const savingsReport = (q: { from: string; to: string; studentId?: string;
 // ---- kepegawaian: update, import, export SPMB ----
 export const updateEmployee = (id: string, dto: Record<string, unknown>) =>
   req<EmployeeDto>(`/employees/${id}`, { method: 'PATCH', json: dto });
-export const importEmployees = (file: File) => {
+export interface EmployeeImportPreviewRow {
+  row: number; name: string; nip: string | null; email: string | null;
+  phone: string | null; department: string | null;
+  action: 'BARU' | 'UPDATE' | 'LEWATI'; error?: string;
+}
+export interface EmployeeImportResult {
+  created: number; updated: number; skipped: number;
+  errors: { row: number; name: string; error: string }[];
+  accounts: { name: string; login: string; password: string }[];
+}
+export const importEmployees = (file: File, opts: { dry?: boolean; accounts?: boolean } = {}) => {
   const fd = new FormData();
   fd.set('file', file);
-  return req<{ created: number; updated: number; skipped: number; errors: { row: number; name: string; error: string }[] }>(
-    '/employees/import', { method: 'POST', body: fd });
+  const q = new URLSearchParams();
+  if (opts.dry) q.set('dry', '1');
+  if (opts.accounts) q.set('accounts', '1');
+  const s = q.toString();
+  return req<EmployeeImportResult & { preview?: EmployeeImportPreviewRow[]; total?: number }>(
+    `/employees/import${s ? `?${s}` : ''}`, { method: 'POST', body: fd });
 };
+export const previewEmployeeImport = (file: File) => importEmployees(file, { dry: true });
+export const deleteEmployee = (id: string) =>
+  req<{ deleted: boolean; deactivated?: boolean; reason?: string }>(`/employees/${id}`, { method: 'DELETE' });
 export const downloadEmployeeTemplate = () =>
   downloadFile('/employees/import-template', 'template-pegawai.xlsx');
 export const exportTitipanXlsx = (q: { academicYearId?: string; waveId?: string }) => {

@@ -40,7 +40,7 @@ export default function BidangPage() {
           title={`Bidang ${DEPT_LABELS[data.department] ?? data.department}`}
           action={data.isHead ? <Badge tone="primary">Anda kepala bidang</Badge> : undefined}
         >
-          <DataTable head={['Nama', 'NIP', 'Jenis', 'Kontak', 'Jabatan']}>
+          <DataTable head={['Nama', 'NIP/NUPTK', 'Jenis', 'Kontak', 'Jabatan']}>
             {data.members.map((m) => (
               <tr key={m.id}>
                 <td className="px-5 py-2.5">

@@ -196,12 +196,20 @@ export class AcademicService {
       phone?: string | undefined;
       department?: string | undefined;
       isDeptHead?: boolean | undefined;
+      password?: string | undefined;
     }[],
     actorId: string,
+    opts: { dryRun?: boolean; createAccounts?: boolean } = {},
   ) {
     let created = 0;
     let updated = 0;
     const errors: { row: number; name: string; error: string }[] = [];
+    const preview: {
+      row: number; name: string; nip: string | null; email: string | null;
+      phone: string | null; department: string | null;
+      action: 'BARU' | 'UPDATE' | 'LEWATI'; error?: string;
+    }[] = [];
+    const accounts: { name: string; login: string; password: string }[] = [];
     const seenNip = new Set<string>();
     const seenEmail = new Set<string>();
     const seenPhone = new Set<string>();
@@ -211,22 +219,21 @@ export class AcademicService {
       const name = raw.name?.trim();
       if (!name) {
         errors.push({ row, name: raw.name ?? '', error: 'Nama kosong' });
+        preview.push({ row, name: raw.name ?? '', nip: null, email: null, phone: null, department: null, action: 'LEWATI', error: 'Nama kosong' });
         continue;
       }
       const nip = raw.nip?.trim() || null;
       const email = raw.email?.trim().toLowerCase() || null;
       const phone = raw.phone ? normalizePhone(raw.phone) : null;
       // Duplikat di dalam file import sendiri.
-      if (nip && seenNip.has(nip)) {
-        errors.push({ row, name, error: `NIP ${nip} dobel di file ini` });
-        continue;
-      }
-      if (email && seenEmail.has(email)) {
-        errors.push({ row, name, error: `Email ${email} dobel di file ini` });
-        continue;
-      }
-      if (phone && seenPhone.has(phone)) {
-        errors.push({ row, name, error: `HP ${phone} dobel di file ini` });
+      const dup =
+        (nip && seenNip.has(nip) && `NIP/NUPTK ${nip} dobel di file ini`) ||
+        (email && seenEmail.has(email) && `Email ${email} dobel di file ini`) ||
+        (phone && seenPhone.has(phone) && `HP ${phone} dobel di file ini`) ||
+        null;
+      if (dup) {
+        errors.push({ row, name, error: dup });
+        preview.push({ row, name, nip, email, phone, department: raw.department ?? null, action: 'LEWATI', error: dup });
         continue;
       }
       if (nip) seenNip.add(nip);
@@ -246,6 +253,33 @@ export class AcademicService {
         existing = await this.prisma.employee.findFirst({ where: { phone } });
       }
 
+      if (existing && nip && existing.nip && existing.nip !== nip) {
+        const nipOwner = await this.prisma.employee.findUnique({ where: { nip } });
+        if (nipOwner && nipOwner.id !== existing.id) {
+          const msg = `NIP/NUPTK ${nip} sudah dipakai ${nipOwner.name}`;
+          errors.push({ row, name, error: msg });
+          preview.push({ row, name, nip, email, phone, department: raw.department ?? null, action: 'LEWATI', error: msg });
+          continue;
+        }
+      }
+
+      // Akun login gagal dibuat bila email/HP sudah dipakai akun lain.
+      let accountNote: string | undefined;
+      if (!existing && opts.createAccounts && (email || phone)) {
+        const clash = await this.prisma.user.findFirst({
+          where: { OR: [...(email ? [{ email }] : []), ...(phone ? [{ phone }] : [])] },
+          select: { name: true },
+        });
+        if (clash) accountNote = `akun dilewati (kontak dipakai ${clash.name})`;
+      }
+
+      preview.push({
+        row, name, nip, email, phone, department: raw.department ?? null,
+        action: existing ? 'UPDATE' : 'BARU',
+        ...(accountNote ? { error: accountNote } : {}),
+      });
+      if (opts.dryRun) continue;
+
       const data = {
         name,
         ...(nip ? { nip } : {}),
@@ -259,23 +293,37 @@ export class AcademicService {
       };
 
       if (existing) {
-        // NIP baru yang bentrok dengan pegawai lain.
-        if (nip && existing.nip && existing.nip !== nip) {
-          const nipOwner = await this.prisma.employee.findUnique({ where: { nip } });
-          if (nipOwner && nipOwner.id !== existing.id) {
-            errors.push({ row, name, error: `NIP ${nip} sudah dipakai ${nipOwner.name}` });
-            continue;
-          }
-        }
         await this.prisma.employee.update({ where: { id: existing.id }, data });
         updated++;
       } else {
+        // Akun login sekaligus — role dari jenis pegawai. Password dari kolom
+        // `password` di Excel bila diisi; kosong → digenerate acak.
+        let userId: string | null = null;
+        if (opts.createAccounts && (email || phone) && !accountNote) {
+          const role = await this.prisma.role.findUnique({
+            where: { key: data.type === 'STAFF' ? 'staff_tu' : 'guru_mapel' },
+          });
+          const custom = raw.password?.trim();
+          const password = custom || `m3${Math.random().toString(36).slice(2, 8)}`;
+          const user = await this.prisma.user.create({
+            data: {
+              name,
+              email: email ?? null,
+              phone,
+              passwordHash: await argon2.hash(password),
+              ...(role ? { roles: { create: { roleId: role.id } } } : {}),
+            },
+          });
+          userId = user.id;
+          accounts.push({ name, login: email ?? phone ?? '', password });
+        }
         await this.prisma.employee.create({
-          data: { name, nip, email, phone, type: data.type ?? 'TEACHER', ...(data.department !== undefined ? { department: data.department } : {}), ...(data.isDeptHead !== undefined ? { isDeptHead: data.isDeptHead } : {}) },
+          data: { name, nip, email, phone, type: data.type ?? 'TEACHER', ...(data.department !== undefined ? { department: data.department } : {}), ...(data.isDeptHead !== undefined ? { isDeptHead: data.isDeptHead } : {}), userId },
         });
         created++;
       }
     }
+    if (opts.dryRun) return { preview, total: rows.length };
     await this.audit.log({
       actorId,
       action: 'employee.import',
@@ -283,7 +331,37 @@ export class AcademicService {
       entityId: 'bulk',
       metadata: { created, updated, errors: errors.length },
     });
-    return { created, updated, skipped: errors.length, errors };
+    return { created, updated, skipped: errors.length, errors, accounts };
+  }
+
+  /**
+   * Hapus pegawai — bila sudah punya relasi (penugasan/absensi/payroll)
+   * pegawai dinonaktifkan saja; kalau bersih, hapus beserta akunnya.
+   */
+  async deleteEmployee(id: string, actorId: string) {
+    const emp = await this.prisma.employee.findUniqueOrThrow({ where: { id } });
+    const refs = await this.prisma.$transaction([
+      this.prisma.teachingAssignment.count({ where: { employeeId: id } }),
+      this.prisma.employeeAttendance.count({ where: { employeeId: id } }),
+      this.prisma.employeeHonor.count({ where: { employeeId: id } }),
+      this.prisma.payrollItem.count({ where: { employeeId: id } }),
+      this.prisma.attendanceLog.count({ where: { employeeId: id } }),
+    ]);
+    const linked = refs.reduce((a, b) => a + b, 0);
+    if (linked > 0) {
+      await this.prisma.employee.update({ where: { id }, data: { isActive: false } });
+      await this.audit.log({ actorId, action: 'employee.deactivate', entity: 'employee', entityId: id });
+      return { deleted: false, deactivated: true, reason: `${linked} data terkait — dinonaktifkan` };
+    }
+    await this.prisma.$transaction(async (tx) => {
+      await tx.employeeShift.deleteMany({ where: { employeeId: id } });
+      await tx.staffDocument.deleteMany({ where: { employeeId: id } });
+      await tx.docCollectionItem.deleteMany({ where: { employeeId: id } });
+      await tx.employee.delete({ where: { id } });
+      if (emp.userId) await tx.user.delete({ where: { id: emp.userId } });
+    });
+    await this.audit.log({ actorId, action: 'employee.delete', entity: 'employee', entityId: id });
+    return { deleted: true };
   }
 
   /** Detail pegawai — profil + wali kelas + penugasan mengajar. */

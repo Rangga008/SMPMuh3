@@ -12,6 +12,7 @@ import {
   markAttendance,
   type ClassView,
 } from '@/lib/api';
+import { attendanceRecapXlsxUrl } from '@/lib/api-ops';
 
 const STATUS_OPTS = [
   { key: 'PRESENT', label: 'Hadir', tone: 'bg-primary-700 text-white' },
@@ -32,6 +33,7 @@ interface RosterRow {
 export default function AbsensiPage() {
   const [classes, setClasses] = useState<ClassView[]>([]);
   const [classId, setClassId] = useState('');
+  const [yearId, setYearId] = useState('');
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [roster, setRoster] = useState<RosterRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -43,6 +45,7 @@ export default function AbsensiPage() {
     listAcademicYears()
       .then(async (ys) => {
         const active = ys.find((y) => y.isActive) ?? ys[0];
+        if (active) setYearId(active.id);
         const cls = await listClasses(active?.id);
         setClasses(cls);
         const first = cls[0];
@@ -113,7 +116,14 @@ export default function AbsensiPage() {
 
   return (
     <Shell>
-      <PageTitle title="Absensi Siswa" subtitle="Catat kehadiran harian per rombel" />
+      <PageTitle title="Absensi Siswa" subtitle="Catat kehadiran harian per rombel"
+        actions={
+          <Button variant="outline" size="sm" onClick={() => {
+            if (!yearId) return;
+            const [y = 0, m = 0] = date.split('-').map(Number);
+            window.open(attendanceRecapXlsxUrl(yearId, y, m), '_blank');
+          }}>Rekap Bulanan (Excel)</Button>
+        } />
       {error ? (
         <p role="alert" className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</p>
       ) : null}

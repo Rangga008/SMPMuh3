@@ -7,6 +7,8 @@ import { Shell } from '@/components/shell';
 import { DataTable } from '@/components/data-table';
 import { RowBtn } from '@/components/row-btn';
 import { PageTitle, Widget } from '@/components/widgets';
+import { PERMISSIONS } from '@smpmuh3/types';
+import { usePermission } from '@/lib/use-permission';
 import {
   assignEmployeeShift,
   listEmployees,
@@ -34,6 +36,7 @@ export default function PenugasanShiftPage() {
   const [q, setQ] = useState('');
   const [fDay, setFDay] = useState('');
   const [fShift, setFShift] = useState('');
+  const canManage = usePermission(PERMISSIONS.ACADEMIC_MANAGE);
 
   const load = useCallback(() => {
     listWorkShifts().then(setShifts).catch((e) => setError(e.message));
@@ -94,10 +97,10 @@ export default function PenugasanShiftPage() {
 
       <Widget
         title={`Semua Penugasan (${filtered.length})`}
-        action={<Button onClick={() => setAssignModal(true)} disabled={shifts.length === 0}>+ Pasang Shift</Button>}
+        action={canManage ? <Button onClick={() => setAssignModal(true)} disabled={shifts.length === 0}>+ Pasang Shift</Button> : undefined}
       >
         <div className="mb-3 grid gap-2 sm:grid-cols-3">
-          <Input placeholder="Cari pegawai (nama/NIP)…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <Input placeholder="Cari pegawai (nama/NIP/NUPTK)…" value={q} onChange={(e) => setQ(e.target.value)} />
           <Select value={fDay} onChange={(e) => setFDay(e.target.value)}>
             <option value="">Semua hari</option>
             <option value="-1">Khusus: tiap hari</option>
@@ -119,7 +122,7 @@ export default function PenugasanShiftPage() {
               <td className="px-5 py-2.5">{es.dayOfWeek === -1 ? 'Tiap hari' : DOW_LABELS[es.dayOfWeek]}</td>
               <td className="px-5 py-2.5">{minToHHMM(es.shift.startMinute)}–{minToHHMM(es.shift.endMinute)}</td>
               <td className="px-5 py-2.5 text-right">
-                <RowBtn tone="danger" onClick={() => onUnassign(es.id)}>Lepas</RowBtn>
+                {canManage ? <RowBtn tone="danger" onClick={() => onUnassign(es.id)}>Lepas</RowBtn> : null}
               </td>
             </tr>
           ))}

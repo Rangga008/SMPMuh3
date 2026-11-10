@@ -58,7 +58,7 @@ export function SlipView({
           <tr>
             <td className="py-0.5 text-sand-500">Nama</td>
             <td className="py-0.5 font-semibold">{item.employee?.name}</td>
-            <td className="py-0.5 text-right text-sand-500">NIP</td>
+            <td className="py-0.5 text-right text-sand-500">NIP/NUPTK</td>
             <td className="py-0.5 text-right">{item.employee?.nip ?? '—'}</td>
           </tr>
           <tr>
@@ -115,7 +115,7 @@ export function SlipView({
           <p className={`font-semibold underline ${school?.headmasterSignatureUrl ? 'mt-1' : 'mt-14'}`}>
             {principal || '…………………………'}
           </p>
-          {school?.headmasterNip ? <p className="mt-0.5 text-sand-500">NIP {school.headmasterNip}</p> : null}
+          {school?.headmasterNip ? <p className="mt-0.5 text-sand-500">NIP/NUPTK {school.headmasterNip}</p> : null}
         </div>
         <div>
           <p>Bendahara / Keuangan</p>

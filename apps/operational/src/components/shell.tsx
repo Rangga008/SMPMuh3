@@ -46,9 +46,14 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
 const routeActive = (pathname: string, href: string) =>
   pathname === href || pathname.startsWith(`${href}/`);
 
-/** Item nav dengan submenu — dropdown collapsible; terbuka otomatis bila anak aktif. */
+/** Item nav dengan submenu — dropdown collapsible; terbuka otomatis bila anak aktif.
+ *  Hanya SATU anak yang boleh menyala: pemenang longest-prefix-match, sehingga
+ *  href akar grup (mis. '/kurikulum') tidak ikut aktif di halaman anak lain. */
 function NavGroup({ item, pathname }: { item: NavItem; pathname: string }) {
-  const childActive = item.children?.some((c) => c.href && routeActive(pathname, c.href)) ?? false;
+  const activeKey = item.children
+    ?.filter((c) => c.href !== undefined && routeActive(pathname, c.href))
+    .sort((a, b) => (b.href?.length ?? 0) - (a.href?.length ?? 0))[0]?.key;
+  const childActive = activeKey !== undefined;
   const [open, setOpen] = useState(childActive);
   useEffect(() => {
     if (childActive) setOpen(true);
@@ -93,7 +98,7 @@ function NavGroup({ item, pathname }: { item: NavItem; pathname: string }) {
         <ul className="ml-5 mt-1 space-y-0.5 border-s border-white/10 pl-2.5">
           {item.children.map((c) => (
             <li key={c.key}>
-              <NavLink item={c} active={c.href !== undefined && routeActive(pathname, c.href)} />
+              <NavLink item={c} active={c.key === activeKey} />
             </li>
           ))}
         </ul>

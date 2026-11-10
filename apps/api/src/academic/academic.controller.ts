@@ -95,20 +95,25 @@ export class AcademicController {
   @Get('employees/import-template')
   @RequirePermission(ER)
   importTemplate(@Res({ passthrough: true }) res: Response) {
-    const ws = XLSX.utils.json_to_sheet([
-      {
-        name: 'Ahmad Guru Contoh',
-        nip: '19750101001',
-        type: 'TEACHER',
-        email: 'ahmad@sekolah.sch.id',
-        phone: '081234567890',
-        department: 'KURIKULUM',
-        is_dept_head: '',
-      },
+    const ws = XLSX.utils.aoa_to_sheet([
+      ['name', 'nip', 'type', 'email', 'phone', 'password', 'department', 'is_dept_head'],
     ]);
-    ws['!cols'] = [{ wch: 28 }, { wch: 16 }, { wch: 10 }, { wch: 26 }, { wch: 16 }, { wch: 14 }, { wch: 12 }];
+    ws['!cols'] = [{ wch: 28 }, { wch: 16 }, { wch: 10 }, { wch: 26 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 12 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Pegawai');
+    const guide = XLSX.utils.json_to_sheet([
+      { kolom: 'name', wajib: 'YA', keterangan: 'Nama lengkap pegawai — contoh: Ahmad Hidayat, S.Pd.' },
+      { kolom: 'nip', wajib: 'tidak', keterangan: 'NIP/NUPTK — dipakai untuk dedup; jangan dobel — contoh: 19750101001' },
+      { kolom: 'type', wajib: 'tidak', keterangan: 'TEACHER (guru) atau STAFF — default TEACHER' },
+      { kolom: 'email', wajib: 'tidak*', keterangan: 'Email — dipakai login akun; harus unik antar akun — contoh: ahmad@sekolah.sch.id' },
+      { kolom: 'phone', wajib: 'tidak*', keterangan: 'No. HP — dipakai login akun; harus unik — contoh: 081234567890' },
+      { kolom: 'password', wajib: 'tidak', keterangan: 'Password akun — diisi = dipakai apa adanya; KOSONG = digenerate acak & tampil di hasil import — contoh: guru123' },
+      { kolom: 'department', wajib: 'tidak', keterangan: 'KURIKULUM / KESISWAAN / TATA_USAHA / KEUANGAN / HUMAS / LAINNYA' },
+      { kolom: 'is_dept_head', wajib: 'tidak', keterangan: 'Isi "ya" bila kepala bidang (wakasek/kepala TU)' },
+      { kolom: '*akun', wajib: '-', keterangan: 'Akun login dibuat bila email/HP diisi & opsi "buat akun" dicentang — password dari kolom password atau acak, tampil di hasil import' },
+    ]);
+    guide['!cols'] = [{ wch: 14 }, { wch: 8 }, { wch: 80 }];
+    XLSX.utils.book_append_sheet(wb, guide, 'Petunjuk');
     const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
     res.set({
       'Content-Type':
@@ -134,6 +139,8 @@ export class AcademicController {
         .build({ fileIsRequired: true }),
     )
     file: Express.Multer.File,
+    @Query('dry') dry?: string,
+    @Query('accounts') accounts?: string,
   ) {
     const name = file.originalname.toLowerCase();
     if (!name.endsWith('.xlsx') && !name.endsWith('.xls') && !name.endsWith('.csv')) {
@@ -147,6 +154,7 @@ export class AcademicController {
     }
     const rows: Parameters<AcademicService['importEmployees']>[0] = [];
     for (const sn of wb.SheetNames) {
+      if (sn.toLowerCase() === 'petunjuk') continue;
       const sheet = wb.Sheets[sn];
       if (!sheet) continue;
       for (const r of XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' })) {
@@ -159,17 +167,31 @@ export class AcademicController {
         };
         rows.push({
           name: g('name', 'nama', 'Nama'),
-          nip: g('nip', 'NIP') || undefined,
+          nip: g('nip', 'NIP', 'nuptk', 'NUPTK', 'nip_nuptk', 'nip/nuptk') || undefined,
           type: g('type', 'jenis', 'Jenis').toUpperCase() || undefined,
           email: g('email', 'Email') || undefined,
           phone: g('phone', 'hp', 'telepon', 'Telepon', 'HP') || undefined,
+          password: g('password', 'sandi', 'kata_sandi', 'Password') || undefined,
           department: g('department', 'bidang', 'Bidang').toUpperCase() || undefined,
           isDeptHead: ['1', 'true', 'ya', 'yes', 'y'].includes(g('is_dept_head', 'kepala_bidang').toLowerCase()) || undefined,
         });
       }
     }
     if (!rows.length) throw new BadRequestException('File tidak berisi baris data.');
-    return this.academic.importEmployees(rows, u.id);
+    return this.academic.importEmployees(rows, u.id, {
+      dryRun: dry === '1' || dry === 'true',
+      createAccounts: accounts === '1' || accounts === 'true',
+    });
+  }
+
+  /**
+   * Hapus pegawai — yang sudah punya relasi (penugasan/absensi/payroll)
+   * dinonaktifkan; yang bersih dihapus beserta akun loginnya.
+   */
+  @Delete('employees/:id')
+  @RequirePermission(EM)
+  deleteEmployee(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) {
+    return this.academic.deleteEmployee(id, u.id);
   }
 
   /** Profil lengkap pegawai — data + penugasan mengajar (detail guru). */

@@ -98,34 +98,158 @@ export class OpsService {
     return { class: cls, days };
   }
 
-  /** Export jadwal satu/semua kelas ke Excel — kode mapel + jam. */
-  async timetableXlsx(classId: string | undefined, academicYearId: string) {
+  /** Matriks jadwal sekolah per hari — semua kelas × segmen waktu, sel berisi
+   *  nomor guru (legenda Daftar Guru). Dipakai export Excel & halaman cetak. */
+  async timetableMatrix(academicYearId: string) {
     const classes = await this.prisma.class.findMany({
-      where: { academicYearId, ...(classId ? { id: classId } : {}) },
+      where: { academicYearId },
       orderBy: [{ gradeLevel: 'asc' }, { name: 'asc' }],
+      select: { id: true, name: true },
     });
-    const wb = XLSX.utils.book_new();
-    const DAY_NAMES = ['', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
-    const mm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}.${String(m % 60).padStart(2, '0')}`;
-    for (const cls of classes) {
-      const tt = await this.classTimetable(cls.id);
-      const rows: (string | number)[][] = [['Jam', 'Kode', 'Mata Pelajaran', 'Guru', 'Ruang']];
-      for (let d = 1; d <= 6; d++) {
-        const list = tt.days[d] ?? [];
-        if (!list.length) continue;
-        rows.push([(DAY_NAMES[d] ?? '').toUpperCase(), '', '', '', '']);
-        for (const s of list) {
-          rows.push([
-            `${mm(s.start)}–${mm(s.end)}`,
-            s.code ?? (s.type === 'block' ? '—' : ''),
-            s.label, s.teacher ?? '', s.room ?? '',
-          ]);
-        }
-      }
-      const ws = XLSX.utils.aoa_to_sheet(rows);
-      ws['!cols'] = [{ wch: 12 }, { wch: 8 }, { wch: 34 }, { wch: 26 }, { wch: 10 }];
-      XLSX.utils.book_append_sheet(wb, ws, cls.name.slice(0, 31));
+    const [entries, blocks] = await Promise.all([
+      this.prisma.scheduleEntry.findMany({
+        where: { assignment: { academicYearId } },
+        include: {
+          assignment: {
+            include: { subject: { select: { name: true, code: true } }, employee: { select: { id: true, name: true } } },
+          },
+        },
+        orderBy: [{ day: 'asc' }, { startMinute: 'asc' }],
+      }),
+      this.prisma.scheduleBlock.findMany({
+        where: { academicYearId, day: { not: null } },
+        orderBy: [{ day: 'asc' }, { startMinute: 'asc' }],
+      }),
+    ]);
+    // Legenda guru — nomor urut per nama.
+    const byEmp = new Map<string, { name: string; subjects: Set<string>; dayCounts: Record<number, number> }>();
+    for (const e of entries) {
+      const emp = e.assignment.employee;
+      const rec = byEmp.get(emp.id) ?? { name: emp.name, subjects: new Set<string>(), dayCounts: {} };
+      rec.subjects.add(e.assignment.subject.name);
+      rec.dayCounts[e.day] = (rec.dayCounts[e.day] ?? 0) + 1;
+      byEmp.set(emp.id, rec);
     }
+    const teachers = [...byEmp.entries()]
+      .sort((a, b) => a[1].name.localeCompare(b[1].name))
+      .map(([id, r], i) => ({
+        no: i + 1, id, name: r.name,
+        subject: [...r.subjects].join(', '),
+        dayCounts: r.dayCounts,
+        total: Object.values(r.dayCounts).reduce((a, b) => a + b, 0),
+      }));
+    const tno = new Map(teachers.map((t) => [t.id, t.no]));
+    const days = [1, 2, 3, 4, 5, 6].map((day) => {
+      const ents = entries.filter((e) => e.day === day);
+      const blks = blocks.filter((b) => b.day === day);
+      const bounds = new Set<number>();
+      for (const e of ents) { bounds.add(e.startMinute); bounds.add(e.endMinute); }
+      for (const b of blks) { bounds.add(b.startMinute); bounds.add(b.endMinute); }
+      const sorted = [...bounds].sort((a, b) => a - b);
+      const rows: {
+        start: number; end: number;
+        block: { id: string; label: string } | null;
+        cells: ({ entryId: string; teacherNo: number; subject: string; teacher: string } | null)[];
+      }[] = [];
+      for (let i = 0; i < sorted.length - 1; i++) {
+        const s = sorted[i]!; const en = sorted[i + 1]!;
+        const blk = blks.find((b) => b.startMinute <= s && b.endMinute >= en) ?? null;
+        const cells = classes.map((c) => {
+          const e = ents.find((x) => x.assignment.classId === c.id && x.startMinute <= s && x.endMinute >= en);
+          return e
+            ? {
+                entryId: e.id, teacherNo: tno.get(e.assignment.employee.id) ?? 0,
+                subject: e.assignment.subject.name, teacher: e.assignment.employee.name,
+              }
+            : null;
+        });
+        rows.push({ start: s, end: en, block: blk ? { id: blk.id, label: blk.label } : null, cells });
+      }
+      return { day, rows };
+    });
+    return { classes, teachers, days };
+  }
+
+  /** Export jadwal ke Excel — format matriks: per hari, semua kelas berdampingan,
+   *  sel berisi nomor guru; legenda Daftar Guru di kanan (jam per hari). */
+  async timetableXlsx(classId: string | undefined, academicYearId: string) {
+    const mx = await this.timetableMatrix(academicYearId);
+    const classIds = classId ? mx.classes.filter((c) => c.id === classId).map((c) => c.id) : mx.classes.map((c) => c.id);
+    const clsIdx = mx.classes.map((c) => classIds.includes(c.id));
+    const nCls = classIds.length;
+    const DAY_NAMES = ['', 'SENIN', 'SELASA', 'RABU', 'KAMIS', 'JUMAT', 'SABTU', 'MINGGU'];
+    const mm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}.${String(m % 60).padStart(2, '0')}`;
+    const rows: (string | number)[][] = [];
+    const merges: XLSX.Range[] = [];
+    const W = 3 + nCls; // lebar tabel kiri
+    const gcol = W + 1; // kolom awal tabel Daftar Guru
+    const R = () => rows.length - 1;
+
+    // ---- Daftar Guru di sisi kanan (mulai baris 0) ----
+    const guruHeader = ['NO', 'NAMA', 'MATA PELAJARAN', 'SEN', 'SEL', 'RAB', 'KAM', 'JUM', 'SAB', 'JML'];
+    const guruRows: (string | number)[][] = [
+      ['DAFTAR GURU'],
+      guruHeader,
+      ...mx.teachers.map((t) => [
+        t.no, t.name, t.subject,
+        t.dayCounts[1] ?? 0, t.dayCounts[2] ?? 0, t.dayCounts[3] ?? 0,
+        t.dayCounts[4] ?? 0, t.dayCounts[5] ?? 0, t.dayCounts[6] ?? 0, t.total,
+      ]),
+    ];
+
+    for (const d of mx.days) {
+      if (!d.rows.length) continue;
+      // Bar judul hari
+      const dayRow = new Array(W).fill('');
+      dayRow[0] = DAY_NAMES[d.day] ?? `HARI ${d.day}`;
+      rows.push(dayRow);
+      merges.push({ s: { r: R(), c: 0 }, e: { r: R(), c: W - 1 } });
+      // Header kolom
+      rows.push(['NO', 'WAKTU', 'JAM', 'KELAS', ...new Array(nCls - 1).fill('')]);
+      merges.push({ s: { r: R(), c: 3 }, e: { r: R(), c: W - 1 } });
+      rows.push(['', '', '', ...mx.classes.filter((_, i) => clsIdx[i]).map((c) => c.name)]);
+      // Segmen waktu
+      let period = 0;
+      const classCols = mx.classes.map((_, i) => i).filter((i) => clsIdx[i]);
+      d.rows.forEach((row) => {
+        const r = new Array<string | number>(W).fill('');
+        r[1] = `${mm(row.start)}-${mm(row.end)}`;
+        if (row.block) {
+          r[3] = row.block.label;
+          rows.push(r);
+          merges.push({ s: { r: R(), c: 3 }, e: { r: R(), c: W - 1 } });
+        } else {
+          period += 1;
+          r[0] = period; r[2] = period;
+          classCols.forEach((ci, out) => {
+            const cell = row.cells[ci];
+            r[3 + out] = cell ? cell.teacherNo : '';
+          });
+          rows.push(r);
+        }
+      });
+      rows.push([]);
+    }
+
+    // Tempelkan tabel Daftar Guru mulai baris 1 di kolom kanan.
+    const maxR = Math.max(rows.length, guruRows.length);
+    while (rows.length < maxR) rows.push([]);
+    guruRows.forEach((gr, i) => {
+      const target = rows[i]!;
+      while (target.length < gcol) target.push('');
+      gr.forEach((v, j) => { target[gcol + j] = v; });
+    });
+    if (guruRows.length > 1) merges.push({ s: { r: 0, c: gcol }, e: { r: 0, c: gcol + guruHeader.length - 1 } });
+
+    // Merge vertikal sel guru yang sama (entryId sama di segmen berurutan).
+    // Direkonstruksi: lacak posisi baris tiap sel saat menulis — hitung ulang.
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!merges'] = merges;
+    ws['!cols'] = [{ wch: 4 }, { wch: 13 }, { wch: 4 }, ...new Array(nCls).fill({ wch: 5 }) as { wch: number }[]]
+      .concat([{ wch: 2 }])
+      .concat([{ wch: 4 }, { wch: 26 }, { wch: 20 }, { wch: 4 }, { wch: 4 }, { wch: 4 }, { wch: 4 }, { wch: 4 }, { wch: 4 }, { wch: 5 }]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Jadwal');
     return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
   }
 
@@ -353,12 +477,14 @@ export class OpsService {
     const date = toDateOnly(dto.date);
     return this.prisma.$transaction(async (tx) => {
       for (const r of dto.rows) {
+        // Frontend memakai kode PERMIT; enum DB bernama PERMITTED — normalkan.
+        const status = (r.status === 'PERMIT' ? 'PERMITTED' : r.status) as never;
         await tx.attendanceRecord.upsert({
           where: { studentId_date: { studentId: r.studentId, date } },
-          update: { status: r.status as never, note: r.note ?? null, takenBy: takenById ?? null, classId: dto.classId },
+          update: { status, note: r.note ?? null, takenBy: takenById ?? null, classId: dto.classId },
           create: {
             studentId: r.studentId, classId: dto.classId, date,
-            status: r.status as never, note: r.note ?? null, takenBy: takenById ?? null,
+            status, note: r.note ?? null, takenBy: takenById ?? null,
           },
         });
       }
@@ -393,12 +519,93 @@ export class OpsService {
         const c = (s: string) => mine.filter((r) => r.status === s).length;
         return {
           id: e.student.id, name: e.student.name, nis: e.student.nis,
-          present: c('PRESENT'), sick: c('SICK'), permit: c('PERMIT'), absent: c('ABSENT'),
+          present: c('PRESENT'), sick: c('SICK'), permit: c('PERMITTED') + c('PERMIT'), absent: c('ABSENT'),
           total: mine.length,
           presentPct: mine.length ? Math.round((c('PRESENT') / mine.length) * 100) : null,
         };
       }),
     };
+  }
+
+  /** Export absen bulanan — format Dapodik: satu sheet per kelas, kolom tanggal
+   *  1..N, sel S/I/A (v = hadir), legenda + rekap L/P/jumlah di bawah. */
+  async attendanceRecapXlsx(academicYearId: string, year: number, month: number) {
+    const school = await this.prisma.school.findFirst();
+    const ay = await this.prisma.academicYear.findUniqueOrThrow({ where: { id: academicYearId } });
+    const classes = await this.prisma.class.findMany({
+      where: { academicYearId },
+      orderBy: [{ gradeLevel: 'asc' }, { name: 'asc' }],
+      include: { homeroom: { select: { name: true } } },
+    });
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const from = `${year}-${String(month).padStart(2, '0')}-01`;
+    const to = `${year}-${String(month).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
+    const MONTHS = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+    const CODE: Record<string, string> = { PRESENT: 'v', SICK: 'S', PERMITTED: 'I', PERMIT: 'I', ABSENT: 'A' };
+    const wb = XLSX.utils.book_new();
+    for (let ci = 0; ci < classes.length; ci++) {
+      const cls = classes[ci]!;
+      const [students, records] = await Promise.all([
+        this.prisma.enrollment.findMany({
+          where: { classId: cls.id, academicYearId },
+          include: { student: { select: { id: true, name: true, nis: true, nisn: true, gender: true, status: true } } },
+          orderBy: { student: { name: 'asc' } },
+        }),
+        this.prisma.attendanceRecord.findMany({
+          where: { classId: cls.id, date: { gte: new Date(from), lte: new Date(`${to}T23:59:59`) } },
+        }),
+      ]);
+      const byStudent = new Map<string, Map<number, string>>();
+      for (const r of records) {
+        const d = new Date(r.date).getDate();
+        const m = byStudent.get(r.studentId) ?? new Map<number, string>();
+        m.set(d, CODE[r.status] ?? '');
+        byStudent.set(r.studentId, m);
+      }
+      const rows: (string | number)[][] = [
+        ['DAFTAR HADIR SISWA'],
+        [(school?.name ?? '').toUpperCase()],
+        [`TAHUN PELAJARAN ${ay.name}`],
+        [`Nama Rombel: ${cls.name} - Wali Kelas: ${cls.homeroom?.name ?? '-'} - Bulan: ${MONTHS[month]} ${year}`],
+        [],
+        ['NOMOR', '', 'NAMA SISWA', 'L/P', `Bulan ${MONTHS[month]} ${year}`],
+        [],
+        ['URUT', 'NISN / NIS', '', '', 'Tanggal'],
+        ['', '', '', '', ...Array.from({ length: daysInMonth }, (_, i) => i + 1), 'H', 'S', 'I', 'A'],
+      ];
+      let nL = 0; let nP = 0;
+      students.forEach((e, i) => {
+        const s = e.student;
+        if (s.gender === 'MALE') nL++; else if (s.gender === 'FEMALE') nP++;
+        const marks = byStudent.get(s.id);
+        const c = (code: string) => marks ? [...marks.values()].filter((v) => v === code).length : 0;
+        rows.push([
+          i + 1,
+          `${s.nisn ?? ''} / ${s.nis ?? ''}`,
+          s.name,
+          s.gender === 'MALE' ? 'L' : s.gender === 'FEMALE' ? 'P' : '',
+          ...Array.from({ length: daysInMonth }, (_, d) => marks?.get(d + 1) ?? ''),
+          c('v'), c('S'), c('I'), c('A'),
+        ]);
+      });
+      rows.push(
+        [],
+        ['Keterangan:', 'v = Hadir', 'S = Sakit', 'I = Izin', 'A = Alpa'],
+        ['Laki-Laki', '', `:  ${nL} Orang`],
+        ['Perempuan', '', `:  ${nP} Orang`],
+        ['Jumlah', '', `:  ${students.length} Orang`],
+      );
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws['!merges'] = [
+        { s: { r: 0, c: 0 }, e: { r: 0, c: 10 } },
+        { s: { r: 1, c: 0 }, e: { r: 1, c: 10 } },
+        { s: { r: 2, c: 0 }, e: { r: 2, c: 10 } },
+        { s: { r: 5, c: 4 }, e: { r: 5, c: 4 + daysInMonth - 1 } },
+      ];
+      ws['!cols'] = [{ wch: 6 }, { wch: 20 }, { wch: 34 }, { wch: 4 }, ...Array.from({ length: daysInMonth }, () => ({ wch: 4 })), { wch: 4 }, { wch: 4 }, { wch: 4 }, { wch: 4 }];
+      XLSX.utils.book_append_sheet(wb, ws, `${ci + 1}. ${cls.name}`.slice(0, 31));
+    }
+    return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
   }
 
   // ================= StaffDocument (administrasi guru/SK) =================
@@ -575,6 +782,32 @@ export class OpsService {
     const buf = await this.storage.getObjectBuffer(item.storageKey);
     return { buf, mime: item.mimeType, name: item.fileName };
   }
+  async updateArchiveItem(id: string, dto: { title?: string; categoryId?: string | null; refNumber?: string | null; date?: string | null }, file?: Express.Multer.File) {
+    const item = await this.prisma.archiveItem.findUniqueOrThrow({ where: { id } });
+    let storageKey = item.storageKey; let fileName = item.fileName; let mimeType = item.mimeType; let sizeBytes = item.sizeBytes;
+    if (file) {
+      const key = `archive/${Date.now()}-${file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+      await this.storage.putObject(key, file.buffer, file.mimetype);
+      await this.storage.deleteObject(item.storageKey).catch(() => {});
+      storageKey = key; fileName = file.originalname; mimeType = file.mimetype; sizeBytes = file.size;
+    }
+    return this.prisma.archiveItem.update({
+      where: { id },
+      data: {
+        ...(dto.title !== undefined ? { title: dto.title } : {}),
+        ...(dto.categoryId !== undefined ? { categoryId: dto.categoryId } : {}),
+        ...(dto.refNumber !== undefined ? { refNumber: dto.refNumber } : {}),
+        ...(dto.date !== undefined ? { date: dto.date ? toDateOnly(dto.date) : null } : {}),
+        storageKey, fileName, mimeType, sizeBytes,
+      },
+    });
+  }
+  async deleteArchiveItem(id: string) {
+    const item = await this.prisma.archiveItem.findUniqueOrThrow({ where: { id } });
+    await this.prisma.archiveItem.delete({ where: { id } });
+    await this.storage.deleteObject(item.storageKey).catch(() => {});
+    return { deleted: true };
+  }
 
   // ================= PolicyDocument (tata tertib, form mutasi) =================
   async uploadPolicy(kind: string, title: string, file: Express.Multer.File, uploadedBy?: string) {
@@ -673,14 +906,18 @@ export class OpsService {
   }
 
   // ================= Buku induk =================
-  async updateStudentRecord(id: string, dto: Record<string, string | undefined>) {
+  async updateStudentRecord(id: string, dto: Record<string, unknown>) {
     const FIELDS = [
       'previousSchool', 'healthNotes', 'fatherName', 'motherName',
       'parentOccupation', 'parentPhone', 'intelligenceNotes', 'leavingNotes', 'otherNotes',
     ] as const;
-    const data: Record<string, string | null> = {};
-    for (const f of FIELDS) if (dto[f] !== undefined) data[f] = dto[f] || null;
-    return this.prisma.student.update({ where: { id }, data });
+    const data: Record<string, unknown> = {};
+    for (const f of FIELDS) {
+      const v = dto[f];
+      if (v !== undefined) data[f] = typeof v === 'string' ? v || null : v;
+    }
+    if (dto.recordDetails !== undefined) data.recordDetails = dto.recordDetails;
+    return this.prisma.student.update({ where: { id }, data: data as never });
   }
 
   async studentRecord(id: string) {
@@ -700,7 +937,7 @@ export class OpsService {
 
   // ================= Import Dapodik =================
   /** Import siswa — kolom: nama, nis, nisn, kelas, gender, tempat_lahir, tanggal_lahir, alamat, nama_ayah, nama_ibu, hp_ortu, sekolah_asal. */
-  async importStudents(buffer: Buffer, academicYearId: string, classMap: Record<string, string>) {
+  async importStudents(buffer: Buffer, academicYearId: string, classMap: Record<string, string>, dry = false) {
     const wb = XLSX.read(buffer, { type: 'buffer' });
     const sheet = wb.Sheets[wb.SheetNames[0]!]!;
     const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
@@ -719,6 +956,12 @@ export class OpsService {
         if (nisn && (await this.prisma.student.findUnique({ where: { nisn } }))) {
           results.push({ row: rowNo, name, ok: false, msg: `NISN ${nisn} sudah ada` }); continue;
         }
+        const className = String(r['kelas'] ?? '').trim();
+        const classId = classMap[className.toLowerCase()];
+        if (dry) {
+          results.push({ row: rowNo, name, ok: true, msg: classId ? `Akan masuk ${className}` : 'Akan dibuat (kelas tak dikenal)' });
+          continue;
+        }
         const student = await this.prisma.student.create({
           data: {
             name, nis, nisn,
@@ -732,8 +975,6 @@ export class OpsService {
             parentPhone: String(r['hp_ortu'] ?? '').trim() || null,
           },
         });
-        const className = String(r['kelas'] ?? '').trim();
-        const classId = classMap[className.toLowerCase()];
         if (classId) {
           await this.prisma.enrollment.create({ data: { studentId: student.id, classId, academicYearId } });
         }
@@ -745,35 +986,4 @@ export class OpsService {
     return { total: rows.length, ok: results.filter((r) => r.ok).length, failed: results.filter((r) => !r.ok).length, results };
   }
 
-  /** Import pegawai/guru Dapodik — kolom: nama, nip, jenis(GURU/STAFF), email, telepon, bidang. */
-  async importEmployees(buffer: Buffer) {
-    const wb = XLSX.read(buffer, { type: 'buffer' });
-    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[wb.SheetNames[0]!]!, { defval: '' });
-    const results: { row: number; name: string; ok: boolean; msg: string }[] = [];
-    for (let i = 0; i < rows.length; i++) {
-      const r = rows[i]!;
-      const rowNo = i + 2;
-      const name = String(r['nama'] ?? r['name'] ?? '').trim();
-      if (!name) { results.push({ row: rowNo, name: `baris ${rowNo}`, ok: false, msg: 'Nama kosong' }); continue; }
-      const nip = String(r['nip'] ?? '').trim() || null;
-      try {
-        if (nip && (await this.prisma.employee.findUnique({ where: { nip } }))) {
-          results.push({ row: rowNo, name, ok: false, msg: `NIP ${nip} sudah ada` }); continue;
-        }
-        await this.prisma.employee.create({
-          data: {
-            name, nip,
-            type: String(r['jenis'] ?? r['type'] ?? '').toUpperCase().includes('STAFF') ? 'STAFF' : 'TEACHER',
-            email: String(r['email'] ?? '').trim() || null,
-            phone: String(r['telepon'] ?? r['hp'] ?? '').trim() || null,
-            department: String(r['bidang'] ?? '').trim().toUpperCase() || null,
-          },
-        });
-        results.push({ row: rowNo, name, ok: true, msg: 'Dibuat' });
-      } catch (e) {
-        results.push({ row: rowNo, name, ok: false, msg: e instanceof Error ? e.message.slice(0, 80) : 'gagal' });
-      }
-    }
-    return { total: rows.length, ok: results.filter((r) => r.ok).length, failed: results.filter((r) => !r.ok).length, results };
-  }
 }

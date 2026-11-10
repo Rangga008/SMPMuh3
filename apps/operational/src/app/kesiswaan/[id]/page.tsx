@@ -34,6 +34,7 @@ import {
 } from '@/lib/api';
 
 import { RowBtn, rowActionClasses } from '@/components/row-btn';
+import { FilePick } from '@/components/file-pick';
 const rupiah = (n: number) => `Rp${n.toLocaleString('id-ID')}`;
 const STATUS_BILL: Record<string, string> = {
   OPEN: 'Belum bayar', PARTIAL: 'Angsuran', PAID: 'Lunas', EXPIRED: 'Kedaluwarsa', CANCELLED: 'Batal',
@@ -244,7 +245,7 @@ export default function StudentDetailPage() {
         </table>
         <div class="ttd">
           <div><p>Orang Tua/Wali</p><p class="nm">${r.invoice.student?.parent?.name ?? '( …………………… )'}</p></div>
-          ${school?.headmaster ? `<div><p>Mengetahui,<br/>Kepala Sekolah</p>${school.headmasterSignatureUrl ? `<img class="sig" src="/signature.png" alt=""/>` : ''}<p class="nm${school.headmasterSignatureUrl ? ' hassig' : ''}">${school.headmaster}${school.headmasterNip ? `<br/><span style="font-weight:400;font-size:11px">NIP ${school.headmasterNip}</span>` : ''}</p></div>` : ''}
+          ${school?.headmaster ? `<div><p>Mengetahui,<br/>Kepala Sekolah</p>${school.headmasterSignatureUrl ? `<img class="sig" src="/signature.png" alt=""/>` : ''}<p class="nm${school.headmasterSignatureUrl ? ' hassig' : ''}">${school.headmaster}${school.headmasterNip ? `<br/><span style="font-weight:400;font-size:11px">NIP/NUPTK ${school.headmasterNip}</span>` : ''}</p></div>` : ''}
           <div><p>Bandung, ${fmtDate(r.paidAt)}<br/>Bendahara,</p><p class="nm">${r.cashierName ?? '( …………………… )'}</p></div>
         </div>
         <script>window.onload=()=>{window.print();}<\/script>
@@ -760,7 +761,7 @@ export default function StudentDetailPage() {
             <Input name="description" placeholder="Detail prestasi" />
           </Field>
           <Field label="Bukti — foto/PDF (opsional)" hint="Piagam, sertifikat, atau foto — maks 5 MB">
-            <Input name="evidence" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" />
+            <FilePick name="evidence" accept="image/jpeg,image/png,image/webp,application/pdf" />
           </Field>
           <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={() => setModal(null)}>Batal</Button>
@@ -806,7 +807,7 @@ export default function StudentDetailPage() {
             <Input name="description" placeholder="Kronologi singkat" />
           </Field>
           <Field label="Bukti — foto/PDF (opsional)" hint="Foto kejadian atau surat — maks 5 MB">
-            <Input name="evidence" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" />
+            <FilePick name="evidence" accept="image/jpeg,image/png,image/webp,application/pdf" />
           </Field>
           <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={() => setModal(null)}>Batal</Button>
@@ -842,7 +843,7 @@ export default function StudentDetailPage() {
             </Select>
           </Field>
           <Field label="File" hint="JPG, PNG, WebP, atau PDF — maks 5 MB">
-            <Input name="file" type="file" required accept="image/jpeg,image/png,image/webp,application/pdf" />
+            <FilePick name="file" required accept="image/jpeg,image/png,image/webp,application/pdf" />
           </Field>
           <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={() => setModal(null)}>Batal</Button>

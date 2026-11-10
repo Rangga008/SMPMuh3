@@ -37,13 +37,36 @@ export class TatausahaController {
   constructor(private readonly tu: TatausahaService) {}
 
   // ---------- Surat menyurat ----------
+  // ---------- Kategori surat & mutasi ----------
+
+  @Get('categories')
+  @RequirePermission(R)
+  categories(@Query('kind') kind?: string) {
+    return this.tu.listCategories(kind);
+  }
+
+  @Post('categories')
+  @RequirePermission(M)
+  createCategory(@CurrentUser() u: AuthUser, @Body() body: { kind: string; name: string }) {
+    return this.tu.createCategory(body.kind, body.name, u.id);
+  }
+
+  @Delete('categories/:id')
+  @RequirePermission(M)
+  deleteCategory(@CurrentUser() u: AuthUser, @Param('id') id: string) {
+    return this.tu.deleteCategory(id, u.id);
+  }
+
+  // ---------- Surat menyurat ----------
+
   @Get('letters')
   @RequirePermission(R)
   letters(
     @Query('direction') direction?: 'IN' | 'OUT',
     @Query('search') search?: string,
+    @Query('categoryId') categoryId?: string,
   ) {
-    return this.tu.listLetters(direction, search);
+    return this.tu.listLetters(direction, search, categoryId);
   }
 
   @Post('letters')
@@ -97,8 +120,9 @@ export class TatausahaController {
   mutations(
     @Query('direction') direction?: 'IN' | 'OUT',
     @Query('search') search?: string,
+    @Query('categoryId') categoryId?: string,
   ) {
-    return this.tu.listMutations(direction, search);
+    return this.tu.listMutations(direction, search, categoryId);
   }
 
   @Post('mutations')

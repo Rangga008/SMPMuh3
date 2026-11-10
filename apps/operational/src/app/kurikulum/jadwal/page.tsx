@@ -5,6 +5,8 @@ import { Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { PageTitle, Widget } from '@/components/widgets';
 import { SearchSelect } from '@/components/search-select';
+import { PERMISSIONS } from '@smpmuh3/types';
+import { usePermission } from '@/lib/use-permission';
 import {
   createAssignment,
   createSchedule,
@@ -45,6 +47,7 @@ export default function JadwalPage() {
   const [busy, setBusy] = useState(false);
   const [showAssign, setShowAssign] = useState(false);
   const [showEntry, setShowEntry] = useState(false);
+  const canManage = usePermission(PERMISSIONS.ACADEMIC_MANAGE);
 
   useEffect(() => {
     Promise.all([listAcademicYears(), listEmployees('TEACHER'), listSubjects()])
@@ -113,14 +116,16 @@ export default function JadwalPage() {
         title="Jadwal & Penugasan Guru"
         subtitle="Atur guru pengampu per rombel, lalu susun jadwal mingguan"
         actions={
-          <span className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={() => setShowAssign(true)}>
-              + Penugasan
-            </Button>
-            <Button size="sm" onClick={() => setShowEntry(true)} disabled={classAssignments.length === 0}>
-              + Entri Jadwal
-            </Button>
-          </span>
+          canManage ? (
+            <span className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={() => setShowAssign(true)}>
+                + Penugasan
+              </Button>
+              <Button size="sm" onClick={() => setShowEntry(true)} disabled={classAssignments.length === 0}>
+                + Entri Jadwal
+              </Button>
+            </span>
+          ) : undefined
         }
       />
       {error ? (
@@ -184,14 +189,16 @@ export default function JadwalPage() {
                           <p className="text-[11px] text-sand-500">{s.assignment.employee.name}</p>
                           <p className="mt-1 flex items-center justify-between text-[11px] font-semibold text-sand-600">
                             <span>{toHHMM(s.startMinute)}–{toHHMM(s.endMinute)}{s.room ? ` · ${s.room}` : ''}</span>
-                            <button
-                              type="button"
-                              aria-label="Hapus entri"
-                              className="text-red-500 opacity-0 transition-opacity group-hover:opacity-100"
-                              onClick={() => void run(() => deleteSchedule(s.id), 'Entri dihapus.')}
-                            >
-                              ✕
-                            </button>
+                            {canManage ? (
+                              <button
+                                type="button"
+                                aria-label="Hapus entri"
+                                className="text-red-500 opacity-0 transition-opacity group-hover:opacity-100"
+                                onClick={() => void run(() => deleteSchedule(s.id), 'Entri dihapus.')}
+                              >
+                                ✕
+                              </button>
+                            ) : null}
                           </p>
                         </li>
                       ))}

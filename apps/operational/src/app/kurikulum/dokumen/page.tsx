@@ -5,6 +5,8 @@ import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { PageTitle, Widget } from '@/components/widgets';
 import { DataTable } from '@/components/data-table';
+import { RowBtn } from '@/components/row-btn';
+import { FilePick } from '@/components/file-pick';
 import {
   collectionItemUrl, createCollection, deleteStaffDoc, listCollections,
   listPolicies, listStaffDocs, listUniforms, policyFileUrl, staffDocUrl,
@@ -22,7 +24,8 @@ export default function DokumenPage() {
   const [policies, setPolicies] = useState<Awaited<ReturnType<typeof listPolicies>>>([]);
   const [uniforms, setUniforms] = useState<Awaited<ReturnType<typeof listUniforms>>>([]);
   const [years, setYears] = useState<AcademicYear[]>([]);
-  const [employees, setEmployees] = useState<{ id: string; name: string }[]>([]);
+  const [employees, setEmployees] = useState<{ id: string; name: string; type?: string; department?: string | null | undefined }[]>([]);
+  const [empSearch, setEmpSearch] = useState('');
   const [fEmp, setFEmp] = useState('');
   const [fCat, setFCat] = useState('');
   const [q, setQ] = useState('');
@@ -48,7 +51,7 @@ export default function DokumenPage() {
       const a = ys.find((x) => x.isActive) ?? ys[0];
       if (a) setYearId(a.id);
     });
-    listEmployees().then((es) => setEmployees(es.map((e) => ({ id: e.id, name: e.name })))).catch(() => {});
+    listEmployees().then((es) => setEmployees(es.map((e) => ({ id: e.id, name: e.name, type: e.type, department: e.department })))).catch(() => {});
   }, []);
   useEffect(() => {
     if (yearId) listCollections(yearId).then(setCols).catch(() => {});
@@ -81,21 +84,18 @@ export default function DokumenPage() {
                   </span>
                   <span className="flex items-center gap-2">
                     <Badge tone={done === c.items.length ? 'primary' : 'accent'}>{done}/{c.items.length} terkumpul</Badge>
-                    <label
-                      className="cursor-pointer rounded-lg bg-primary-100 px-2 py-0.5 text-[10px] font-bold text-primary-700 hover:bg-primary-200"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      Kumpulkan berkas saya
-                      <input type="file" className="hidden" onClick={(e) => e.stopPropagation()}
-                        onChange={async (e) => {
-                          const f = e.target.files?.[0];
-                          e.target.value = '';
+                    <span onClick={(e) => e.stopPropagation()}>
+                      <FilePick
+                        buttonLabel="Kumpulkan berkas saya"
+                        accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xlsx,.xls,.zip"
+                        onPick={async (f) => {
                           if (!f) return;
                           await run(() => submitCollectionFile(c.id, f), 'Berkas terkumpul — terima kasih.')
                             .then(() => { if (yearId) listCollections(yearId).then(setCols).catch(() => {}); })
                             .catch(() => setError('Anda tidak ditugaskan pada pengumpulan ini.'));
-                        }} />
-                    </label>
+                        }}
+                      />
+                    </span>
                   </span>
                 </summary>
                 <ul className="mt-2 space-y-1 pl-2 text-sm">
@@ -135,11 +135,12 @@ export default function DokumenPage() {
               <td className="px-5 py-2.5 font-medium text-sand-900">{d.employee.name}</td>
               <td className="px-5 py-2.5"><Badge tone="neutral">{d.category}</Badge></td>
               <td className="px-5 py-2.5 text-sand-700">{d.title}</td>
-              <td className="px-5 py-2.5">
-                <a href={staffDocUrl(d.id)} className="text-xs font-bold text-primary-700 hover:underline">{d.fileName}</a>
-              </td>
+              <td className="max-w-44 truncate px-5 py-2.5 text-xs text-sand-600" title={d.fileName}>{d.fileName}</td>
               <td className="px-5 py-2.5 text-right">
-                <button className="text-xs font-bold text-red-600" onClick={() => run(() => deleteStaffDoc(d.id), 'Dokumen dihapus.')}>Hapus</button>
+                <span className="flex justify-end gap-2">
+                  <RowBtn type="button" onClick={() => window.open(staffDocUrl(d.id), '_blank')}>Detail</RowBtn>
+                  <RowBtn tone="danger" type="button" onClick={() => run(() => deleteStaffDoc(d.id), 'Dokumen dihapus.')}>Hapus</RowBtn>
+                </span>
               </td>
             </tr>
           ))}
@@ -157,7 +158,10 @@ export default function DokumenPage() {
                   <p className="text-sm font-bold text-sand-900">{p.title}</p>
                   <Badge tone="neutral">{p.kind}</Badge>
                 </div>
-                <a href={policyFileUrl(p.id)} className="text-xs font-bold text-primary-700 hover:underline">{p.fileName}</a>
+                <span className="flex items-center gap-2">
+                  <span className="max-w-36 truncate text-xs text-sand-500" title={p.fileName}>{p.fileName}</span>
+                  <RowBtn type="button" onClick={() => window.open(policyFileUrl(p.id), '_blank')}>Detail</RowBtn>
+                </span>
               </div>
             ))}
           </div>
@@ -207,7 +211,7 @@ export default function DokumenPage() {
             <Select name="category">{CATS.map((c) => <option key={c} value={c}>{c}</option>)}</Select>
           </Field>
           <Field label="Judul"><Input name="title" placeholder="SK Pengangkatan 2024" /></Field>
-          <Field label="File"><Input name="file" type="file" required /></Field>
+          <Field label="File"><FilePick name="file" required accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xlsx,.xls" /></Field>
           <div className="flex justify-end gap-2"><Button type="submit" disabled={busy}>Upload</Button></div>
         </form>
       </Modal>
@@ -232,15 +236,41 @@ export default function DokumenPage() {
           </Field>
           <Field label="Deskripsi"><Input name="description" placeholder="Instruksi pengumpulan…" /></Field>
           <Field label="Deadline"><Input name="deadlineAt" type="date" /></Field>
-          <Field label={`Guru ditugaskan (${picked.length})`}>
-            <div className="max-h-40 space-y-1 overflow-y-auto rounded-xl border border-sand-200 p-2">
-              {employees.map((e) => (
-                <label key={e.id} className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" checked={picked.includes(e.id)} className="size-4 accent-primary-700"
-                    onChange={(ev) => setPicked((p) => (ev.target.checked ? [...p, e.id] : p.filter((x) => x !== e.id)))} />
-                  {e.name}
-                </label>
-              ))}
+          <Field label={`Guru ditugaskan (${picked.length})`} hint="Pilih per guru — bisa hanya sebagian dari satu bidang.">
+            <div className="rounded-xl border border-sand-200">
+              <div className="flex items-center gap-2 border-b border-sand-100 p-2">
+                <Input
+                  type="search"
+                  value={empSearch}
+                  onChange={(e) => setEmpSearch(e.target.value)}
+                  placeholder="Cari nama guru/pegawai…"
+                  className="flex-1"
+                />
+                <button
+                  type="button"
+                  className="shrink-0 text-xs font-bold text-primary-700 hover:underline"
+                  onClick={() => {
+                    const visible = employees.filter((e) => !empSearch || e.name.toLowerCase().includes(empSearch.toLowerCase()));
+                    setPicked((p) => [...new Set([...p, ...visible.map((e) => e.id)])]);
+                  }}
+                >
+                  Pilih hasil filter
+                </button>
+              </div>
+              <div className="max-h-48 space-y-1 overflow-y-auto p-2">
+                {employees
+                  .filter((e) => !empSearch || e.name.toLowerCase().includes(empSearch.toLowerCase()))
+                  .map((e) => (
+                    <label key={e.id} className="flex cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-sm hover:bg-sand-50">
+                      <input type="checkbox" checked={picked.includes(e.id)} className="size-4 accent-primary-700"
+                        onChange={(ev) => setPicked((p) => (ev.target.checked ? [...p, e.id] : p.filter((x) => x !== e.id)))} />
+                      <span className="flex-1">{e.name}</span>
+                      <span className="text-[10px] font-semibold text-sand-400">
+                        {[e.type === 'TEACHER' ? 'Guru' : 'Staf', e.department].filter(Boolean).join(' · ')}
+                      </span>
+                    </label>
+                  ))}
+              </div>
             </div>
           </Field>
           <div className="flex justify-end gap-2"><Button type="submit" disabled={busy || !picked.length}>Buat & Tugaskan</Button></div>
@@ -261,7 +291,7 @@ export default function DokumenPage() {
             <Select name="kind">{POLICY_KINDS.map((k) => <option key={k} value={k}>{k.replaceAll('_', ' ')}</option>)}</Select>
           </Field>
           <Field label="Judul"><Input name="title" placeholder="Tata Tertib Siswa 2026" /></Field>
-          <Field label="File"><Input name="file" type="file" required /></Field>
+          <Field label="File"><FilePick name="file" required accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xlsx,.xls" /></Field>
           <div className="flex justify-end gap-2"><Button type="submit" disabled={busy}>Upload</Button></div>
         </form>
       </Modal>

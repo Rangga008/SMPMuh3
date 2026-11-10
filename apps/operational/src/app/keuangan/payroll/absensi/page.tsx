@@ -189,7 +189,7 @@ export default function AbsensiPage() {
                 type="search"
                 value={daySearch}
                 onChange={(e) => setDaySearch(e.target.value)}
-                placeholder="Nama / NIP…"
+                placeholder="Nama / NIP/NUPTK…"
               />
             </Field>
           </div>

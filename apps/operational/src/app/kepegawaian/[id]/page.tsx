@@ -133,7 +133,7 @@ export default function EmployeeDetailPage({
           <div className="mt-2">
             <PageTitle
               title={emp.name}
-              subtitle={`${emp.type === 'TEACHER' ? 'Guru' : 'Staf'}${emp.nip ? ` · NIP ${emp.nip}` : ''}`}
+              subtitle={`${emp.type === 'TEACHER' ? 'Guru' : 'Staf'}${emp.nip ? ` · NIP/NUPTK ${emp.nip}` : ''}`}
               actions={
                 <span className="flex items-center gap-2">
                   <Badge tone={emp.isActive ? 'primary' : 'neutral'}>{emp.isActive ? 'Aktif' : 'Nonaktif'}</Badge>
@@ -160,7 +160,7 @@ export default function EmployeeDetailPage({
           <div className="mb-5 grid gap-4 lg:grid-cols-3">
             <Widget title="Data Pegawai">
               <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-                <dt className="text-sand-500">NIP</dt>
+                <dt className="text-sand-500">NIP/NUPTK</dt>
                 <dd className="font-medium text-sand-900">{emp.nip ?? '—'}</dd>
                 <dt className="text-sand-500">Jenis</dt>
                 <dd className="font-medium text-sand-900">{emp.type === 'TEACHER' ? 'Guru' : 'Staf'}</dd>
@@ -291,7 +291,7 @@ export default function EmployeeDetailPage({
               <Field label="Nama Lengkap" className="sm:col-span-2">
                 <Input name="name" required defaultValue={emp.name} />
               </Field>
-              <Field label="NIP" hint="Kosongkan untuk menghapus NIP">
+              <Field label="NIP/NUPTK" hint="Kosongkan untuk menghapus NIP/NUPTK">
                 <Input name="nip" defaultValue={emp.nip ?? ''} />
               </Field>
               <Field label="Jenis">

@@ -127,6 +127,7 @@ model School {
   email         String?
   headmaster    String?
   headmasterNip String?  @map("headmaster_nip")
+  npsn          String?  // Nomor Pokok Satuan Pendidikan Nasional (NPSN) sekolah
   headmasterSignatureUrl String? @map("headmaster_signature_url")
   logoUrl       String?  @map("logo_url")
   createdAt     DateTime @default(now()) @map("created_at")
@@ -1280,6 +1281,7 @@ model Student {
   intelligenceNotes String? @map("intelligence_notes") // keterangan intelegensi
   leavingNotes     String?  @map("leaving_notes") // keterangan meninggalkan sekolah
   otherNotes       String?  @map("other_notes") // lain-lain
+  recordDetails    Json?    @map("record_details") // kantong detail buku induk (32 item Dapodik)
   createdAt    DateTime      @default(now()) @map("created_at")
   updatedAt    DateTime      @updatedAt @map("updated_at")
   deletedAt    DateTime?     @map("deleted_at") // soft delete / arsip
@@ -1572,6 +1574,20 @@ enum ExamResult {
 }
 
 /** Agenda surat masuk/keluar — registrasi TU dengan lampiran opsional. */
+/** Kategori agenda surat & mutasi — TU bisa menambah sendiri. */
+model LetterCategory {
+  id     String @id @default(uuid()) @db.Uuid
+  kind   String // SURAT | MUTASI
+  name   String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  letters   Letter[]
+  mutations StudentMutation[]
+
+  @@unique([kind, name])
+  @@map("letter_categories")
+}
+
 model Letter {
   id          String          @id @default(uuid()) @db.Uuid
   direction   LetterDirection
@@ -1579,6 +1595,8 @@ model Letter {
   date        DateTime        @db.Date
   subject     String // perihal
   party       String? // pengirim (masuk) / tujuan (keluar)
+  categoryId  String?         @map("category_id") @db.Uuid
+  category    LetterCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   description String?
   storageKey  String?         @map("storage_key")
   fileName    String?         @map("file_name")
@@ -1601,6 +1619,8 @@ model StudentMutation {
   date         DateTime          @db.Date
   school       String? // asal (mutasi masuk) / tujuan (mutasi keluar)
   letterNumber String?           @map("letter_number") // no. surat mutasi
+  categoryId   String?           @map("category_id") @db.Uuid
+  category     LetterCategory?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   storageKey   String?           @map("storage_key") // surat mutasi/keterangan terima
   fileName     String?           @map("file_name")
   mimeType     String?           @map("mime_type")

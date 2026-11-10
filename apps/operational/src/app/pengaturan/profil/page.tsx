@@ -84,6 +84,7 @@ export default function SchoolProfilePage() {
                       email: String(f.get('email') || ''),
                       headmaster: String(f.get('headmaster') || ''),
                       headmasterNip: String(f.get('headmasterNip') || ''),
+                      npsn: String(f.get('npsn') || ''),
                     }),
                   'Profil sekolah diperbarui — situs publik menampilkannya dalam ±5 menit.',
                 );
@@ -110,7 +111,10 @@ export default function SchoolProfilePage() {
               <Field label="Nama Kepala Sekolah" hint="Tercetak di bagian tanda tangan slip gaji & dokumen resmi">
                 <Input name="headmaster" defaultValue={school.headmaster ?? ''} placeholder="mis. Drs. H. Ahmad Syaefulloh" />
               </Field>
-              <Field label="NIP Kepala Sekolah" hint="Opsional — tercetak di bawah nama">
+              <Field label="NPSN Sekolah" hint="Nomor Pokok Satuan Pendidikan Nasional — identitas sekolah di dokumen resmi">
+                <Input name="npsn" defaultValue={school.npsn ?? ''} placeholder="mis. 20221234" />
+              </Field>
+              <Field label="NIP/NUPTK Kepala Sekolah" hint="Opsional — tercetak di bawah nama">
                 <Input name="headmasterNip" defaultValue={school.headmasterNip ?? ''} placeholder="mis. 196605151990031007" />
               </Field>
               <div className="sm:col-span-2">

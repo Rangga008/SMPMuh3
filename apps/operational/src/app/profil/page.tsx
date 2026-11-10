@@ -121,7 +121,7 @@ export default function ProfilePage() {
               <>
                 <dl>
                   <Row label="Nama" value={employee.name} />
-                  <Row label="NIP" value={employee.nip} />
+                  <Row label="NIP/NUPTK" value={employee.nip} />
                   <Row
                     label="Jenis"
                     value={EMPLOYEE_TYPE[employee.type] ?? employee.type}

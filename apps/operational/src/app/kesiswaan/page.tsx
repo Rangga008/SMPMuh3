@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   STUDENT_STATUS_LABELS,
   type StudentDto,
@@ -23,6 +23,47 @@ export default function StudentsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importPreview, setImportPreview] = useState<{ row: number; name: string; ok: boolean; msg: string }[] | null>(null);
+  const [importResult, setImportResult] = useState<{ ok: number; failed: number; results: { row: number; name: string; ok: boolean; msg: string }[] } | null>(null);
+  const importFileRef = useRef<HTMLInputElement>(null);
+
+  async function pickImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
+    setImportFile(f);
+    setImportPreview(null);
+    setError(null);
+    try {
+      const ys = await listAcademicYears();
+      const y = ys.find((x) => x.isActive) ?? ys[0];
+      if (!y) { setError('Tahun ajaran aktif tidak ada.'); return; }
+      const cs = await listClasses(y.id);
+      const map = Object.fromEntries(cs.map((c) => [c.name.toLowerCase(), c.id]));
+      const r = await importStudentsDapodik(y.id, map, f, true);
+      setImportPreview(r.results);
+    } catch { setError('File tidak dapat dibaca.'); setImportFile(null); }
+  }
+
+  async function commitStudentImport() {
+    if (!importFile) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const ys = await listAcademicYears();
+      const y = ys.find((x) => x.isActive) ?? ys[0];
+      if (!y) throw new Error('TA?');
+      const cs = await listClasses(y.id);
+      const map = Object.fromEntries(cs.map((c) => [c.name.toLowerCase(), c.id]));
+      const r = await importStudentsDapodik(y.id, map, importFile);
+      setImportResult(r);
+      setImportPreview(null);
+      load({ search, status });
+    } catch { setError('Import gagal — cek format kolom (nama, nis, nisn, kelas, …).'); }
+    finally { setBusy(false); }
+  }
   const [showForm, setShowForm] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -77,24 +118,9 @@ export default function StudentsPage() {
         subtitle="Kelola data kesiswaan"
         actions={
           <>
-            <label className={`cursor-pointer ${rowActionClasses('neutral')}`}>
+            <Button size="sm" variant="outline" onClick={() => { setImportOpen(true); setImportFile(null); setImportPreview(null); setImportResult(null); }}>
               ⭱ Import Dapodik
-              <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={async (e) => {
-                const f = e.target.files?.[0];
-                e.target.value = '';
-                if (!f) return;
-                try {
-                  const ys = await listAcademicYears();
-                  const y = ys.find((x) => x.isActive) ?? ys[0];
-                  if (!y) { setError('Tahun ajaran aktif tidak ada.'); return; }
-                  const cs = await listClasses(y.id);
-                  const map = Object.fromEntries(cs.map((c) => [c.name.toLowerCase(), c.id]));
-                  const r = await importStudentsDapodik(y.id, map, f);
-                  setNotice(`Import: ${r.ok} masuk, ${r.failed} gagal.${r.failed ? ` Baris bermasalah: ${r.results.filter((x) => !x.ok).slice(0, 3).map((x) => `${x.row}(${x.msg})`).join(', ')}` : ''}`);
-                  load({ search, status });
-                } catch { setError('Import gagal — cek format kolom (nama, nis, nisn, kelas, …).'); }
-              }} />
-            </label>
+            </Button>
             <Link href="/kesiswaan/orang-tua" className={rowActionClasses('neutral')}>
               Orang Tua →
             </Link>
@@ -192,13 +218,62 @@ export default function StudentsPage() {
               <Badge tone={tone(s.status)}>{STUDENT_STATUS_LABELS[s.status]}</Badge>
             </td>
             <td className="px-5 py-3.5 text-right">
-              <Link href={`/kesiswaan/${s.id}`} className="text-sm font-semibold text-primary-700 hover:text-primary-800">
-                Detail →
+              <Link href={`/kesiswaan/${s.id}`} className={rowActionClasses('neutral')}>
+                Detail
               </Link>
             </td>
           </tr>
         ))}
       </DataTable>
+
+      <Modal open={importOpen} onClose={() => setImportOpen(false)} title="Import Siswa dari Dapodik" size="xl">
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <p className="font-bold">Sebelum import, pastikan:</p>
+          <ul className="mt-1 list-disc pl-5">
+            <li>Kolom file: <b>nama, nis, nisn, jk/gender, tempat_lahir, tanggal_lahir, alamat, sekolah_asal, nama_ayah, nama_ibu, hp_ortu, kelas</b>.</li>
+            <li>NIS/NISN yang sudah terdata <b>dilewati</b> — tidak dibuat dobel.</li>
+            <li>Kolom <b>kelas</b> mencocokkan nama rombel tahun ajaran aktif (mis. 7A).</li>
+          </ul>
+        </div>
+        <div className="mt-4">
+          <input ref={importFileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={pickImport} />
+          <Button variant="outline" disabled={busy} onClick={() => importFileRef.current?.click()}>
+            {importFile ? `Ganti file (${importFile.name})` : 'Pilih File Excel'}
+          </Button>
+        </div>
+        {importPreview ? (
+          <div className="mt-4 max-h-72 overflow-auto rounded-xl border border-sand-200">
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-sand-50 text-left text-sand-500">
+                <tr><th className="px-3 py-2">Baris</th><th className="px-3 py-2">Nama</th><th className="px-3 py-2">Hasil Cek</th></tr>
+              </thead>
+              <tbody>
+                {importPreview.map((p) => (
+                  <tr key={p.row} className={p.ok ? '' : 'bg-red-50/60 text-red-800'}>
+                    <td className="px-3 py-1.5">{p.row}</td>
+                    <td className="px-3 py-1.5 font-semibold">{p.name}</td>
+                    <td className="px-3 py-1.5">{p.msg}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+        {importPreview ? (
+          <div className="mt-4 flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => { setImportFile(null); setImportPreview(null); }}>Batal</Button>
+            <Button disabled={busy || !importPreview.some((p) => p.ok)} onClick={commitStudentImport}>
+              {busy ? 'Mengimport…' : `Import ${importPreview.filter((p) => p.ok).length} siswa`}
+            </Button>
+          </div>
+        ) : null}
+        {importResult ? (
+          <p className="mt-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+            Selesai — {importResult.ok} masuk, {importResult.failed} gagal.
+            {importResult.failed ? ` Baris: ${importResult.results.filter((x) => !x.ok).slice(0, 5).map((x) => `${x.row}(${x.msg})`).join(', ')}` : ''}
+          </p>
+        ) : null}
+      </Modal>
     </Shell>
   );
 }

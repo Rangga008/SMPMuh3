@@ -14,6 +14,7 @@ export interface UpdateSchoolInput {
   email?: string | null;
   headmaster?: string | null;
   headmasterNip?: string | null;
+  npsn?: string | null;
 }
 
 @Injectable()
@@ -66,6 +67,7 @@ export class SchoolService {
         ...(input.headmasterNip !== undefined
           ? { headmasterNip: input.headmasterNip }
           : {}),
+        ...(input.npsn !== undefined ? { npsn: input.npsn } : {}),
       },
     });
   }

@@ -25,10 +25,41 @@ export class TatausahaService {
 
   // ---------- Surat menyurat ----------
 
-  listLetters(direction?: 'IN' | 'OUT', search?: string) {
+  // ---------- Kategori surat & mutasi ----------
+
+  listCategories(kind?: string) {
+    return this.prisma.letterCategory.findMany({
+      where: kind ? { kind } : {},
+      orderBy: { name: 'asc' },
+      include: { _count: { select: { letters: true, mutations: true } } },
+    });
+  }
+
+  async createCategory(kind: string, name: string, actorId: string) {
+    const cat = await this.prisma.letterCategory.upsert({
+      where: { kind_name: { kind, name: name.trim() } },
+      create: { kind, name: name.trim() },
+      update: {},
+    });
+    await this.audit.log({ actorId, action: 'tu.category.create', entity: 'letter_category', entityId: cat.id });
+    return cat;
+  }
+
+  async deleteCategory(id: string, actorId: string) {
+    const cat = await this.prisma.letterCategory.findUniqueOrThrow({ where: { id } });
+    await this.prisma.letterCategory.delete({ where: { id } }); // FK SetNull → surat/mutasi tetap ada
+    await this.audit.log({ actorId, action: 'tu.category.delete', entity: 'letter_category', entityId: id });
+    return cat;
+  }
+
+  // ---------- Surat menyurat ----------
+
+  listLetters(direction?: 'IN' | 'OUT', search?: string, categoryId?: string) {
     return this.prisma.letter.findMany({
+      include: { category: { select: { id: true, name: true } } },
       where: {
         ...(direction ? { direction } : {}),
+        ...(categoryId ? { categoryId } : {}),
         ...(search
           ? {
               OR: [
@@ -60,6 +91,7 @@ export class TatausahaService {
         date: new Date(dto.date),
         subject: dto.subject,
         party: dto.party ?? null,
+        categoryId: dto.categoryId ?? null,
         description: dto.description ?? null,
         createdBy: actorId,
       },
@@ -91,6 +123,7 @@ export class TatausahaService {
         ...(dto.date !== undefined ? { date: new Date(dto.date) } : {}),
         ...(dto.subject !== undefined ? { subject: dto.subject } : {}),
         ...(dto.party !== undefined ? { party: dto.party } : {}),
+        ...(dto.categoryId !== undefined ? { categoryId: dto.categoryId } : {}),
         ...(dto.description !== undefined ? { description: dto.description } : {}),
       },
     });
@@ -162,10 +195,12 @@ export class TatausahaService {
 
   // ---------- Mutasi siswa ----------
 
-  listMutations(direction?: 'IN' | 'OUT', search?: string) {
+  listMutations(direction?: 'IN' | 'OUT', search?: string, categoryId?: string) {
     return this.prisma.studentMutation.findMany({
+      include: { category: { select: { id: true, name: true } } },
       where: {
         ...(direction ? { direction } : {}),
+        ...(categoryId ? { categoryId } : {}),
         ...(search
           ? {
               OR: [
@@ -190,6 +225,7 @@ export class TatausahaService {
         date: new Date(dto.date),
         school: dto.school ?? null,
         letterNumber: dto.letterNumber ?? null,
+        categoryId: dto.categoryId ?? null,
         status: dto.status ?? 'PROCESS',
         notes: dto.notes ?? null,
         createdBy: actorId,
@@ -215,6 +251,7 @@ export class TatausahaService {
         ...(dto.date !== undefined ? { date: new Date(dto.date) } : {}),
         ...(dto.school !== undefined ? { school: dto.school } : {}),
         ...(dto.letterNumber !== undefined ? { letterNumber: dto.letterNumber } : {}),
+        ...(dto.categoryId !== undefined ? { categoryId: dto.categoryId } : {}),
         ...(dto.status !== undefined ? { status: dto.status } : {}),
         ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
       },

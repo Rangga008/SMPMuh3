@@ -8,6 +8,8 @@ import { useConfirm } from '@/components/confirm-dialog';
 import { DataTable } from '@/components/data-table';
 import { RowBtn } from '@/components/row-btn';
 import { PageTitle, Widget } from '@/components/widgets';
+import { PERMISSIONS } from '@smpmuh3/types';
+import { usePermission } from '@/lib/use-permission';
 import {
   createWorkShift,
   deleteWorkShift,
@@ -160,6 +162,7 @@ export default function JadwalKerjaPage() {
   const [mapLat, setMapLat] = useState<number | null>(null);
   const [mapLng, setMapLng] = useState<number | null>(null);
   const [mapRadius, setMapRadius] = useState(200);
+  const canManage = usePermission(PERMISSIONS.ACADEMIC_MANAGE);
 
   const load = useCallback(() => {
     listWorkShifts().then(setShifts).catch((e) => setError(e.message));
@@ -259,7 +262,7 @@ export default function JadwalKerjaPage() {
       {error && <p className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</p>}
       {notice && <p className="mb-4 rounded-xl bg-primary-50 px-4 py-3 text-sm font-medium text-primary-800">{notice}</p>}
 
-      {settings && (
+      {canManage && settings && (
         <Widget title="Aturan Global & Lokasi Absen">
           <form onSubmit={onSaveSettings} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Field label="Jam masuk (default)">
@@ -326,7 +329,7 @@ export default function JadwalKerjaPage() {
 
       <Widget
         title="Daftar Shift"
-        action={<Button onClick={() => setShiftModal('new')}>+ Shift</Button>}
+        action={canManage ? <Button onClick={() => setShiftModal('new')}>+ Shift</Button> : undefined}
       >
         <DataTable head={['Nama', 'Masuk', 'Pulang', 'Boleh pulang mulai', 'Toleransi', 'Pegawai', '']}>
           {shifts.map((s) => (
@@ -338,10 +341,12 @@ export default function JadwalKerjaPage() {
               <td className="px-5 py-2.5">{s.lateAfter} mnt</td>
               <td className="px-5 py-2.5">{s._count?.assignments ?? 0}</td>
               <td className="px-5 py-2.5 text-right">
-                <span className="flex gap-2 justify-end">
-                  <RowBtn onClick={() => setShiftModal(s)}>Edit</RowBtn>
-                  <RowBtn tone="danger" onClick={() => onDeleteShift(s)}>Hapus</RowBtn>
-                </span>
+                {canManage ? (
+                  <span className="flex gap-2 justify-end">
+                    <RowBtn onClick={() => setShiftModal(s)}>Edit</RowBtn>
+                    <RowBtn tone="danger" onClick={() => onDeleteShift(s)}>Hapus</RowBtn>
+                  </span>
+                ) : null}
               </td>
             </tr>
           ))}
