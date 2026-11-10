@@ -4,9 +4,10 @@ name: smpmuh3-prod
 # Jalankan dari repo root:
 #   docker compose --env-file .env -f infrastructure/docker-compose.prod.yml up -d
 #
-# Budget memori (limit container, total ~3.0 GB, sisa ~1 GB untuk OS+dockerd):
-#   caddy 128M · postgres 768M · redis 128M · s3 384M
+# Budget memori (limit container, total ~3.4 GB, sisa ~400 MB untuk OS+dockerd):
+#   caddy 128M · postgres 512M · redis 128M · s3 384M
 #   api 768M · spmb 384M · operational 384M
+#   mariadb 320M · wordpress 384M (situs utama di apex/www)
 # Semua service internal — hanya caddy yang publish port 80/443.
 
 x-logging: &default-logging
@@ -51,7 +52,7 @@ services:
       resources:
         limits:
           cpus: "0.75"
-          memory: 768M
+          memory: 512M
     logging: *default-logging
 
   redis:
@@ -203,6 +204,73 @@ services:
           memory: 384M
     logging: *default-logging
 
+  # ---------- WordPress — situs utama di apex/www ----------
+  mariadb:
+    image: mariadb:11-noble
+    container_name: smpmuh3-mariadb
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: wordpress
+      MARIADB_USER: wordpress
+      MARIADB_PASSWORD: ${WP_DB_PASSWORD:?}
+      MARIADB_RANDOM_ROOT_PASSWORD: "yes"
+      TZ: Asia/Jakarta
+    # Tuning 4GB: buffer pool kecil, performance schema mati.
+    command: >
+      --innodb-buffer-pool-size=128M
+      --performance-schema=OFF
+      --max-connections=50
+      --table-open-cache=200
+      --tmp-table-size=32M
+      --max-heap-table-size=32M
+    volumes:
+      - mariadb-data:/var/lib/mysql
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 320M
+    logging: *default-logging
+
+  wordpress:
+    image: wordpress:php8.3-fpm-alpine
+    container_name: smpmuh3-wordpress
+    restart: unless-stopped
+    environment:
+      WORDPRESS_DB_HOST: mariadb:3306
+      WORDPRESS_DB_NAME: wordpress
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: ${WP_DB_PASSWORD:?}
+      WORDPRESS_TABLE_PREFIX: wp_
+      TZ: Asia/Jakarta
+      # Di belakang Caddy (TLS): hormati X-Forwarded-Proto agar WP sadar
+      # request aslinya HTTPS (mencegah mixed-content & redirect loop).
+      WORDPRESS_CONFIG_EXTRA: |
+        if (isset($$_SERVER['HTTP_X_FORWARDED_PROTO']) && $$_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') {
+            $$_SERVER['HTTPS'] = 'on';
+        }
+        define('DISALLOW_FILE_EDIT', true);
+    volumes:
+      - wp-data:/var/www/html
+      - ./wordpress/php-uploads.ini:/usr/local/etc/php/conf.d/uploads.ini:ro
+    networks: [internal, web]
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 384M
+    logging: *default-logging
+
   caddy:
     image: caddy:2-alpine
     container_name: smpmuh3-caddy
@@ -213,6 +281,7 @@ services:
       - "443:443/udp"   # HTTP/3
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - wp-data:/var/www/html:ro   # file statis WP dilayani Caddy; .php → fastcgi
       - caddy-data:/data
       - caddy-config:/config
     networks: [web]
@@ -236,3 +305,5 @@ volumes:
   s3-data:
   caddy-data:
   caddy-config:
+  mariadb-data:
+  wp-data:

@@ -15,11 +15,17 @@
 	}
 }
 
-# Apex + www → SPMB (satu-satunya frontend publik yang ada saat ini;
-# public-web masih stub). Ganti target ke public-web bila app itu sudah ada.
+# Apex + www → WordPress (situs utama sekolah).
+# File statis dilayani langsung oleh Caddy dari volume wp-data (read-only);
+# request .php diteruskan ke php-fpm via fastcgi.
 smpm3bdg.sch.id, www.smpm3bdg.sch.id {
 	import common
-	reverse_proxy spmb:3001
+	root * /var/www/html
+	request_body {
+		max_size 40MB
+	}
+	php_fastcgi wordpress:9000
+	file_server
 }
 
 spmb.smpm3bdg.sch.id {
