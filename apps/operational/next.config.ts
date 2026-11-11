@@ -5,6 +5,9 @@ import type { NextConfig } from 'next';
 const standalone = process.env.DOCKER_BUILD === '1';
 
 const nextConfig: NextConfig = {
+  // VPS kecil (2 vCPU): static generation tiap halaman bisa >60s —
+  // default timeout Next terlalu pendek dan build gagal.
+  staticPageGenerationTimeout: 300,
   ...(standalone
     ? {
         output: 'standalone',

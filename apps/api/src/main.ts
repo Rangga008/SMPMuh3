@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
 import { Logger } from 'nestjs-pino';
@@ -10,11 +11,16 @@ import { AllExceptionsFilter } from './core/http/all-exceptions.filter';
 import { ResponseInterceptor } from './core/http/response.interceptor';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bufferLogs: true,
     rawBody: true, // needed for payment webhook signature verification
   });
   const env = app.get(EnvService);
+
+  // Di belakang reverse proxy (Caddy/Nginx): percaya X-Forwarded-For satu hop
+  // agar req.ip = IP klien asli. Tanpa ini ThrottlerGuard menghitung semua
+  // request sebagai satu klien (IP proxy) dan membatasi seluruh traffic.
+  app.set('trust proxy', 1);
 
   app.useLogger(app.get(Logger));
 

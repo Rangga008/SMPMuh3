@@ -1,0 +1,48 @@
+# Caddy — reverse proxy + HTTPS otomatis (Let's Encrypt) untuk produksi.
+# Cert diterbitkan otomatis begitu DNS A-record mengarah ke server ini.
+{
+	email admin@smpm3bdg.sch.id
+	admin off
+}
+
+(common) {
+	encode zstd gzip
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		X-Frame-Options SAMEORIGIN
+		Referrer-Policy strict-origin-when-cross-origin
+	}
+}
+
+# Apex + www → WordPress (situs utama sekolah).
+# File statis dilayani langsung oleh Caddy dari volume wp-data (read-only);
+# request .php diteruskan ke php-fpm via fastcgi.
+smpm3bdg.sch.id, www.smpm3bdg.sch.id {
+	import common
+	root * /var/www/html
+	request_body {
+		max_size 40MB
+	}
+	php_fastcgi wordpress:9000
+	file_server
+}
+
+spmb.smpm3bdg.sch.id {
+	import common
+	reverse_proxy spmb:3001
+}
+
+op.smpm3bdg.sch.id {
+	import common
+	reverse_proxy operational:3002
+}
+
+api.smpm3bdg.sch.id {
+	import common
+	# Upload dokumen/selfie lewat API — izinkan body s/d 25 MB.
+	request_body {
+		max_size 25MB
+	}
+	reverse_proxy api:4000
+}

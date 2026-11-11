@@ -7,6 +7,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import { Public } from '../identity/decorators/public.decorator';
 import { AttendanceService, parseDeviceTime, type PunchInput } from './attendance.service';
 
@@ -21,6 +22,9 @@ import { AttendanceService, parseDeviceTime, type PunchInput } from './attendanc
  *   (URL efektif)  : http://<host>/api/v1/iclock/cdata
  */
 @Public()
+// Mesin absensi me-push/poll secara berkala — rate-limit bisa memutus
+// pengiriman log. Endpoint publik ini sudah divalidasi via SN mesin.
+@SkipThrottle()
 @Controller({ path: 'iclock', version: '1' })
 export class IclockController {
   constructor(private readonly attendance: AttendanceService) {}

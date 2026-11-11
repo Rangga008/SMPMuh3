@@ -1,0 +1,309 @@
+name: smpmuh3-prod
+
+# Production stack — dituning untuk VPS 2 vCPU / 4 GB RAM.
+# Jalankan dari repo root:
+#   docker compose --env-file .env -f infrastructure/docker-compose.prod.yml up -d
+#
+# Budget memori (limit container, total ~3.4 GB, sisa ~400 MB untuk OS+dockerd):
+#   caddy 128M · postgres 512M · redis 128M · s3 384M
+#   api 768M · spmb 384M · operational 384M
+#   mariadb 320M · wordpress 384M (situs utama di apex/www)
+# Semua service internal — hanya caddy yang publish port 80/443.
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: smpmuh3-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_DB: ${POSTGRES_DB:-smpmuh3}
+      TZ: Asia/Jakarta
+    # Tuning untuk RAM 4 GB: shared_buffers kecil, koneksi dibatasi,
+    # work_mem rendah agar banyak koneksi paralel tidak meledakkan memori.
+    command: >
+      postgres
+      -c shared_buffers=256MB
+      -c effective_cache_size=1GB
+      -c work_mem=4MB
+      -c maintenance_work_mem=64MB
+      -c max_connections=50
+      -c wal_buffers=16MB
+      -c checkpoint_completion_target=0.9
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+      -c log_min_duration_statement=1000
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:?} -d ${POSTGRES_DB:-smpmuh3}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "0.75"
+          memory: 512M
+    logging: *default-logging
+
+  redis:
+    image: redis:7-alpine
+    container_name: smpmuh3-redis
+    restart: unless-stopped
+    # Cache murni (health/rate-limit/queue ringan) — LRU, tanpa persistence
+    # agar hemat I/O disk. maxmemory di bawah limit container.
+    command: redis-server --maxmemory 96mb --maxmemory-policy allkeys-lru --save "" --appendonly no
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+    logging: *default-logging
+
+  s3:
+    # MinIO (bitnamilegacy — image resmi MinIO tak lagi dipublish).
+    # Hanya di jaringan internal: file di-stream lewat API, tidak ada
+    # presigned URL publik, console tidak diekspos.
+    image: bitnamilegacy/minio:latest
+    container_name: smpmuh3-s3
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:?}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:?}
+      MINIO_DEFAULT_BUCKETS: ${S3_BUCKET:-smpmuh3}
+      MINIO_BROWSER: "off"
+    command: server /bitnami/minio/data
+    volumes:
+      - s3-data:/bitnami/minio/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 384M
+    logging: *default-logging
+
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    image: smpmuh3-api:prod
+    container_name: smpmuh3-api
+    restart: unless-stopped
+    env_file: ../.env
+    environment:
+      NODE_ENV: production
+      # Heap dibatasi di bawah memory limit container — Node OOM di dalam
+      # process lebih baik (restart bersih) daripada kernel OOM-kill.
+      NODE_OPTIONS: --max-old-space-size=512
+      DATABASE_URL: postgres://${POSTGRES_USER:?}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:-smpmuh3}?connection_limit=15&pool_timeout=20
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://s3:9000
+      CORS_ORIGINS: https://spmb.smpm3bdg.sch.id,https://op.smpm3bdg.sch.id,https://www.smpm3bdg.sch.id,https://smpm3bdg.sch.id
+      SPMB_URL: https://spmb.smpm3bdg.sch.id
+    networks: [internal, web]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      s3:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/api/v1/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.25"
+          memory: 768M
+    logging: *default-logging
+
+  spmb:
+    build:
+      context: ..
+      dockerfile: apps/spmb/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: https://api.smpm3bdg.sch.id/api/v1
+    image: smpmuh3-spmb:prod
+    container_name: smpmuh3-spmb
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=256
+      # Fetch server-side (ISR profil sekolah) lewat jaringan internal.
+      API_INTERNAL_URL: http://api:4000/api/v1
+    networks: [internal, web]
+    depends_on:
+      api:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/ >/dev/null 2>&1 || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 384M
+    logging: *default-logging
+
+  operational:
+    build:
+      context: ..
+      dockerfile: apps/operational/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: https://api.smpm3bdg.sch.id/api/v1
+    image: smpmuh3-operational:prod
+    container_name: smpmuh3-operational
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=256
+      API_INTERNAL_URL: http://api:4000/api/v1
+    networks: [internal, web]
+    depends_on:
+      api:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3002/ >/dev/null 2>&1 || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 384M
+    logging: *default-logging
+
+  # ---------- WordPress — situs utama di apex/www ----------
+  mariadb:
+    image: mariadb:11-noble
+    container_name: smpmuh3-mariadb
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: wordpress
+      MARIADB_USER: wordpress
+      MARIADB_PASSWORD: ${WP_DB_PASSWORD:?}
+      MARIADB_RANDOM_ROOT_PASSWORD: "yes"
+      TZ: Asia/Jakarta
+    # Tuning 4GB: buffer pool kecil, performance schema mati.
+    command: >
+      --innodb-buffer-pool-size=128M
+      --performance-schema=OFF
+      --max-connections=50
+      --table-open-cache=200
+      --tmp-table-size=32M
+      --max-heap-table-size=32M
+    volumes:
+      - mariadb-data:/var/lib/mysql
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 320M
+    logging: *default-logging
+
+  wordpress:
+    image: wordpress:php8.3-fpm-alpine
+    container_name: smpmuh3-wordpress
+    restart: unless-stopped
+    environment:
+      WORDPRESS_DB_HOST: mariadb:3306
+      WORDPRESS_DB_NAME: wordpress
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: ${WP_DB_PASSWORD:?}
+      WORDPRESS_TABLE_PREFIX: wp_
+      TZ: Asia/Jakarta
+      # Di belakang Caddy (TLS): hormati X-Forwarded-Proto agar WP sadar
+      # request aslinya HTTPS (mencegah mixed-content & redirect loop).
+      WORDPRESS_CONFIG_EXTRA: |
+        if (isset($$_SERVER['HTTP_X_FORWARDED_PROTO']) && $$_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') {
+            $$_SERVER['HTTPS'] = 'on';
+        }
+        define('DISALLOW_FILE_EDIT', true);
+    volumes:
+      - wp-data:/var/www/html
+      - ./wordpress/php-uploads.ini:/usr/local/etc/php/conf.d/uploads.ini:ro
+    networks: [internal, web]
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 384M
+    logging: *default-logging
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: smpmuh3-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - wp-data:/var/www/html:ro   # file statis WP dilayani Caddy; .php → fastcgi
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [web]
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128M
+    logging: *default-logging
+
+networks:
+  internal:
+    driver: bridge
+    internal: false   # false agar postgres dsb. tetap bisa tarik paket jika perlu; tidak ada port yang diekspos
+  web:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:
+  s3-data:
+  caddy-data:
+  caddy-config:
+  mariadb-data:
+  wp-data:
