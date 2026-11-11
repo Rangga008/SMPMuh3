@@ -17,8 +17,8 @@ CREATE TABLE IF NOT EXISTS "gtk_options" (
 -- Seed bawaan — sama dengan konstanta lama agar perilaku tak berubah.
 INSERT INTO "gtk_options" ("group","code","label","department","is_head","role_key","sort_order") VALUES
   ('STAFF_KIND','TU','Tata Usaha (TU)','TATA_USAHA',FALSE,'staff_tu',10),
-  ('STAFF_KIND','LAYSUS','Layanan Khusus (Laysus)','LAYSUS',FALSE,'staff_kesiswaan',20),
-  ('STAFF_KIND','SATPAM','Satpam / Keamanan','LAYSUS',FALSE,'staff_tu',30),
+  ('STAFF_KIND','LAYSUS','Layanan Khusus (Laysus)','LAYSUS',FALSE,'staff_laysus',20),
+  ('STAFF_KIND','SATPAM','Satpam / Keamanan','LAYSUS',FALSE,'staff_laysus',30),
   ('STAFF_KIND','KEPALA_SEKOLAH','Kepala Sekolah',NULL,TRUE,'kepala_sekolah',40),
   ('DUTY','WAKASEK_KURIKULUM','Wakasek Kurikulum','KURIKULUM',TRUE,'staff_kurikulum',10),
   ('DUTY','WAKASEK_KESISWAAN','Wakasek Kesiswaan','KESISWAAN',TRUE,'staff_kesiswaan',20),
@@ -31,9 +31,9 @@ INSERT INTO "gtk_options" ("group","code","label","department","is_head","role_k
   ('DUTY','KONTEN_KREATOR','Konten Kreator','TATA_USAHA',FALSE,'staff_tu',90),
   ('DUTY','KEPALA_PERPUSTAKAAN','Kepala Perpustakaan','TATA_USAHA',FALSE,'staff_tu',100),
   ('DUTY','STAF_PERPUSTAKAAN','Staf Perpustakaan','TATA_USAHA',FALSE,'staff_tu',110),
-  ('DUTY','PETUGAS_KEBERSIHAN_L1','Petugas Kebersihan Lantai 1','LAYSUS',FALSE,'staff_kesiswaan',120),
-  ('DUTY','PETUGAS_KEBERSIHAN_L2','Petugas Kebersihan Lantai 2','LAYSUS',FALSE,'staff_kesiswaan',130),
-  ('DUTY','PETUGAS_KEBERSIHAN_L3','Petugas Kebersihan Lantai 3','LAYSUS',FALSE,'staff_kesiswaan',140),
-  ('DUTY','PETUGAS_KEBERSIHAN_L4','Petugas Kebersihan Lantai 4','LAYSUS',FALSE,'staff_kesiswaan',150),
-  ('DUTY','SATPAM','Satpam','LAYSUS',FALSE,'staff_tu',160)
+  ('DUTY','PETUGAS_KEBERSIHAN_L1','Petugas Kebersihan Lantai 1','LAYSUS',FALSE,'staff_laysus',120),
+  ('DUTY','PETUGAS_KEBERSIHAN_L2','Petugas Kebersihan Lantai 2','LAYSUS',FALSE,'staff_laysus',130),
+  ('DUTY','PETUGAS_KEBERSIHAN_L3','Petugas Kebersihan Lantai 3','LAYSUS',FALSE,'staff_laysus',140),
+  ('DUTY','PETUGAS_KEBERSIHAN_L4','Petugas Kebersihan Lantai 4','LAYSUS',FALSE,'staff_laysus',150),
+  ('DUTY','SATPAM','Satpam','LAYSUS',FALSE,'staff_laysus',160)
 ON CONFLICT ("group","code") DO NOTHING;

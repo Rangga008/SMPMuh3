@@ -224,13 +224,13 @@ export class AcademicService {
       case 'KONTEN_KREATOR':
       case 'KEPALA_PERPUSTAKAAN':
       case 'STAF_PERPUSTAKAAN':
-      case 'SATPAM':
         return 'staff_tu';
+      case 'SATPAM':
       case 'PETUGAS_KEBERSIHAN_L1':
       case 'PETUGAS_KEBERSIHAN_L2':
       case 'PETUGAS_KEBERSIHAN_L3':
       case 'PETUGAS_KEBERSIHAN_L4':
-        return 'staff_kesiswaan';
+        return 'staff_laysus';
     }
     switch (e.staffKind) {
       case 'KEPALA_SEKOLAH':
@@ -238,9 +238,8 @@ export class AcademicService {
       case 'TU':
         return 'staff_tu';
       case 'LAYSUS':
-        return 'staff_kesiswaan';
       case 'SATPAM':
-        return 'staff_tu';
+        return 'staff_laysus';
     }
     switch (e.department) {
       case 'KURIKULUM':
@@ -253,7 +252,7 @@ export class AcademicService {
       case 'SARPRAS':
         return 'staff_tu';
       case 'LAYSUS':
-        return 'staff_kesiswaan';
+        return 'staff_laysus';
     }
     // Type lama non-GTK → role bidangnya; guru → guru_mapel.
     const legacy = AcademicService.GTK_GROUP[e.type ?? ''] ?? e.type;

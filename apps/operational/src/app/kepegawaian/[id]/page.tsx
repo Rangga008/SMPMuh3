@@ -16,6 +16,7 @@ import {
   type StaffKind,
 } from '@smpmuh3/types';
 import { Shell } from '@/components/shell';
+import { PickSelect } from '@/components/pick-select';
 import { PageTitle, Widget } from '@/components/widgets';
 import {
   getAttendanceMonthly,
@@ -363,24 +364,28 @@ export default function EmployeeDetailPage({
               </Field>
               {editJenis === 'TENDIK' ? (
                 <Field label="Jabatan" hint="Jabatan pokok tendik — opsi nonaktif tetap tampil untuk data lama">
-                  <Select name="staffKind" defaultValue={emp.staffKind ?? 'TU'}>
-                    {kindSelect.map((k) => (
-                      <option key={k.code} value={k.code}>
-                        {k.label}{k.isActive ? '' : ' (nonaktif)'}
-                      </option>
-                    ))}
-                  </Select>
+                  <PickSelect
+                    name="staffKind"
+                    defaultValue={emp.staffKind ?? 'TU'}
+                    options={kindSelect.map((k) => ({
+                      value: k.code,
+                      label: `${k.label}${k.isActive ? '' : ' (nonaktif)'}`,
+                    }))}
+                    placeholder="Ketik lalu pilih jabatan…"
+                  />
                 </Field>
               ) : null}
               <Field label="Tugas Tambahan" hint="Mis. Wakasek Kurikulum, Kepala TU, Bendahara BOS">
-                <Select name="additionalDuty" defaultValue={emp.additionalDuty ?? ''}>
-                  <option value="">— Tidak ada —</option>
-                  {dutySelect.map((d) => (
-                    <option key={d.code} value={d.code}>
-                      {d.label}{d.isActive ? '' : ' (nonaktif)'}
-                    </option>
-                  ))}
-                </Select>
+                <PickSelect
+                  name="additionalDuty"
+                  defaultValue={emp.additionalDuty ?? ''}
+                  options={dutySelect.map((d) => ({
+                    value: d.code,
+                    label: `${d.label}${d.isActive ? '' : ' (nonaktif)'}`,
+                  }))}
+                  emptyLabel="— Tidak ada —"
+                  placeholder="Ketik lalu pilih tugas…"
+                />
               </Field>
               <Field label="Email" hint={emp.userId ? 'Tersinkron ke akun login — harus unik' : undefined}>
                 <Input name="email" type="email" defaultValue={emp.email ?? ''} />

@@ -167,6 +167,17 @@ const ROLES: Record<string, { name: string; description: string; permissionKeys:
       PERMISSIONS.NOTIFICATION_READ,
     ],
   },
+  staff_laysus: {
+    name: 'Staf Laysus',
+    description: 'Layanan khusus — kebersihan, keamanan/satpam; pantau GTK & absensi pegawai',
+    permissionKeys: [
+      PERMISSIONS.EMPLOYEE_READ,
+      PERMISSIONS.ACADEMIC_READ,
+      PERMISSIONS.ACADEMIC_YEAR_READ,
+      PERMISSIONS.TATAUSAHA_READ,
+      PERMISSIONS.NOTIFICATION_READ,
+    ],
+  },
   bendahara: {
     name: 'Bendahara',
     description: 'Finance staff — payments & fees',
@@ -374,6 +385,8 @@ async function main() {
       gtk: { type: 'TEACHER', additionalDuty: 'WAKASEK_KESISWAAN' } },
     { email: 'tu@smpmuh3.sch.id', name: 'Kepala Tata Usaha', role: 'kepala_tu', dept: 'TATA_USAHA', isHead: true,
       gtk: { type: 'TENDIK', staffKind: 'TU', additionalDuty: 'KEPALA_TU' } },
+    { email: 'laysus@smpmuh3.sch.id', name: 'Kepala Laysus', role: 'staff_laysus', dept: 'LAYSUS', isHead: true,
+      gtk: { type: 'TENDIK', staffKind: 'LAYSUS' } },
     { email: 'bendahara@smpmuh3.sch.id', name: 'Bendahara', role: 'bendahara', dept: 'KEUANGAN', isHead: true,
       gtk: { type: 'TENDIK', staffKind: 'TU', additionalDuty: 'BENDAHARA_BOS' } },
   ];

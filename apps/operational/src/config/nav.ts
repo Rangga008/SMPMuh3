@@ -26,6 +26,7 @@ const TU_ROLES = [...ADM, 'kepala_tu', 'staff_tu'];
 const KEUANGAN_ROLES = [...ADM, 'bendahara'];
 const KEPEGAWAIAN_ROLES = [...ADM, 'kepala_tu', 'staff_tu'];
 const SPMB_ROLES = [...ADM, 'spmb_admin'];
+const LAYSUS_ROLES = [...ADM, 'staff_laysus'];
 
 export const NAV: NavItem[] = [
   { key: 'dashboard', label: 'Dashboard', icon: '⌂', href: '/', enabled: true },
@@ -259,6 +260,39 @@ export const NAV: NavItem[] = [
         icon: '•',
         href: '/tata-usaha/arsip',
         permission: PERMISSIONS.TATAUSAHA_READ,
+        enabled: true,
+      },
+    ],
+  },
+  {
+    key: 'laysus',
+    label: 'Laysus',
+    icon: '🧹',
+    roles: LAYSUS_ROLES,
+    enabled: true,
+    children: [
+      {
+        key: 'laysus-absensi',
+        label: 'Absensi Pegawai',
+        icon: '•',
+        href: '/tata-usaha/absensi',
+        permission: PERMISSIONS.TATAUSAHA_READ,
+        enabled: true,
+      },
+      {
+        key: 'laysus-jadwal',
+        label: 'Jadwal Kerja & Shift',
+        icon: '•',
+        href: '/kurikulum/jadwal-kerja',
+        permission: PERMISSIONS.ACADEMIC_READ,
+        enabled: true,
+      },
+      {
+        key: 'laysus-gtk',
+        label: 'GTK',
+        icon: '•',
+        href: '/kepegawaian/tendik',
+        permission: PERMISSIONS.EMPLOYEE_READ,
         enabled: true,
       },
     ],

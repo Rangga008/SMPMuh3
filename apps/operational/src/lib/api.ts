@@ -499,6 +499,13 @@ export interface StudentDetail extends StudentDto {
     id: string; type: string; description?: string | null; points: number; date: string;
     evidenceDocument?: { id: string; fileName: string; mimeType: string } | null;
   }[];
+  ekskulMemberships?: {
+    id: string; role?: string | null; joinedAt: string;
+    extracurricular: {
+      id: string; name: string; schedule?: string | null; isActive: boolean;
+      coach?: { name: string } | null;
+    };
+  }[];
   parent?: { id: string; name: string; email: string; phone?: string | null } | null;
   /** Nomor registrasi SPMB asal — ada bila siswa hasil konversi pendaftar baru. */
   spmbNumber?: string | null;

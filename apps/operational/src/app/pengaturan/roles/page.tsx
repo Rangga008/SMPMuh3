@@ -17,9 +17,11 @@ import {
 /** Kelompok permission per bidang kerja — label ramah untuk admin. */
 const GROUPS: { label: string; match: string[] }[] = [
   { label: 'SPMB', match: ['spmb.'] },
-  { label: 'Kesiswaan', match: ['student.'] },
+  { label: 'Kesiswaan', match: ['student.', 'attendance.'] },
   { label: 'Kepegawaian', match: ['employee.'] },
-  { label: 'Akademik', match: ['academic.', 'attendance.', 'school.academic-year.'] },
+  { label: 'Akademik', match: ['academic.', 'school.academic-year.'] },
+  { label: 'Tata Usaha', match: ['tatausaha.'] },
+  { label: 'Keuangan & Payroll', match: ['finance.', 'payroll.'] },
   { label: 'Sekolah', match: ['school.school.'] },
   { label: 'Pengguna & Role', match: ['identity.'] },
   { label: 'Notifikasi & Audit', match: ['notification.', 'audit.'] },
@@ -241,32 +243,56 @@ function PermissionPicker({
       {GROUPS.map((g) => {
         const items = perms.filter((p) => g.match.some((m) => p.key.startsWith(m)));
         if (!items.length) return null;
-        return (
-          <div key={g.label} className="rounded-xl border border-sand-200 p-3">
-            <p className="mb-2 text-sm font-bold text-sand-800">{g.label}</p>
-            <div className="flex flex-wrap gap-2">
-              {items.map((p) => (
-                <label
-                  key={p.key}
-                  className={`cursor-pointer rounded-lg border px-2.5 py-1.5 text-xs font-medium transition ${
-                    picked.has(p.key)
-                      ? 'border-primary-600 bg-primary-50 text-primary-800'
-                      : 'border-sand-200 bg-white text-sand-600 hover:border-sand-300'
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    className="sr-only"
-                    checked={picked.has(p.key)}
-                    onChange={() => toggle(p.key)}
-                  />
-                  {p.key}
-                </label>
-              ))}
-            </div>
-          </div>
-        );
+        return <PermGroup key={g.label} label={g.label} items={items} picked={picked} toggle={toggle} />;
       })}
+      {/* Catch-all — permission baru yang belum masuk grup tetap terlihat,
+          bukan hilang dari pilihan. */}
+      {(() => {
+        const rest = perms.filter(
+          (p) => !GROUPS.some((g) => g.match.some((m) => p.key.startsWith(m))),
+        );
+        return rest.length ? (
+          <PermGroup label="Lainnya" items={rest} picked={picked} toggle={toggle} />
+        ) : null;
+      })()}
+    </div>
+  );
+}
+
+function PermGroup({
+  label,
+  items,
+  picked,
+  toggle,
+}: {
+  label: string;
+  items: { key: string; description?: string | null }[];
+  picked: Set<string>;
+  toggle: (k: string) => void;
+}) {
+  return (
+    <div className="rounded-xl border border-sand-200 p-3">
+      <p className="mb-2 text-sm font-bold text-sand-800">{label}</p>
+      <div className="flex flex-wrap gap-2">
+        {items.map((p) => (
+          <label
+            key={p.key}
+            className={`cursor-pointer rounded-lg border px-2.5 py-1.5 text-xs font-medium transition ${
+              picked.has(p.key)
+                ? 'border-primary-600 bg-primary-50 text-primary-800'
+                : 'border-sand-200 bg-white text-sand-600 hover:border-sand-300'
+            }`}
+          >
+            <input
+              type="checkbox"
+              className="sr-only"
+              checked={picked.has(p.key)}
+              onChange={() => toggle(p.key)}
+            />
+            {p.key}
+          </label>
+        ))}
+      </div>
     </div>
   );
 }

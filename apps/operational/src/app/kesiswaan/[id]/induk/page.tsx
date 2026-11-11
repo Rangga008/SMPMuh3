@@ -41,6 +41,18 @@ export default function BukuIndukPage() {
     getStudentRecord(id).then((r) => {
       setS(r);
       const det = { ...(r.recordDetails ?? {}) } as Details;
+      // Prefill dari kolom kanonik siswa agar buku induk sinkron dengan
+      // data diri — kolom ini juga ditulis balik saat simpan.
+      if (!det.ayahNama) det.ayahNama = r.fatherName ?? '';
+      if (!det.ibuNama) det.ibuNama = r.motherName ?? '';
+      if (!det.ayahPekerjaan) det.ayahPekerjaan = r.parentOccupation ?? '';
+      if (!det.ayahHp) det.ayahHp = r.parentPhone ?? r.parent?.phone ?? '';
+      if (!det.waliNama) det.waliNama = r.parent?.name ?? '';
+      if (!det.asalSd) det.asalSd = r.previousSchool ?? r.candidate?.previousSchool ?? '';
+      if (!det.kelainan) det.kelainan = r.healthNotes ?? '';
+      if (!det.iq) det.iq = r.intelligenceNotes ?? '';
+      if (!det.pindahKeluarAlasan) det.pindahKeluarAlasan = r.leavingNotes ?? '';
+      if (!det.catatan) det.catatan = r.otherNotes ?? '';
       setD(det);
       setPenyakit(tryParse<Penyakit[]>(det.penyakit, []));
       setKepribadian(tryParse<Record<string, string>>(det.kepribadian, {}));
@@ -283,6 +295,23 @@ export default function BukuIndukPage() {
             <div className="induk-sub"><span className="lbl">d. Pramuka</span><span>:</span><input className="induk-input" value={g('prestasiPramuka')} onChange={(e) => set('prestasiPramuka', e.target.value)} /></div>
             <div className="induk-sub"><span className="lbl">e. Karya Tulis</span><span>:</span><input className="induk-input" value={g('prestasiKaryaTulis')} onChange={(e) => set('prestasiKaryaTulis', e.target.value)} /></div>
             <div className="induk-sub"><span className="lbl">f. Lainnya</span><span>:</span><input className="induk-input" value={g('prestasiLain')} onChange={(e) => set('prestasiLain', e.target.value)} /></div>
+            {/* Prestasi & ekskul terekam — sinkron otomatis dengan detail siswa */}
+            {(s.achievements?.length ?? 0) > 0 || (s.ekskulMemberships?.length ?? 0) > 0 ? (
+              <div className="induk-sub" style={{ display: 'block' }}>
+                {(s.ekskulMemberships?.length ?? 0) > 0 ? (
+                  <p style={{ margin: '2px 0' }}>
+                    <span className="lbl" style={{ display: 'inline-block' }}>Ekstrakurikuler (otomatis)</span>
+                    : {s.ekskulMemberships!.map((m) => [m.extracurricular.name, m.role].filter(Boolean).join(' — ')).join(', ')}
+                  </p>
+                ) : null}
+                {(s.achievements?.length ?? 0) > 0 ? (
+                  <p style={{ margin: '2px 0' }}>
+                    <span className="lbl" style={{ display: 'inline-block' }}>Prestasi terekam (otomatis)</span>
+                    : {s.achievements!.map((a) => [a.title, a.level, a.year].filter(Boolean).join(' — ')).join('; ')}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
             <Row no={27} label="Penerimaan bea siswa"><span /></Row>
             {beasiswa.map((b, i) => (
               <div key={i} className="induk-sub">

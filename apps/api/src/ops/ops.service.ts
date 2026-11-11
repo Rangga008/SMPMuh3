@@ -930,6 +930,10 @@ export class OpsService {
         attendances: { take: 90, orderBy: { date: 'desc' } },
         achievements: { orderBy: { createdAt: 'desc' } },
         violations: { orderBy: { date: 'desc' } },
+        ekskulMemberships: {
+          include: { extracurricular: { select: { name: true, isActive: true } } },
+          orderBy: { joinedAt: 'desc' },
+        },
       },
     });
     return s;

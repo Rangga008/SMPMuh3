@@ -96,6 +96,17 @@ export class StudentsService {
             },
           },
         },
+        ekskulMemberships: {
+          include: {
+            extracurricular: {
+              select: {
+                id: true, name: true, schedule: true, isActive: true,
+                coach: { select: { name: true } },
+              },
+            },
+          },
+          orderBy: { joinedAt: 'desc' },
+        },
         documents: { orderBy: { createdAt: 'desc' } },
         parent: { select: { id: true, name: true, email: true, phone: true } },
       },

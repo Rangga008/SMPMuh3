@@ -1,34 +1,10 @@
+import { Children, Fragment, isValidElement } from 'react';
 import type { InputHTMLAttributes, LabelHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from 'react';
 import { cn } from '../lib/cn';
+import { SearchableSelect, type ParsedOption } from './searchable-select';
+import { fileInputClasses, inputClasses, selectClasses, textareaClasses } from './field-classes';
 
-/** Shared styling for text-like form controls. */
-export const inputClasses =
-  'h-11 w-full rounded-xl border border-sand-300 bg-white px-4 text-sm ' +
-  'text-sand-900 shadow-xs placeholder:text-sand-400 ' +
-  'transition-colors focus:border-primary-600 focus-visible:focus-ring ' +
-  'disabled:cursor-not-allowed disabled:bg-sand-100 disabled:text-sand-500 ' +
-  'motion-reduce:transition-none';
-
-export const selectClasses = cn(inputClasses, 'appearance-none pr-10');
-
-export const textareaClasses = cn(
-  'min-h-24 w-full rounded-xl border border-sand-300 bg-white px-4 py-3 ' +
-    'text-sm text-sand-900 shadow-xs placeholder:text-sand-400 ' +
-    'transition-colors focus:border-primary-600 focus-visible:focus-ring ' +
-    'disabled:cursor-not-allowed disabled:bg-sand-100 disabled:text-sand-500 ' +
-    'motion-reduce:transition-none',
-);
-
-/** File picker — tombol ::file-selector-button distyle agar sejajar input lain. */
-export const fileInputClasses =
-  'w-full cursor-pointer rounded-xl border border-sand-300 bg-white text-sm ' +
-  'text-sand-600 shadow-xs transition-colors ' +
-  'file:mr-4 file:cursor-pointer file:border-0 file:bg-primary-50 file:px-4 ' +
-  'file:py-2.5 file:text-sm file:font-semibold file:text-primary-800 ' +
-  'file:transition-colors hover:file:bg-primary-100 ' +
-  'focus:border-primary-600 focus-visible:focus-ring ' +
-  'disabled:cursor-not-allowed disabled:bg-sand-100 disabled:text-sand-500 ' +
-  'motion-reduce:transition-none';
+export { fileInputClasses, inputClasses, selectClasses, textareaClasses };
 
 export function Input({ className, type, ...props }: InputHTMLAttributes<HTMLInputElement>) {
   return (
@@ -40,7 +16,68 @@ export function Input({ className, type, ...props }: InputHTMLAttributes<HTMLInp
   );
 }
 
-export function Select({ className, children, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
+/** Rekursif ambil teks dari children <option> (boleh array/elemen bersarang). */
+const textOf = (node: ReactNode): string => {
+  if (node == null || typeof node === 'boolean') return '';
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(textOf).join('');
+  if (isValidElement(node)) return textOf((node.props as { children?: ReactNode }).children);
+  return '';
+};
+
+/**
+ * Baca anak <option>/<optgroup> menjadi daftar opsi datar.
+ * Null bila ada anak yang bukan option/optgroup (tak bisa di-combobox-kan).
+ */
+export function collectOptions(children: ReactNode): ParsedOption[] | null {
+  const out: ParsedOption[] = [];
+  let ok = true;
+  const walk = (nodes: ReactNode, group?: string) => {
+    Children.forEach(nodes, (child) => {
+      if (child == null || typeof child === 'boolean') return;
+      if (!isValidElement(child)) {
+        ok = false;
+        return;
+      }
+      if (child.type === 'option') {
+        const p = child.props as { value?: string | number; disabled?: boolean; children?: ReactNode };
+        const label = textOf(p.children).trim();
+        out.push({
+          value: p.value === undefined ? label : String(p.value),
+          label,
+          disabled: !!p.disabled,
+          group,
+        });
+      } else if (child.type === 'optgroup') {
+        const p = child.props as { label?: string; children?: ReactNode };
+        walk(p.children, p.label ?? group);
+      } else if (child.type === Fragment) {
+        walk((child.props as { children?: ReactNode }).children, group);
+      } else {
+        ok = false;
+      }
+    });
+  };
+  walk(children);
+  return ok ? out : null;
+}
+
+/** Opsi >5 otomatis jadi combobox ketik-cari; searchable={false} memaksa native. */
+const SEARCH_THRESHOLD = 5;
+
+export function Select({
+  className,
+  children,
+  searchable,
+  ...props
+}: SelectHTMLAttributes<HTMLSelectElement> & { searchable?: boolean }) {
+  if (!props.multiple && !props.size) {
+    const opts = collectOptions(children);
+    const want = searchable === true || (searchable !== false && !!opts && opts.length > SEARCH_THRESHOLD);
+    if (opts && want) {
+      return <SearchableSelect options={opts} className={className} {...props} />;
+    }
+  }
   return (
     <select className={cn(selectClasses, className)} {...props}>
       {children}

@@ -10,6 +10,7 @@ import { SearchSelect } from '@/components/search-select';
 import { PageTitle, Widget } from '@/components/widgets';
 import {
   addAchievement,
+  addEkskulMember,
   addViolation,
   getBillingReceipt,
   getStudent,
@@ -17,11 +18,13 @@ import {
   listAcademicYears,
   listCashAccounts,
   listClasses,
+  listEkskul,
   enrollStudent,
   me,
   notifyInvoice,
   openStudentDocument,
   recordBillingPayment,
+  removeEkskulMember,
   updateStudent,
   uploadStudentDocument,
   type AcademicYear,
@@ -31,6 +34,7 @@ import {
   type StudentDetail,
   type StudentInvoice,
   type StudentPaymentRow,
+  type EkskulDto,
 } from '@/lib/api';
 
 import { RowBtn, rowActionClasses } from '@/components/row-btn';
@@ -62,13 +66,14 @@ const docLabel = (t: string) =>
   DOC_TYPE_LABELS[t as keyof typeof DOC_TYPE_LABELS] ?? DOC_TYPE_FALLBACK[t] ?? t;
 
 type ModalKind =
-  | 'profil' | 'ortu' | 'rombel' | 'prestasi' | 'pelanggaran' | 'dokumen' | null;
+  | 'profil' | 'ortu' | 'rombel' | 'prestasi' | 'pelanggaran' | 'dokumen' | 'ekskul' | null;
 
 export default function StudentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [s, setS] = useState<StudentDetail | null>(null);
   const [year, setYear] = useState<AcademicYear | null>(null);
   const [classes, setClasses] = useState<ClassView[]>([]);
+  const [ekskulList, setEkskulList] = useState<EkskulDto[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -100,6 +105,7 @@ export default function StudentDetailPage() {
         if (active) setClasses(await listClasses(active.id));
       })
       .catch(() => undefined);
+    listEkskul().then(setEkskulList).catch(() => undefined);
     me()
       .then((u) => {
         setCanManage(u.permissions.includes(PERMISSIONS.STUDENT_MANAGE));
@@ -423,6 +429,43 @@ export default function StudentDetailPage() {
                 ))}
                 {s.achievements.length === 0 ? (
                   <li className="text-sand-500">Belum ada prestasi.</li>
+                ) : null}
+              </ul>
+            </Widget>
+
+            <Widget
+              title={`Ekstrakurikuler (${s.ekskulMemberships?.length ?? 0})`}
+              action={canManage ? <Button variant="outline" size="sm" onClick={() => setModal('ekskul')}>+ Daftar</Button> : undefined}
+>
+              <ul className="space-y-2 text-sm">
+                {(s.ekskulMemberships ?? []).map((m) => (
+                  <li key={m.id} className="flex items-start justify-between gap-2 rounded-xl bg-emerald-50 px-4 py-2.5">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-sand-900">
+                        {m.extracurricular.name}
+                        {!m.extracurricular.isActive ? <span className="ml-1 text-xs font-normal text-sand-400">(nonaktif)</span> : null}
+                      </p>
+                      <p className="text-xs text-sand-500">
+                        {[m.role, m.extracurricular.schedule, m.extracurricular.coach?.name && `Pembina: ${m.extracurricular.coach.name}`]
+                          .filter(Boolean).join(' · ')}
+                      </p>
+                    </div>
+                    {canManage ? (
+                      <RowBtn
+                        type="button"
+                        tone="danger"
+                        className="shrink-0"
+                        onClick={() =>
+                          void run(() => removeEkskulMember(m.id), 'Keanggotaan ekskul dihapus.')
+                        }
+                      >
+                        Keluarkan
+                      </RowBtn>
+                    ) : null}
+                  </li>
+                ))}
+                {(s.ekskulMemberships?.length ?? 0) === 0 ? (
+                  <li className="text-sand-500">Belum ikut ekstrakurikuler.</li>
                 ) : null}
               </ul>
             </Widget>
@@ -766,6 +809,46 @@ export default function StudentDetailPage() {
           <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={() => setModal(null)}>Batal</Button>
             <Button type="submit" disabled={busy}>Simpan Prestasi</Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Daftar ekstrakurikuler — sinkron dengan daftar di /kesiswaan/ekskul */}
+      <Modal open={modal === 'ekskul'} onClose={() => setModal(null)} title="Daftar Ekstrakurikuler">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const f = new FormData(e.currentTarget);
+            const ekskulId = String(f.get('ekskulId') ?? '');
+            if (!ekskulId) {
+              setError('Pilih ekstrakurikuler dulu.');
+              return;
+            }
+            void run(
+              () => addEkskulMember(ekskulId, id, val(f, 'role')),
+              'Siswa terdaftar di ekstrakurikuler.',
+            ).then((ok) => ok && setModal(null));
+          }}
+          className="grid gap-4"
+>
+          <Field label="Ekstrakurikuler" hint="Ketik untuk mencari — daftar sama dengan menu Kesiswaan › Ekskul">
+            <Select name="ekskulId" required defaultValue="">
+              <option value="" disabled>Pilih…</option>
+              {ekskulList
+                .filter((x) => x.isActive && !(s?.ekskulMemberships ?? []).some((m) => m.extracurricular.id === x.id))
+                .map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {x.name}{x.schedule ? ` · ${x.schedule}` : ''}
+                  </option>
+                ))}
+            </Select>
+          </Field>
+          <Field label="Peran (opsional)">
+            <Input name="role" placeholder="mis. Ketua / Anggota" />
+          </Field>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={() => setModal(null)}>Batal</Button>
+            <Button type="submit" disabled={busy}>Daftarkan</Button>
           </div>
         </form>
       </Modal>

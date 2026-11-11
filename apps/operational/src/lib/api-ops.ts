@@ -186,6 +186,8 @@ export const getStudentRecord = (id: string) =>
     parent?: { name: string; phone?: string | null; email?: string | null } | null;
     candidate?: { previousSchool?: string | null; address?: string | null; birthPlace?: string | null; birthDate?: string | null } | null;
     enrollments: { class?: { name: string; gradeLevel: number } | null; academicYear: { name: string } }[];
+    achievements?: { id: string; title: string; level?: string | null; year?: number | null }[];
+    ekskulMemberships?: { id: string; role?: string | null; extracurricular: { name: string; isActive: boolean } }[];
   }>(`/ops/students/${id}/record`);
 export const updateStudentRecord = (id: string, dto: Record<string, unknown>) =>
   req(`/ops/students/${id}/record`, { method: 'PATCH', json: dto });

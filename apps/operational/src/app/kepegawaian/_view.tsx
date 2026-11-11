@@ -40,6 +40,7 @@ import {
   type RoleOption,
 } from '@/lib/api';
 import { RowBtn } from '@/components/row-btn';
+import { PickSelect } from '@/components/pick-select';
 import { useConfirm } from '@/components/confirm-dialog';
 
 const DEPT_LABEL: Record<string, string> = {
@@ -407,23 +408,24 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
             </Field>
             {formJenis === 'TENDIK' ? (
               <Field label="Jabatan" hint="Jabatan pokok tendik — kelola lewat tombol ⚙ di atas">
-                <Select name="staffKind" required defaultValue="TU">
-                  {kindSelect.map((k) => (
-                    <option key={k.code} value={k.code}>{k.label}</option>
-                  ))}
-                </Select>
+                <PickSelect
+                  name="staffKind"
+                  required
+                  options={kindSelect.map((k) => ({ value: k.code, label: k.label }))}
+                  placeholder="Ketik lalu pilih jabatan…"
+                />
               </Field>
             ) : null}
             <Field
               label="Tugas Tambahan"
               hint="Mis. Wakasek Kurikulum untuk guru, Bendahara BOS untuk tendik — kelola lewat tombol ⚙ di atas"
             >
-              <Select name="additionalDuty" defaultValue="">
-                <option value="">— Tidak ada —</option>
-                {dutySelect.map((d) => (
-                  <option key={d.code} value={d.code}>{d.label}</option>
-                ))}
-              </Select>
+              <PickSelect
+                name="additionalDuty"
+                options={dutySelect.map((d) => ({ value: d.code, label: d.label }))}
+                emptyLabel="— Tidak ada —"
+                placeholder="Ketik lalu pilih tugas…"
+              />
             </Field>
             <Field label="Email" hint="Diperlukan untuk login akun">
               <Input name="email" type="email" />
@@ -449,16 +451,14 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
               {withAccount ? (
                 <div className="mt-4 grid gap-4 sm:grid-cols-2">
                   <Field label="Role / Bidang Kerja" hint="Menentukan modul yang bisa diakses">
-                    <Select name="roleKey" required defaultValue="">
-                      <option value="" disabled>Pilih role…</option>
-                      {roles
+                    <PickSelect
+                      name="roleKey"
+                      required
+                      options={roles
                         .filter((r) => r.key !== 'spmb_parent')
-                        .map((r) => (
-                          <option key={r.key} value={r.key}>
-                            {r.name}
-                          </option>
-                        ))}
-                    </Select>
+                        .map((r) => ({ value: r.key, label: r.name }))}
+                      placeholder="Ketik lalu pilih role…"
+                    />
                   </Field>
                   <Field label="Password Awal" hint="Min. 8 karakter — berikan ke pegawai">
                     <Input name="password" type="password" minLength={8} required />
@@ -478,24 +478,26 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
 
       <div className="mb-5 flex flex-wrap items-end gap-3 rounded-2xl border border-sand-200 bg-white p-4 shadow-card">
         {jenis === 'TENDIK' ? (
-          <label className="flex min-w-36 flex-col gap-1.5">
+          <label className="flex min-w-44 flex-col gap-1.5">
             <span className="text-xs font-bold uppercase tracking-wider text-sand-500">Jabatan</span>
-            <Select value={kind} onChange={(e) => setKind(e.target.value)}>
-              <option value="">Semua</option>
-              {kindFilter.map((k) => (
-                <option key={k.code} value={k.code}>{k.label}</option>
-              ))}
-            </Select>
+            <PickSelect
+              value={kind}
+              onChange={setKind}
+              options={kindFilter.map((k) => ({ value: k.code, label: k.label }))}
+              emptyLabel="Semua"
+              placeholder="Semua jabatan"
+            />
           </label>
         ) : null}
-        <label className="flex min-w-36 flex-col gap-1.5">
+        <label className="flex min-w-44 flex-col gap-1.5">
           <span className="text-xs font-bold uppercase tracking-wider text-sand-500">Tugas Tambahan</span>
-          <Select value={duty} onChange={(e) => setDuty(e.target.value)}>
-            <option value="">Semua</option>
-            {dutyFilter.map((d) => (
-              <option key={d.code} value={d.code}>{d.label}</option>
-            ))}
-          </Select>
+          <PickSelect
+            value={duty}
+            onChange={setDuty}
+            options={dutyFilter.map((d) => ({ value: d.code, label: d.label }))}
+            emptyLabel="Semua"
+            placeholder="Semua tugas tambahan"
+          />
         </label>
         <label className="flex min-w-40 flex-1 flex-col gap-1.5">
           <span className="text-xs font-bold uppercase tracking-wider text-sand-500">Pencarian</span>
@@ -579,6 +581,17 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
   );
 }
 
+/** Role → bidang — bidang turunan di form opsi mengikuti role yang dipilih. */
+const ROLE_TO_DEPT: Record<string, string> = {
+  staff_kurikulum: 'KURIKULUM',
+  staff_kesiswaan: 'KESISWAAN',
+  staff_tu: 'TATA_USAHA',
+  kepala_tu: 'TATA_USAHA',
+  bendahara: 'KEUANGAN',
+  staff_laysus: 'LAYSUS',
+  spmb_admin: 'TATA_USAHA',
+};
+
 /** Panel kelola opsi GTK — tambah/rename/nonaktif/hapus jabatan & tugas tambahan. */
 function GtkOptionManager({
   opts,
@@ -590,15 +603,26 @@ function GtkOptionManager({
   onChanged: () => void;
 }) {
   const [err, setErr] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [group, setGroup] = useState<'STAFF_KIND' | 'DUTY'>('DUTY');
+  const [addDept, setAddDept] = useState('');
+  const [addRole, setAddRole] = useState('');
+  const [optQuery, setOptQuery] = useState('');
+  /** Baris yang sedang diedit — panel form terbuka di bawah barisnya. */
+  const [editing, setEditing] = useState<{
+    id: string; code: string; label: string; department: string; roleKey: string;
+    isHead: boolean; sortOrder: number; isActive: boolean;
+  } | null>(null);
   const { confirm, dialog } = useConfirm();
 
-  async function act(id: string, fn: () => Promise<unknown>) {
+  async function act(id: string, fn: () => Promise<unknown>, okMsg: string) {
     setErr(null);
+    setNote(null);
     setBusyId(id);
     try {
       await fn();
+      setNote(okMsg);
       onChanged();
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Gagal menyimpan opsi.');
@@ -609,23 +633,32 @@ function GtkOptionManager({
 
   async function onAdd(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const f = new FormData(e.currentTarget);
+    const form = e.currentTarget;
+    const f = new FormData(form);
     const str = (k: string) => String(f.get(k) ?? '').trim();
     await act('new', async () => {
       await createGtkOption({
         group: str('group'),
         code: str('code'),
         label: str('label'),
-        ...(str('department') ? { department: str('department') } : {}),
+        ...(addDept ? { department: addDept } : {}),
         isHead: f.get('isHead') === 'on',
         ...(str('roleKey') ? { roleKey: str('roleKey') } : {}),
       });
-    });
-    if (!err) e.currentTarget.reset();
+    }, `Opsi "${str('label')}" ditambahkan.`);
+    if (!err) {
+      form.reset();
+      setAddDept('');
+      setAddRole('');
+    }
   }
 
+  const q = optQuery.trim().toLowerCase();
+  const matches = (o: GtkOption) =>
+    !q || o.code.toLowerCase().includes(q) || o.label.toLowerCase().includes(q);
+
   const section = (g: 'STAFF_KIND' | 'DUTY', title: string, hint: string) => {
-    const items = opts.filter((o) => o.group === g);
+    const items = opts.filter((o) => o.group === g && matches(o));
     return (
       <div className="rounded-xl border border-sand-200">
         <p className="border-b border-sand-200 bg-sand-50 px-4 py-2.5 text-sm font-bold text-sand-800">
@@ -646,19 +679,36 @@ function GtkOptionManager({
                   type="button"
                   tone="neutral"
                   disabled={busyId === o.id}
-                  onClick={async () => {
-                    const label = window.prompt('Label baru:', o.label);
-                    if (!label || label === o.label) return;
-                    await act(o.id, () => updateGtkOption(o.id, { label }));
-                  }}
+                  onClick={() =>
+                    setEditing((e) =>
+                      e?.id === o.id
+                        ? null
+                        : {
+                            id: o.id,
+                            code: o.code,
+                            label: o.label,
+                            department: o.department ?? '',
+                            roleKey: o.roleKey ?? '',
+                            isHead: o.isHead,
+                            sortOrder: o.sortOrder,
+                            isActive: o.isActive,
+                          },
+                    )
+                  }
                 >
-                  Rename
+                  {editing?.id === o.id ? 'Tutup' : 'Edit'}
                 </RowBtn>
                 <RowBtn
                   type="button"
                   tone="neutral"
                   disabled={busyId === o.id}
-                  onClick={() => void act(o.id, () => updateGtkOption(o.id, { isActive: !o.isActive }))}
+                  onClick={() =>
+                    void act(
+                      o.id,
+                      () => updateGtkOption(o.id, { isActive: !o.isActive }),
+                      o.isActive ? `"${o.label}" dinonaktifkan.` : `"${o.label}" diaktifkan kembali.`,
+                    )
+                  }
                 >
                   {o.isActive ? 'Nonaktif' : 'Aktifkan'}
                 </RowBtn>
@@ -668,15 +718,94 @@ function GtkOptionManager({
                   disabled={busyId === o.id}
                   onClick={async () => {
                     if (!(await confirm(`Hapus opsi "${o.label}"? Pegawai yang sudah memakai nilai ini tetap menyimpan kodenya.`))) return;
-                    await act(o.id, () => deleteGtkOption(o.id));
+                    await act(o.id, () => deleteGtkOption(o.id), `Opsi "${o.label}" dihapus.`);
                   }}
                 >
                   Hapus
                 </RowBtn>
               </span>
+              {editing?.id === o.id ? (
+                <form
+                  className="mt-2 grid w-full gap-3 rounded-xl border border-primary-200 bg-primary-50/40 p-3 sm:grid-cols-2"
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    const f = new FormData(e.currentTarget);
+                    const str = (k: string) => String(f.get(k) ?? '').trim();
+                    const sortOrder = Number(str('sortOrder'));
+                    const dto = {
+                      label: str('label'),
+                      department: str('department') || null,
+                      roleKey: editing.roleKey || null,
+                      isHead: f.get('isHead') === 'on',
+                      ...(Number.isFinite(sortOrder) ? { sortOrder } : {}),
+                      isActive: f.get('isActive') === 'on',
+                    };
+                    await act(o.id, () => updateGtkOption(o.id, dto), `Opsi ${o.code} disimpan.`);
+                    setEditing(null);
+                  }}
+                >
+                  <p className="text-xs font-bold uppercase tracking-wide text-sand-500 sm:col-span-2">
+                    Edit opsi — kode <code className="rounded bg-sand-100 px-1">{editing.code}</code> (tidak berubah)
+                  </p>
+                  <Field label="Label">
+                    <Input name="label" required defaultValue={editing.label} minLength={2} />
+                  </Field>
+                  <Field label="Role akun" hint="Bidang turunan mengikuti role yang dipilih">
+                    <PickSelect
+                      value={editing.roleKey}
+                      options={roles.filter((r) => r.key !== 'spmb_parent').map((r) => ({ value: r.key, label: r.name }))}
+                      emptyLabel="— Tanpa role —"
+                      placeholder="Ketik lalu pilih role…"
+                      onChange={(rk) =>
+                        setEditing((e) =>
+                          e ? { ...e, roleKey: rk, department: ROLE_TO_DEPT[rk] ?? e.department } : e,
+                        )
+                      }
+                    />
+                  </Field>
+                  <Field label="Bidang turunan">
+                    <Select
+                      name="department"
+                      value={editing.department}
+                      onChange={(e) => setEditing((x) => (x ? { ...x, department: e.target.value } : x))}
+                    >
+                      <option value="">— Tidak ada —</option>
+                      {Object.entries(DEPT_LABEL).map(([k, v]) => (
+                        <option key={k} value={k}>{v}</option>
+                      ))}
+                      {editing.department && !DEPT_LABEL[editing.department] ? (
+                        <option value={editing.department}>{editing.department}</option>
+                      ) : null}
+                    </Select>
+                  </Field>
+                  <Field label="Urutan tampil" hint="Angka kecil tampil duluan di dropdown">
+                    <Input name="sortOrder" type="number" defaultValue={editing.sortOrder} />
+                  </Field>
+                  <div className="flex flex-wrap items-center gap-5 sm:col-span-2">
+                    <label className="flex items-center gap-2 text-sm font-semibold text-sand-800">
+                      <input type="checkbox" name="isHead" defaultChecked={editing.isHead} className="size-4 accent-primary-700" />
+                      Menjadikan kepala bidang
+                    </label>
+                    <label className="flex items-center gap-2 text-sm font-semibold text-sand-800">
+                      <input type="checkbox" name="isActive" defaultChecked={editing.isActive} className="size-4 accent-primary-700" />
+                      Aktif (tampil di dropdown)
+                    </label>
+                    <span className="ml-auto flex gap-2">
+                      <Button type="button" variant="ghost" size="sm" onClick={() => setEditing(null)}>Batal</Button>
+                      <Button type="submit" size="sm" disabled={busyId === o.id}>
+                        {busyId === o.id ? 'Menyimpan…' : 'Simpan'}
+                      </Button>
+                    </span>
+                  </div>
+                </form>
+              ) : null}
             </li>
           ))}
-          {!items.length ? <li className="px-4 py-3 text-sm text-sand-400">Belum ada opsi — pakai daftar bawaan.</li> : null}
+          {!items.length ? (
+            <li className="px-4 py-3 text-sm text-sand-400">
+              {q ? `Tidak ada opsi cocok "${optQuery}".` : 'Belum ada opsi — pakai daftar bawaan.'}
+            </li>
+          ) : null}
         </ul>
       </div>
     );
@@ -685,10 +814,9 @@ function GtkOptionManager({
   return (
     <div className="space-y-4">
       {err ? <p role="alert" className="rounded-xl bg-red-50 px-4 py-2.5 text-sm font-medium text-red-700">{err}</p> : null}
-      {section('STAFF_KIND', 'Jabatan Tendik', 'isi kolom Jabatan untuk pegawai Tendik')}
-      {section('DUTY', 'Tugas Tambahan', 'isi kolom Tugas Tambahan — guru & tendik')}
+      {note ? <p role="status" className="rounded-xl bg-emerald-50 px-4 py-2.5 text-sm font-medium text-emerald-800">{note}</p> : null}
 
-      <form onSubmit={onAdd} className="grid gap-3 rounded-xl border border-dashed border-sand-300 bg-sand-50/60 p-4 sm:grid-cols-2">
+      <form onSubmit={onAdd} className="grid gap-3 rounded-xl border border-primary-200 bg-primary-50/50 p-4 sm:grid-cols-2">
         <p className="text-sm font-bold text-sand-800 sm:col-span-2">Tambah opsi baru</p>
         <Field label="Grup">
           <Select name="group" value={group} onChange={(e) => setGroup(e.target.value as 'STAFF_KIND' | 'DUTY')}>
@@ -702,19 +830,24 @@ function GtkOptionManager({
         <Field label="Label">
           <Input name="label" required placeholder="Nama tampilan" />
         </Field>
-        <Field label="Bidang turunan" hint="Otomatis mengisi bidang pegawai — kosongkan bila tidak ada">
-          <Select name="department" defaultValue="">
+        <Field label="Role akun" hint="Role login pegawai — bidang turunan menyesuaikan otomatis">
+          <PickSelect
+            name="roleKey"
+            value={addRole}
+            options={roles.filter((r) => r.key !== 'spmb_parent').map((r) => ({ value: r.key, label: r.name }))}
+            emptyLabel="— Bawaan —"
+            placeholder="Ketik lalu pilih role…"
+            onChange={(rk) => {
+              setAddRole(rk);
+              setAddDept(ROLE_TO_DEPT[rk] ?? '');
+            }}
+          />
+        </Field>
+        <Field label="Bidang turunan" hint="Mengikuti role yang dipilih — bisa diubah manual">
+          <Select name="department" value={addDept} onChange={(e) => setAddDept(e.target.value)}>
             <option value="">— Tidak ada —</option>
             {Object.entries(DEPT_LABEL).map(([k, v]) => (
               <option key={k} value={k}>{v}</option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Role akun" hint="Role login bila pegawai dibuatkan akun — kosong = fallback bawaan">
-          <Select name="roleKey" defaultValue="">
-            <option value="">— Bawaan —</option>
-            {roles.filter((r) => r.key !== 'spmb_parent').map((r) => (
-              <option key={r.key} value={r.key}>{r.name}</option>
             ))}
           </Select>
         </Field>
@@ -728,6 +861,18 @@ function GtkOptionManager({
           </Button>
         </div>
       </form>
+
+      <Field label="Cari opsi" className="!mb-0">
+        <Input
+          type="search"
+          value={optQuery}
+          onChange={(e) => setOptQuery(e.target.value)}
+          placeholder="Ketik kode atau nama opsi…"
+        />
+      </Field>
+
+      {section('STAFF_KIND', 'Jabatan Tendik', 'isi kolom Jabatan untuk pegawai Tendik')}
+      {section('DUTY', 'Tugas Tambahan', 'isi kolom Tugas Tambahan — guru & tendik')}
       {dialog}
     </div>
   );
