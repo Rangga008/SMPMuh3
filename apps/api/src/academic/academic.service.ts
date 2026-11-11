@@ -265,8 +265,10 @@ export class AcademicService {
     department?: string,
     kind?: string,
     duty?: string,
+    unlinked?: boolean,
   ) {
     const where: Prisma.EmployeeWhereInput = {};
+    if (unlinked) where.userId = null;
     if (type === 'TEACHER' || type === 'TENDIK') {
       // Filter GTK — Guru = daftar eksplisit; Tendik = SISANYA (notIn) supaya
       // type baru/tak dikenal tak pernah hilang dari tabel.
@@ -447,7 +449,31 @@ export class AcademicService {
         throw new ConflictException(`Akun ${user.name} sudah tertaut ke pegawai lain.`);
       }
       userId = user.id;
-    } else if (dto.password || dto.roleKey) {
+      // Cegah duplikat — bila pegawai dengan nama/email/HP yang sama sudah
+      // ada, akun harus dikaitkan ke record itu, bukan membuat record baru.
+      const dup = await this.prisma.employee.findFirst({
+        where: {
+          OR: [
+            { name: { equals: dto.name.trim(), mode: 'insensitive' } },
+            ...(dto.email ? [{ email: { equals: dto.email.trim(), mode: 'insensitive' as const } }] : []),
+            ...(dto.phone ? [{ phone: normalizePhone(dto.phone) }] : []),
+          ],
+        },
+        select: { id: true, name: true, nip: true, userId: true },
+      });
+      if (dup) {
+        throw new ConflictException(
+          `Pegawai "${dup.name}"${dup.nip ? ` (NIP ${dup.nip})` : ''} sudah terdaftar — kaitkan akun lewat "Kaitkan pegawai yang ada", jangan buat duplikat.`,
+        );
+      }
+    }
+    let accountPlan: {
+      email: string | null;
+      phone: string | null;
+      passwordHash: string;
+      roleId: string;
+    } | null = null;
+    if (!dto.linkUserId && (dto.password || dto.roleKey)) {
       if (!dto.password || !dto.roleKey) {
         throw new BadRequestException(
           'Password dan role wajib diisi untuk membuat akun pegawai.',
@@ -467,44 +493,55 @@ export class AcademicService {
       }
       // Cegah konflik login — email/no HP harus unik antar akun.
       await this.assertLoginFree(dto.email, dto.phone);
-      const passwordHash = await argon2.hash(dto.password);
-      const user = await this.prisma.user.create({
-        data: {
-          name: dto.name.trim(),
-          email: dto.email?.toLowerCase() ?? null,
-          phone: dto.phone ? normalizePhone(dto.phone) : null,
-          passwordHash,
-          roles: { create: { roleId: role.id } },
-        },
-      });
-      userId = user.id;
+      accountPlan = {
+        email: dto.email?.toLowerCase() ?? null,
+        phone: dto.phone ? normalizePhone(dto.phone) : null,
+        passwordHash: await argon2.hash(dto.password),
+        roleId: role.id,
+      };
     }
 
     const type = dto.type ?? 'TEACHER';
     const staffKind = dto.staffKind || null;
     const additionalDuty = dto.additionalDuty || null;
     const maps = await this.gtkMaps();
-    const emp = await this.prisma.employee.create({
-      data: {
-        name: dto.name.trim(),
-        nip: dto.nip ?? null,
-        type,
-        staffKind,
-        additionalDuty,
-        email: dto.email ?? null,
-        phone: dto.phone ? normalizePhone(dto.phone) : null,
-        department:
-          maps.dutyToDept[additionalDuty ?? ''] ??
-          dto.department ??
-          maps.kindToDept[staffKind ?? ''] ??
-          AcademicService.DEPT_OF_TYPE[type] ??
-          null,
-        isDeptHead:
-          dto.isDeptHead ??
-          maps.headDuties.has(additionalDuty ?? ''),
-        isActive: dto.isActive ?? true,
-        userId,
-      },
+    // Akun + pegawai dibuat atomik — akun yatim tak pernah tertinggal bila
+    // pembuatan pegawai gagal (retry tak akan "email/HP sudah dipakai").
+    const emp = await this.prisma.$transaction(async (tx) => {
+      if (accountPlan) {
+        const user = await tx.user.create({
+          data: {
+            name: dto.name.trim(),
+            email: accountPlan.email,
+            phone: accountPlan.phone,
+            passwordHash: accountPlan.passwordHash,
+            roles: { create: { roleId: accountPlan.roleId } },
+          },
+        });
+        userId = user.id;
+      }
+      return tx.employee.create({
+        data: {
+          name: dto.name.trim(),
+          nip: dto.nip ?? null,
+          type,
+          staffKind,
+          additionalDuty,
+          email: dto.email ?? null,
+          phone: dto.phone ? normalizePhone(dto.phone) : null,
+          department:
+            maps.dutyToDept[additionalDuty ?? ''] ??
+            dto.department ??
+            maps.kindToDept[staffKind ?? ''] ??
+            AcademicService.DEPT_OF_TYPE[type] ??
+            null,
+          isDeptHead:
+            dto.isDeptHead ??
+            maps.headDuties.has(additionalDuty ?? ''),
+          isActive: dto.isActive ?? true,
+          userId,
+        },
+      });
     });
     await this.audit.log({ actorId, action: 'employee.create', entity: 'employee', entityId: emp.id });
     return emp;
@@ -518,7 +555,12 @@ export class AcademicService {
       const clash = await this.prisma.employee.findUnique({
         where: { nip: dto.nip },
       });
-      if (clash) throw new ConflictException(`NIP ${dto.nip} sudah dipakai ${clash.name}.`);
+      if (clash) {
+        const sameName = clash.name.toLowerCase() === existing.name.toLowerCase();
+        throw new ConflictException(
+          `NIP ${dto.nip} sudah dipakai ${clash.name}${sameName ? ' (record lain — kemungkinan data ganda, hapus/gabung dulu)' : ''}.`,
+        );
+      }
     }
     // Email/HP pegawai yang punya akun ikut disalin ke akun login —
     // cek dulu agar tak bentrok dengan akun lain.
@@ -739,21 +781,27 @@ export class AcademicService {
           });
           const custom = raw.password?.trim();
           const password = custom || `m3${Math.random().toString(36).slice(2, 8)}`;
-          const user = await this.prisma.user.create({
-            data: {
-              name,
-              email: email ?? null,
-              phone,
-              passwordHash: await argon2.hash(password),
-              ...(role ? { roles: { create: { roleId: role.id } } } : {}),
-            },
+          // Akun + pegawai atomik per baris — baris gagal di tengah tak
+          // menyisakan akun yatim; retry baris itu tak "sudah dipakai".
+          const passwordHash = await argon2.hash(password);
+          await this.prisma.$transaction(async (tx) => {
+            const user = await tx.user.create({
+              data: {
+                name,
+                email: email ?? null,
+                phone,
+                passwordHash,
+                ...(role ? { roles: { create: { roleId: role.id } } } : {}),
+              },
+            });
+            await tx.employee.create({ data: { ...data, userId: user.id } });
           });
-          userId = user.id;
           accounts.push({ name, login: email ?? phone ?? '', password });
+        } else {
+          await this.prisma.employee.create({
+            data: { ...data, userId },
+          });
         }
-        await this.prisma.employee.create({
-          data: { ...data, userId },
-        });
         created++;
       }
     }
@@ -798,11 +846,51 @@ export class AcademicService {
     return { deleted: true };
   }
 
+  /** Kaitkan akun login (yatim) ke pegawai yang SUDAH ada — bukan membuat baru.
+   *  Email/HP akun mengisi kolom pegawai yang masih kosong. */
+  async linkEmployeeAccount(employeeId: string, userId: string, actorId: string) {
+    const emp = await this.prisma.employee.findUnique({ where: { id: employeeId } });
+    if (!emp) throw new NotFoundException('Pegawai tidak ditemukan.');
+    if (emp.userId) throw new ConflictException(`Pegawai ${emp.name} sudah tertaut akun — lepas dulu bila mau ganti.`);
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, name: true, email: true, phone: true, employee: { select: { id: true } } },
+    });
+    if (!user) throw new BadRequestException('Akun yang dikaitkan tidak ditemukan.');
+    if (user.employee) {
+      throw new ConflictException(`Akun ${user.name} sudah tertaut ke pegawai lain — lepas dulu dari sana.`);
+    }
+    const emp2 = await this.prisma.employee.update({
+      where: { id: emp.id },
+      data: {
+        userId: user.id,
+        email: emp.email ?? user.email,
+        phone: emp.phone ?? user.phone,
+      },
+    });
+    await this.audit.log({ actorId, action: 'employee.link-account', entity: 'employee', entityId: emp.id });
+    return emp2;
+  }
+
+  /** Lepas tautan akun dari pegawai — akun jadi yatim lagi, pegawai tetap ada. */
+  async unlinkEmployeeAccount(employeeId: string, actorId: string) {
+    const emp = await this.prisma.employee.findUnique({ where: { id: employeeId } });
+    if (!emp) throw new NotFoundException('Pegawai tidak ditemukan.');
+    if (!emp.userId) throw new BadRequestException('Pegawai ini tidak tertaut akun.');
+    const emp2 = await this.prisma.employee.update({
+      where: { id: emp.id },
+      data: { userId: null },
+    });
+    await this.audit.log({ actorId, action: 'employee.unlink-account', entity: 'employee', entityId: emp.id });
+    return emp2;
+  }
+
   /** Detail pegawai — profil + wali kelas + penugasan mengajar. */
   async employeeDetail(id: string) {
     const emp = await this.prisma.employee.findUnique({
       where: { id },
       include: {
+        user: { select: { id: true, name: true, email: true, phone: true } },
         payScale: { select: { name: true, hourlyRate: true, transportRate: true } },
         homeroomFor: {
           select: { id: true, name: true, academicYear: { select: { name: true } } },

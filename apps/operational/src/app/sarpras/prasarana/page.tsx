@@ -124,8 +124,8 @@ export default function PrasaranaPage() {
       await deletePrasarana(r.id);
       setNotice('Ruang dihapus.');
       load();
-    } catch {
-      setError('Gagal menghapus ruang.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Gagal menghapus ruang.');
     }
   };
 

@@ -147,6 +147,10 @@ export interface StudentDto {
   birthDate?: string | undefined;
   address?: string | undefined;
   status: StudentStatus;
+  fatherName?: string | null | undefined;
+  motherName?: string | null | undefined;
+  /** HP ortu tersimpan kanonik 62… — tampilkan via phoneLocal. */
+  parentPhone?: string | null | undefined;
   candidateId?: string | undefined;
   parentId?: string | undefined;
   createdAt: string;

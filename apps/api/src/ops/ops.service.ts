@@ -1084,64 +1084,155 @@ export class OpsService {
   }
 
   // ================= Import Dapodik =================
+  /** Template Excel import siswa — sheet Data (keterangan + header + contoh),
+   *  Petunjuk, dan daftar Rombel tahun ajaran aktif agar kolom `kelas`
+   *  terisi nama yang valid. Parser mencari baris header (`nama` di kolom
+   *  pertama) jadi baris keterangan di atas aman. */
+  async studentImportTemplateXlsx(academicYearId: string) {
+    const classes = await this.prisma.class.findMany({
+      where: { academicYearId },
+      orderBy: { name: 'asc' },
+      select: { name: true },
+    });
+    const header = [
+      'nama', 'nis', 'nisn', 'nik', 'jk', 'tempat_lahir', 'tanggal_lahir',
+      'alamat', 'sekolah_asal', 'nama_ayah', 'nama_ibu', 'hp_ortu', 'kelas',
+    ];
+    const ws = XLSX.utils.aoa_to_sheet([
+      ['TEMPLATE IMPORT SISWA'],
+      ['• Isi data mulai baris 9 (baris contoh 8-9 boleh ditimpa/dihapus). Nama kolom di baris 7 JANGAN diubah.'],
+      ['• kolom "kelas": isi nama rombel PERSIS seperti di sheet "Rombel" — kosong/salah tulis = siswa masuk tanpa rombel.'],
+      ['• kolom "hp_ortu": tulis 08… — otomatis menautkan akun orang tua bila sudah ada (untuk WhatsApp/login ortu).'],
+      ['• kolom "nis"/"nisn": opsional — baris dengan NIS/NISN yang sudah terdaftar akan dilewati, bukan ditimpa.'],
+      [],
+      header,
+      ['Ahmad Contoh', '1001', '0012345678', '3201234567890001', 'L', 'Bandung', '2012-05-14', 'Jl. Contoh No. 1', 'SD Muhammadiyah 1', 'Bapak Contoh', 'Ibu Contoh', '081234567890', classes[0]?.name ?? '7A'],
+      ['Siti Contoh', '1002', '0012345679', '3201234567890002', 'P', 'Bandung', '2012-08-21', 'Jl. Contoh No. 2', 'SDN 01 Bandung', 'Bapak Contoh', 'Ibu Contoh', '081234567891', classes[0]?.name ?? '7A'],
+    ]);
+    ws['!cols'] = header.map((h) => ({ wch: Math.max(h.length + 4, 14) }));
+    const wsGuide = XLSX.utils.aoa_to_sheet([
+      ['PETUNJUK IMPORT SISWA'],
+      [],
+      ['Kolom', 'Keterangan'],
+      ['nama', 'Wajib'],
+      ['nis / nisn', 'Opsional — baris dengan NIS/NISN yang sudah terdaftar dilewati'],
+      ['nik', 'Opsional, 16 digit'],
+      ['jk', 'L atau P (boleh juga "gender")'],
+      ['tempat_lahir / tanggal_lahir', 'Format tanggal bebas (YYYY-MM-DD disarankan)'],
+      ['nama_ayah / nama_ibu', 'Boleh juga "nama_ortu" untuk satu nama wali'],
+      ['hp_ortu', 'Format 08… — bila cocok akun ortu, siswa otomatis tertaut'],
+      ['kelas', 'Harus SAMA dengan nama rombel di sheet "Rombel" — nama lain diabaikan (siswa tetap masuk tanpa rombel)'],
+    ]);
+    wsGuide['!cols'] = [{ wch: 30 }, { wch: 90 }];
+    const wsRombel = XLSX.utils.aoa_to_sheet([
+      ['Daftar rombel tahun ajaran ini — pakai nama persis seperti ini di kolom "kelas":'],
+      [],
+      ...classes.map((c) => [c.name]),
+    ]);
+    wsRombel['!cols'] = [{ wch: 60 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Data Siswa');
+    XLSX.utils.book_append_sheet(wb, wsGuide, 'Petunjuk');
+    XLSX.utils.book_append_sheet(wb, wsRombel, 'Rombel');
+    return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+  }
+
   /** Import siswa — kolom: nama, nis, nisn, nik, kelas, gender, tempat_lahir,
    *  tanggal_lahir, alamat, nama_ayah (atau nama_ortu), nama_ibu, hp_ortu,
    *  sekolah_asal. HP ortu disimpan canonical (62…) dan bila cocok dengan
    *  akun ortu yang sudah ada, siswa otomatis tertaut (parentId). */
-  async importStudents(buffer: Buffer, academicYearId: string, classMap: Record<string, string>, dry = false) {
+  async importStudents(
+    buffer: Buffer,
+    academicYearId: string,
+    classMap: Record<string, string>,
+    dry = false,
+    forceClassId?: string,
+  ) {
     const wb = XLSX.read(buffer, { type: 'buffer' });
     const sheet = wb.Sheets[wb.SheetNames[0]!]!;
-    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
-    const results: { row: number; name: string; ok: boolean; msg: string }[] = [];
+    // Template punya baris keterangan di atas — cari baris header (kolom
+    // pertama == "nama") agar file lama (header di baris 1) tetap jalan.
+    const grid = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' });
+    const headerIdx = grid.findIndex(
+      (row) => String(row[0] ?? '').trim().toLowerCase() === 'nama',
+    );
+    if (headerIdx < 0) {
+      throw new BadRequestException('Kolom "nama" tidak ditemukan — pakai template unduhan.');
+    }
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
+      range: headerIdx,
+      defval: '',
+    });
+    // Rombel tujuan dari dropdown — bila dipilih, semua baris masuk ke sana
+    // mengabaikan kolom "kelas" di file.
+    const forceClass = forceClassId
+      ? await this.prisma.class.findUnique({ where: { id: forceClassId }, select: { id: true, name: true } })
+      : null;
+    type Row = {
+      row: number; name: string; ok: boolean; msg: string;
+      nis?: string | null; nisn?: string | null; kelas?: string | null; hp?: string | null;
+    };
+    const results: Row[] = [];
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i]!;
-      const rowNo = i + 2;
+      const rowNo = headerIdx + i + 2;
       const name = String(r['nama'] ?? r['name'] ?? '').trim();
       if (!name) { results.push({ row: rowNo, name: `baris ${rowNo}`, ok: false, msg: 'Nama kosong' }); continue; }
       const nis = String(r['nis'] ?? '').trim() || null;
       const nisn = String(r['nisn'] ?? '').trim() || null;
       const nik = String(r['nik'] ?? '').trim() || null;
+      const className = String(r['kelas'] ?? '').trim();
+      const hpRaw = String(r['hp_ortu'] ?? r['no_hp'] ?? r['phone'] ?? '').trim();
+      const hp = hpRaw ? normalizePhone(hpRaw) : '';
+      const hpLocal = hp ? `0${hp.slice(2)}` : null;
+      const classId = forceClass ? forceClass.id : classMap[className.toLowerCase()];
+      const kelasLabel = forceClass ? forceClass.name : classId ? className : null;
       try {
         if (nis && (await this.prisma.student.findUnique({ where: { nis } }))) {
-          results.push({ row: rowNo, name, ok: false, msg: `NIS ${nis} sudah ada` }); continue;
+          results.push({ row: rowNo, name, ok: false, msg: `NIS ${nis} sudah ada`, nis, nisn, hp: hpLocal, kelas: kelasLabel }); continue;
         }
         if (nisn && (await this.prisma.student.findUnique({ where: { nisn } }))) {
-          results.push({ row: rowNo, name, ok: false, msg: `NISN ${nisn} sudah ada` }); continue;
+          results.push({ row: rowNo, name, ok: false, msg: `NISN ${nisn} sudah ada`, nis, nisn, hp: hpLocal, kelas: kelasLabel }); continue;
         }
-        const className = String(r['kelas'] ?? '').trim();
-        const classId = classMap[className.toLowerCase()];
+        const msgBase = classId
+          ? `Masuk rombel ${kelasLabel}`
+          : className
+            ? `Kelas "${className}" tak dikenal — masuk tanpa rombel`
+            : 'Masuk tanpa rombel';
         if (dry) {
-          results.push({ row: rowNo, name, ok: true, msg: classId ? `Akan masuk ${className}` : 'Akan dibuat (kelas tak dikenal)' });
+          results.push({ row: rowNo, name, ok: true, msg: msgBase, nis, nisn, hp: hpLocal, kelas: kelasLabel });
           continue;
         }
-        const hpRaw = String(r['hp_ortu'] ?? r['no_hp'] ?? r['phone'] ?? '').trim();
-        const hp = hpRaw ? normalizePhone(hpRaw) : '';
         // Tautkan akun ortu yang sudah ada (mis. dari pendaftaran SPMB) by HP.
         const parent = hp
           ? await this.prisma.user.findUnique({ where: { phone: hp }, select: { id: true } })
           : null;
-        const student = await this.prisma.student.create({
-          data: {
-            name, nis, nisn, nik,
-            gender: String(r['gender'] ?? r['jk'] ?? '').toUpperCase().startsWith('P') ? 'FEMALE' : String(r['gender'] ?? r['jk'] ?? '') ? 'MALE' : null,
-            birthPlace: String(r['tempat_lahir'] ?? '').trim() || null,
-            birthDate: r['tanggal_lahir'] ? toDateOnly(String(r['tanggal_lahir'])) : null,
-            address: String(r['alamat'] ?? '').trim() || null,
-            previousSchool: String(r['sekolah_asal'] ?? '').trim() || null,
-            fatherName:
-              String(r['nama_ayah'] ?? '').trim() ||
-              String(r['nama_ortu'] ?? r['nama_orang_tua'] ?? '').trim() || null,
-            motherName: String(r['nama_ibu'] ?? '').trim() || null,
-            parentPhone: hp || null,
-            parentId: parent?.id ?? null,
-          },
+        // Siswa + enrollment atomik per baris — gagal di tengah tak
+        // menyisakan siswa tanpa rombel / rombel tanpa siswa.
+        await this.prisma.$transaction(async (tx) => {
+          const student = await tx.student.create({
+            data: {
+              name, nis, nisn, nik,
+              gender: String(r['gender'] ?? r['jk'] ?? '').toUpperCase().startsWith('P') ? 'FEMALE' : String(r['gender'] ?? r['jk'] ?? '') ? 'MALE' : null,
+              birthPlace: String(r['tempat_lahir'] ?? '').trim() || null,
+              birthDate: r['tanggal_lahir'] ? toDateOnly(String(r['tanggal_lahir'])) : null,
+              address: String(r['alamat'] ?? '').trim() || null,
+              previousSchool: String(r['sekolah_asal'] ?? '').trim() || null,
+              fatherName:
+                String(r['nama_ayah'] ?? '').trim() ||
+                String(r['nama_ortu'] ?? r['nama_orang_tua'] ?? '').trim() || null,
+              motherName: String(r['nama_ibu'] ?? '').trim() || null,
+              parentPhone: hp || null,
+              parentId: parent?.id ?? null,
+            },
+          });
+          if (classId) {
+            await tx.enrollment.create({ data: { studentId: student.id, classId, academicYearId } });
+          }
         });
-        if (classId) {
-          await this.prisma.enrollment.create({ data: { studentId: student.id, classId, academicYearId } });
-        }
-        results.push({ row: rowNo, name, ok: true, msg: classId ? `Masuk ${className}` : 'Dibuat (kelas tak dikenal)' });
+        results.push({ row: rowNo, name, ok: true, msg: msgBase, nis, nisn, hp: hpLocal, kelas: kelasLabel });
       } catch (e) {
-        results.push({ row: rowNo, name, ok: false, msg: e instanceof Error ? e.message.slice(0, 80) : 'gagal' });
+        results.push({ row: rowNo, name, ok: false, msg: e instanceof Error ? e.message.slice(0, 80) : 'gagal', nis, nisn, hp: hpLocal, kelas: kelasLabel });
       }
     }
     return { total: rows.length, ok: results.filter((r) => r.ok).length, failed: results.filter((r) => !r.ok).length, results };

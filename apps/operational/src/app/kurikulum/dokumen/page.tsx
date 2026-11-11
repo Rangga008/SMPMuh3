@@ -61,7 +61,7 @@ export default function DokumenPage() {
 
   const run = async (fn: () => Promise<unknown>, msg: string) => {
     setBusy(true); setError(null);
-    try { await fn(); setNotice(msg); load(); } catch { setError('Aksi gagal.'); } finally { setBusy(false); }
+    try { await fn(); setNotice(msg); load(); } catch (err) { setError(err instanceof Error ? err.message : 'Aksi gagal.'); } finally { setBusy(false); }
   };
 
   return (

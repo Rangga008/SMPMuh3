@@ -100,7 +100,7 @@ export default function PengajuanPage() {
             }, file?.size ? file : undefined);
             setNotice('Pengajuan terkirim — menunggu persetujuan KS.');
             setModal(false); load();
-          } catch { setError('Gagal mengirim.'); } finally { setBusy(false); }
+          } catch (err) { setError(err instanceof Error ? err.message : 'Gagal mengirim.'); } finally { setBusy(false); }
         }}>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Bidang">

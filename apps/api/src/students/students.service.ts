@@ -34,6 +34,9 @@ const studentSelect = {
   birthDate: true,
   address: true,
   status: true,
+  fatherName: true,
+  motherName: true,
+  parentPhone: true,
   candidateId: true,
   parentId: true,
   createdAt: true,
@@ -146,27 +149,37 @@ export class StudentsService {
       });
       if (clash) throw new ConflictException(`NISN ${dto.nisn} sudah terdaftar`);
     }
-    if (!dto.force && dto.birthDate) {
-      const same = await this.prisma.student.findFirst({
+    if (!dto.force) {
+      // Nama persis sama → potensi duplikat. Bila tanggal lahir kosong di
+      // salah satu sisi, keduanya tak bisa dibedakan → tetap ditolak.
+      const sameName = await this.prisma.student.findMany({
         where: {
           name: { equals: dto.name.trim(), mode: 'insensitive' },
-          birthDate: new Date(dto.birthDate),
+          deletedAt: null,
         },
+        select: { id: true, name: true, birthDate: true },
       });
-      if (same) {
+      const clash = sameName.find(
+        (s) =>
+          !dto.birthDate ||
+          !s.birthDate ||
+          s.birthDate.getTime() === new Date(dto.birthDate).getTime(),
+      );
+      if (clash) {
         throw new ConflictException(
-          `Siswa serupa ditemukan (${same.name}, id ${same.id}). Kirim force=true jika memang berbeda.`,
+          `Siswa serupa ditemukan (${clash.name}, id ${clash.id}). Kirim force=true jika memang berbeda.`,
         );
       }
     }
     const data = this.toData(dto);
-    // Nama/HP ortu diisi → buat/tautkan akun ortu (sama seperti update()).
-    if (!dto.parentId && (dto.parentName || dto.parentPhone)) {
-      data.parentId = await this.resolveParentId(dto);
-    }
-    const student = await this.prisma.student.create({
-      data,
-      select: studentSelect,
+    // Akun ortu + siswa atomik — gagal di tengah tak menyisakan akun
+    // ortu yatim yang bikin retry "HP sudah dipakai".
+    const student = await this.prisma.$transaction(async (tx) => {
+      // Nama/HP ortu diisi → buat/tautkan akun ortu (sama seperti update()).
+      if (!dto.parentId && (dto.parentName || dto.parentPhone)) {
+        data.parentId = await this.resolveParentId(dto, tx);
+      }
+      return tx.student.create({ data, select: studentSelect });
     });
     await this.audit.log({
       actorId,
@@ -510,6 +523,7 @@ export class StudentsService {
   /** Cari/buat akun ortu lalu kembalikan id-nya — dipakai saat create(). */
   private async resolveParentId(
     dto: Pick<CreateStudentDto, 'parentName' | 'parentPhone'>,
+    tx: Prisma.TransactionClient,
   ): Promise<string | null> {
     const name = dto.parentName?.trim() || undefined;
     const phone = dto.parentPhone?.trim()
@@ -517,19 +531,19 @@ export class StudentsService {
       : undefined;
     if (!name && !phone) return null;
     if (phone) {
-      const found = await this.prisma.user.findUnique({ where: { phone } });
+      const found = await tx.user.findUnique({ where: { phone } });
       if (found) {
         if (name) {
-          await this.prisma.user.update({ where: { id: found.id }, data: { name } });
+          await tx.user.update({ where: { id: found.id }, data: { name } });
         }
         return found.id;
       }
     }
-    const parentRole = await this.prisma.role.findUnique({
+    const parentRole = await tx.role.findUnique({
       where: { key: 'spmb_parent' },
       select: { id: true },
     });
-    const user = await this.prisma.user.create({
+    const user = await tx.user.create({
       data: {
         name: name ?? 'Orang Tua',
         ...(phone !== undefined ? { phone } : {}),

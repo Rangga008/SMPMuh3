@@ -95,8 +95,8 @@ export default function AdminRegistrationPage() {
       await transitionRegistration(id, target, note || undefined);
       await refresh();
       setNotice(`Status diubah menjadi ${REGISTRATION_STATUS_LABELS[target]}.`);
-    } catch {
-      setError('Transisi status tidak diizinkan.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Transisi status tidak diizinkan.');
     } finally {
       setBusy(false);
     }
@@ -121,8 +121,8 @@ export default function AdminRegistrationPage() {
       await verifyDocument(docId, action, note);
       setRejectFor(null);
       await refresh();
-    } catch {
-      setError('Gagal memperbarui verifikasi dokumen.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Gagal memperbarui verifikasi dokumen.');
     }
   }
 
@@ -257,8 +257,8 @@ export default function AdminRegistrationPage() {
       await setDiscount(id, pct);
       await refresh();
       setNotice(`Diskon DSP diatur ${pct}%.`);
-    } catch {
-      setError('Gagal mengatur diskon.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Gagal mengatur diskon.');
     }
   }
 

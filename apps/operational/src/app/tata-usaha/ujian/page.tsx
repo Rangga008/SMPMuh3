@@ -109,7 +109,7 @@ export default function UjianPage() {
               academicYearId: yearId, capacity: Number(fd.get('capacity')) || 24,
             });
             setRoomModal(false); load(); setNotice('Ruang dibuat.');
-          } catch { setError('Gagal.'); } finally { setBusy(false); }
+          } catch (err) { setError(err instanceof Error ? err.message : 'Gagal.'); } finally { setBusy(false); }
         }}>
           <Field label="Nama ruang"><Input name="name" required placeholder="Ruang 1 / Lab IPA" /></Field>
           <Field label="Periode ujian"><Input name="period" required placeholder="US 2026 / PTS Ganjil" /></Field>
@@ -133,7 +133,7 @@ export default function UjianPage() {
               const r = await assignClassToRoom(assignModal.id, assignClassId);
               setNotice(`${r.added} siswa ditempatkan${r.skipped ? ` · ${r.skipped} dilewati` : ''}.`);
               setAssignModal(null); load();
-            } catch { setError('Gagal menempatkan.'); } finally { setBusy(false); }
+            } catch (err) { setError(err instanceof Error ? err.message : 'Gagal menempatkan.'); } finally { setBusy(false); }
           }}>Tempatkan Rombel</Button>
         </div>
       </Modal>

@@ -162,42 +162,47 @@ export class SpmbImportService {
             continue;
           }
 
-          if (!parent) {
-            parent = await this.prisma.user.create({
+          // Ortu + kandidat + pendaftaran atomik per baris — gagal di
+          // tengah tak menyisakan akun/kandidat yatim; retry baris tak
+          // menabrak "sudah dipakai".
+          const passwordHash = parent
+            ? null
+            : await argon2.hash(randomBytes(24).toString('hex'));
+          await this.prisma.$transaction(async (tx) => {
+            if (!parent) {
+              parent = await tx.user.create({
+                data: {
+                  name: row.namaOrtu.toUpperCase(),
+                  phone: row.noHp,
+                  email: row.emailOrtu ?? null,
+                  passwordHash: passwordHash!,
+                  roles: { create: { roleId: parentRole.id } },
+                },
+              });
+            }
+            const candidate = await tx.candidate.create({
               data: {
-                name: row.namaOrtu.toUpperCase(),
-                phone: row.noHp,
-                email: row.emailOrtu ?? null,
-                passwordHash: await argon2.hash(
-                  randomBytes(24).toString('hex'),
-                ),
-                roles: { create: { roleId: parentRole.id } },
+                parentId: parent.id,
+                name: row.nama.toUpperCase(),
+                gender: row.jenisKelamin,
+                birthDate: row.tanggalLahir,
+                previousSchool: row.asalSekolah,
+                nisn: row.nisn ?? null,
+                nik: row.nik ?? null,
               },
             });
-          }
-
-          const candidate = await this.prisma.candidate.create({
-            data: {
-              parentId: parent.id,
-              name: row.nama.toUpperCase(),
-              gender: row.jenisKelamin,
-              birthDate: row.tanggalLahir,
-              previousSchool: row.asalSekolah,
-              nisn: row.nisn ?? null,
-              nik: row.nik ?? null,
-            },
-          });
-          await this.prisma.registration.create({
-            data: {
-              number: `SPMB-${year.name.split('/')[0]}-${String(randomInt(0, 1_000_000)).padStart(6, '0')}`,
-              candidateId: candidate.id,
-              parentId: parent.id,
-              academicYearId: year.id,
-              waveId: wave?.id ?? null,
-              pathway: 'reguler',
-              status: 'SUBMITTED',
-              submittedAt: new Date(),
-            },
+            await tx.registration.create({
+              data: {
+                number: `SPMB-${year.name.split('/')[0]}-${String(randomInt(0, 1_000_000)).padStart(6, '0')}`,
+                candidateId: candidate.id,
+                parentId: parent.id,
+                academicYearId: year.id,
+                waveId: wave?.id ?? null,
+                pathway: 'reguler',
+                status: 'SUBMITTED',
+                submittedAt: new Date(),
+              },
+            });
           });
           results.created++;
           push('BARU', 'terdaftar', { nama: row.nama, noHp: row.noHp });

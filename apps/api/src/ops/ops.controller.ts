@@ -472,6 +472,16 @@ export class OpsController {
   deletePrasarana(@Param('id') id: string) { return this.ops.deletePrasarana(id); }
 
   // ---- Import Dapodik ----
+  /** Template Excel — sheet Data + Petunjuk + daftar rombel tahun ajaran. */
+  @Get('import/students-template')
+  @RequirePermission(PERMISSIONS.STUDENT_READ)
+  async studentImportTemplate(@Query('academicYearId') y: string, @Res() res: Response) {
+    const buf = await this.ops.studentImportTemplateXlsx(y);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', "attachment; filename*=UTF-8''template-import-siswa.xlsx");
+    res.send(buf);
+  }
+
   @Post('import/students')
   @RequirePermission(PERMISSIONS.STUDENT_MANAGE)
   @UseInterceptors(FileInterceptor('file'))
@@ -480,6 +490,7 @@ export class OpsController {
     @Body('academicYearId') y: string,
     @Body('classMap') classMapJson?: string,
     @Body('dry') dry?: string,
+    @Body('classId') classId?: string,
   ) {
     if (!file) throw new BadRequestException('File wajib.');
     let classMap: Record<string, string> = {};
@@ -488,6 +499,12 @@ export class OpsController {
     } catch {
       throw new BadRequestException('classMap harus JSON valid.');
     }
-    return this.ops.importStudents(file.buffer, y, classMap, dry === '1' || dry === 'true');
+    return this.ops.importStudents(
+      file.buffer,
+      y,
+      classMap,
+      dry === '1' || dry === 'true',
+      classId || undefined,
+    );
   }
 }

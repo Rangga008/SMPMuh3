@@ -93,6 +93,11 @@ export class EmployeeDto {
   linkUserId?: string;
 }
 
+export class LinkAccountDto {
+  @IsUUID()
+  userId!: string;
+}
+
 export class GtkOptionDto {
   @IsIn(['STAFF_KIND', 'DUTY', 'staff_kind', 'duty'])
   group!: string;

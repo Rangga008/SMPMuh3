@@ -52,7 +52,7 @@ export default function ArsipPage() {
         setNotice('Arsip diperbarui.');
       }
       setModal(null); setModalFile(null); load();
-    } catch { setError('Gagal menyimpan arsip.'); }
+    } catch (err) { setError(err instanceof Error ? err.message : 'Gagal menyimpan arsip.'); }
     finally { setBusy(false); }
   }
 
@@ -94,7 +94,7 @@ export default function ArsipPage() {
                     if (!(await confirm(`Hapus arsip "${a.title}"?`))) return;
                     setBusy(true);
                     try { await deleteArchive(a.id); setNotice('Arsip dihapus.'); load(); }
-                    catch { setError('Gagal menghapus.'); }
+                    catch (err) { setError(err instanceof Error ? err.message : 'Gagal menghapus.'); }
                     finally { setBusy(false); }
                   }}>Hapus</RowBtn>
                 </span>
@@ -110,7 +110,7 @@ export default function ArsipPage() {
           const fd = new FormData(e.currentTarget);
           setBusy(true);
           try { await createArchiveCategory(String(fd.get('name'))); setCatModal(false); load(); setNotice('Kategori dibuat.'); }
-          catch { setError('Gagal.'); } finally { setBusy(false); }
+          catch (err) { setError(err instanceof Error ? err.message : 'Gagal.'); } finally { setBusy(false); }
         }}>
           <Field label="Nama kategori"><Input name="name" required placeholder="Surat Dinas / SK / Keuangan" /></Field>
           <div className="flex justify-end"><Button type="submit" disabled={busy}>Simpan</Button></div>

@@ -346,8 +346,8 @@ export default function SaranaPage() {
       await deleteSarana(r.id);
       setNotice('Sarana dihapus.');
       load();
-    } catch {
-      setError('Gagal menghapus sarana.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Gagal menghapus sarana.');
     }
   };
 

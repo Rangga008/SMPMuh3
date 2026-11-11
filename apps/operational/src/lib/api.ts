@@ -647,6 +647,7 @@ export const listEmployees = (
   department?: string,
   kind?: string,
   duty?: string,
+  unlinked?: boolean,
 ) => {
   const p = new URLSearchParams();
   if (type) p.set('type', type);
@@ -654,10 +655,17 @@ export const listEmployees = (
   if (department) p.set('department', department);
   if (kind) p.set('kind', kind);
   if (duty) p.set('duty', duty);
+  if (unlinked) p.set('unlinked', '1');
   return req<EmployeeDto[]>(`/employees?${p}`);
 };
 export const createEmployee = (dto: Record<string, unknown>) =>
   req<EmployeeDto>('/employees', { method: 'POST', json: dto });
+/** Kaitkan akun login yatim ke pegawai yang sudah ada — isi kolom kosong dari akun. */
+export const linkEmployeeAccount = (employeeId: string, userId: string) =>
+  req<EmployeeDto>(`/employees/${employeeId}/link-account`, { method: 'POST', json: { userId } });
+/** Lepas tautan akun — akun kembali jadi yatim. */
+export const unlinkEmployeeAccount = (employeeId: string) =>
+  req<EmployeeDto>(`/employees/${employeeId}/link-account`, { method: 'DELETE' });
 
 /** Akun login non-orang-tua tanpa data pegawai — audit data yatim. */
 export interface OrphanAccount {
@@ -918,6 +926,7 @@ export const deleteCalendarEvent = (id: string) =>
 
 // ---- detail pegawai & pengaturan payroll ----
 export interface EmployeeDetail extends EmployeeDto {
+  user?: { id: string; name: string; email?: string | null; phone?: string | null } | null;
   payScale?: { name: string; hourlyRate: number; transportRate: number } | null;
   homeroomFor?: { id: string; name: string; academicYear: { name: string } }[];
   assignments?: {

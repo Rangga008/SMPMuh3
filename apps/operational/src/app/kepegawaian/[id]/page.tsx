@@ -17,18 +17,23 @@ import {
 } from '@smpmuh3/types';
 import { Shell } from '@/components/shell';
 import { PickSelect } from '@/components/pick-select';
+import { useConfirm } from '@/components/confirm-dialog';
 import { PageTitle, Widget } from '@/components/widgets';
 import {
   getAttendanceMonthly,
   getEmployee,
+  linkEmployeeAccount,
   listGtkOptions,
+  listOrphanAccounts,
   me,
   phoneLocal,
+  unlinkEmployeeAccount,
   updateEmployee,
   type AttendanceDayRow,
   type EmployeeDetail,
   type EmployeeMonthly,
   type GtkOption,
+  type OrphanAccount,
 } from '@/lib/api';
 
 const DOW = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
@@ -67,6 +72,9 @@ export default function EmployeeDetailPage({
   const [editJenis, setEditJenis] = useState<GtkType>('TEACHER');
   const [busy, setBusy] = useState(false);
   const [opts, setOpts] = useState<GtkOption[]>([]);
+  const { confirm, dialog } = useConfirm();
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [orphans, setOrphans] = useState<OrphanAccount[]>([]);
 
   /** Label dinamis — opsi DB dulu, konstanta bawaan sebagai cadangan. */
   const kindLabel = (k?: string | null) =>
@@ -119,6 +127,39 @@ export default function EmployeeDetailPage({
   }, [loadEmp]);
 
   useEffect(() => loadAtt(), [loadAtt]);
+
+  async function onLink(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!emp) return;
+    const uid = String(new FormData(e.currentTarget).get('linkUserId') ?? '');
+    if (!uid) { setError('Pilih akun yang akan dikaitkan.'); return; }
+    setBusy(true);
+    setError(null);
+    try {
+      await linkEmployeeAccount(emp.id, uid);
+      setLinkOpen(false);
+      loadEmp();
+    } catch (e2) {
+      setError(e2 instanceof Error ? e2.message : 'Gagal mengaitkan akun.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onUnlink() {
+    if (!emp?.user) return;
+    if (!(await confirm({ title: `Lepas akun ${emp.user.name}?`, body: 'Akun kembali jadi yatim dan bisa dikaitkan ke pegawai lain.', danger: true, confirmLabel: 'Lepas' }))) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await unlinkEmployeeAccount(emp.id);
+      loadEmp();
+    } catch (e2) {
+      setError(e2 instanceof Error ? e2.message : 'Gagal melepas akun.');
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function onSaveEdit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -243,7 +284,31 @@ export default function EmployeeDetailPage({
                     ? emp.homeroomFor.map((h) => `${h.name} (${h.academicYear.name})`).join(', ')
                     : '—'}
                 </dd>
+                <dt className="text-sand-500">Akun login</dt>
+                <dd className="font-medium text-sand-900">
+                  {emp.user ? `${emp.user.name} (${emp.user.email ?? phoneLocal(emp.user.phone) ?? 'tanpa kontak'})` : 'Belum tertaut'}
+                </dd>
               </dl>
+              {canManage ? (
+                <div className="mt-4 border-t border-sand-100 pt-3">
+                  {emp.user ? (
+                    <Button size="sm" variant="outline" disabled={busy} onClick={onUnlink}>
+                      Lepas Akun
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setLinkOpen(true);
+                        listOrphanAccounts().then(setOrphans).catch(() => setOrphans([]));
+                      }}
+                    >
+                      Kaitkan Akun…
+                    </Button>
+                  )}
+                </div>
+              ) : null}
             </Widget>
 
             <Widget title="Penugasan Mengajar" className="lg:col-span-2">
@@ -345,6 +410,31 @@ export default function EmployeeDetailPage({
             )}
           </Widget>
 
+          <Modal open={linkOpen} onClose={() => setLinkOpen(false)} title="Kaitkan Akun Login">
+            <form onSubmit={onLink} className="grid gap-4">
+              <Field
+                label="Akun tanpa pegawai"
+                hint="Akun login yang belum tertaut ke pegawai — ketik nama untuk mencari. Email/HP akun mengisi kolom pegawai yang kosong."
+              >
+                <PickSelect
+                  name="linkUserId"
+                  required
+                  options={orphans.map((o) => ({
+                    value: o.id,
+                    label: `${o.name} — ${(o.email ?? phoneLocal(o.phone)) || 'tanpa kontak'} (${o.roles.join(', ')})`,
+                  }))}
+                  placeholder={orphans.length ? 'Ketik nama akun…' : 'Tidak ada akun yatim'}
+                />
+              </Field>
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="secondary" onClick={() => setLinkOpen(false)}>Batal</Button>
+                <Button type="submit" disabled={busy || !orphans.length}>
+                  {busy ? 'Mengaitkan…' : 'Kaitkan'}
+                </Button>
+              </div>
+            </form>
+          </Modal>
+
           <Modal open={editModal} onClose={() => setEditModal(false)} title="Edit Data Pegawai">
             <form onSubmit={onSaveEdit} className="grid gap-4 sm:grid-cols-2">
               <Field label="Nama Lengkap" className="sm:col-span-2">
@@ -411,6 +501,7 @@ export default function EmployeeDetailPage({
           </Modal>
         </>
       )}
+      {dialog}
     </Shell>
   );
 }

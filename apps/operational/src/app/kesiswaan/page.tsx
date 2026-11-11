@@ -12,7 +12,7 @@ import { DataTable } from '@/components/data-table';
 import { PageTitle } from '@/components/widgets';
 import { rowActionClasses } from '@/components/row-btn';
 import { createStudent, listStudents, listAcademicYears, listClasses } from '@/lib/api';
-import { importStudentsDapodik } from '@/lib/api-ops';
+import { downloadStudentTemplate, importStudentsDapodik } from '@/lib/api-ops';
 
 const tone = (s: string) => (s === 'ACTIVE' ? 'primary' : 'neutral');
 
@@ -25,9 +25,42 @@ export default function StudentsPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
-  const [importPreview, setImportPreview] = useState<{ row: number; name: string; ok: boolean; msg: string }[] | null>(null);
+  const [importYear, setImportYear] = useState<{ id: string; name: string } | null>(null);
+  const [importClasses, setImportClasses] = useState<{ id: string; name: string }[]>([]);
+  const [importClassId, setImportClassId] = useState('');
+  const [importPreview, setImportPreview] = useState<{ row: number; name: string; ok: boolean; msg: string; nis?: string | null; nisn?: string | null; kelas?: string | null; hp?: string | null }[] | null>(null);
   const [importResult, setImportResult] = useState<{ ok: number; failed: number; results: { row: number; name: string; ok: boolean; msg: string }[] } | null>(null);
   const importFileRef = useRef<HTMLInputElement>(null);
+
+  async function openImport() {
+    setImportOpen(true);
+    setImportFile(null);
+    setImportPreview(null);
+    setImportResult(null);
+    setImportClassId('');
+    try {
+      const ys = await listAcademicYears();
+      const y = ys.find((x) => x.isActive) ?? ys[0];
+      if (!y) { setError('Tahun ajaran aktif tidak ada.'); return; }
+      setImportYear(y);
+      setImportClasses(await listClasses(y.id));
+    } catch { setError('Gagal memuat tahun ajaran/rombel.'); }
+  }
+
+  async function runPreview(file: File, classId: string) {
+    if (!importYear) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const map = Object.fromEntries(importClasses.map((c) => [c.name.toLowerCase(), c.id]));
+      const r = await importStudentsDapodik(importYear.id, map, file, true, classId || undefined);
+      setImportPreview(r.results);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'File tidak dapat dibaca.');
+      setImportFile(null);
+      setImportPreview(null);
+    } finally { setBusy(false); }
+  }
 
   async function pickImport(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
@@ -35,34 +68,27 @@ export default function StudentsPage() {
     if (!f) return;
     setImportFile(f);
     setImportPreview(null);
-    setError(null);
-    try {
-      const ys = await listAcademicYears();
-      const y = ys.find((x) => x.isActive) ?? ys[0];
-      if (!y) { setError('Tahun ajaran aktif tidak ada.'); return; }
-      const cs = await listClasses(y.id);
-      const map = Object.fromEntries(cs.map((c) => [c.name.toLowerCase(), c.id]));
-      const r = await importStudentsDapodik(y.id, map, f, true);
-      setImportPreview(r.results);
-    } catch { setError('File tidak dapat dibaca.'); setImportFile(null); }
+    await runPreview(f, importClassId);
+  }
+
+  async function onPickImportClass(v: string) {
+    setImportClassId(v);
+    if (importFile) await runPreview(importFile, v);
   }
 
   async function commitStudentImport() {
-    if (!importFile) return;
+    if (!importFile || !importYear) return;
     setBusy(true);
     setError(null);
     try {
-      const ys = await listAcademicYears();
-      const y = ys.find((x) => x.isActive) ?? ys[0];
-      if (!y) throw new Error('TA?');
-      const cs = await listClasses(y.id);
-      const map = Object.fromEntries(cs.map((c) => [c.name.toLowerCase(), c.id]));
-      const r = await importStudentsDapodik(y.id, map, importFile);
+      const map = Object.fromEntries(importClasses.map((c) => [c.name.toLowerCase(), c.id]));
+      const r = await importStudentsDapodik(importYear.id, map, importFile, false, importClassId || undefined);
       setImportResult(r);
       setImportPreview(null);
       load({ search, status });
-    } catch { setError('Import gagal — cek format kolom (nama, nis, nisn, kelas, …).'); }
-    finally { setBusy(false); }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Import gagal — cek format kolom file.');
+    } finally { setBusy(false); }
   }
   const [showForm, setShowForm] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -107,8 +133,8 @@ export default function StudentsPage() {
       e.currentTarget.reset();
       setShowForm(false);
       load({ search, status });
-    } catch {
-      setError('Gagal menambah siswa — NIS/NISN mungkin sudah dipakai.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Gagal menambah siswa.');
     } finally {
       setBusy(false);
     }
@@ -121,7 +147,7 @@ export default function StudentsPage() {
         subtitle="Kelola data kesiswaan"
         actions={
           <>
-            <Button size="sm" variant="outline" onClick={() => { setImportOpen(true); setImportFile(null); setImportPreview(null); setImportResult(null); }}>
+            <Button size="sm" variant="outline" onClick={openImport}>
               ⭱ Import Dapodik
             </Button>
             <Link href="/kesiswaan/orang-tua" className={rowActionClasses('neutral')}>
@@ -248,23 +274,59 @@ export default function StudentsPage() {
             <li>No. HP ortu yang cocok dengan akun ortu SPMB otomatis <b>menautkan</b> siswa ke akun itu.</li>
           </ul>
         </div>
-        <div className="mt-4">
+        <div className="mt-4 flex flex-wrap items-end gap-3">
           <input ref={importFileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={pickImport} />
-          <Button variant="outline" disabled={busy} onClick={() => importFileRef.current?.click()}>
-            {importFile ? `Ganti file (${importFile.name})` : 'Pilih File Excel'}
+          <Button variant="outline" disabled={busy || !importYear} onClick={() => importFileRef.current?.click()}>
+            {busy && importFile && !importPreview ? 'Membaca file…' : importFile ? `Ganti file (${importFile.name})` : 'Pilih File Excel'}
           </Button>
+          <Button
+            variant="outline"
+            disabled={busy || !importYear}
+            onClick={async () => {
+              try { await downloadStudentTemplate(importYear!.id); }
+              catch { setError('Gagal mengunduh template.'); }
+            }}
+          >
+            ⭳ Unduh Template
+          </Button>
+          <label className="flex min-w-52 flex-col gap-1.5">
+            <span className="text-xs font-bold uppercase tracking-wider text-sand-500">Masukkan ke Rombel</span>
+            <Select value={importClassId} onChange={(e) => onPickImportClass(e.target.value)} disabled={!importYear}>
+              <option value="">Ikuti kolom "kelas" di file</option>
+              {importClasses.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </Select>
+          </label>
         </div>
+        <p className="mt-2 text-xs text-sand-500">
+          {importYear ? `Tahun ajaran aktif: ${importYear.name} · ${importClasses.length} rombel` : 'Memuat tahun ajaran…'}
+          {importClassId ? ' — semua baris file diabaikan kolom kelasnya, masuk ke rombel pilihan ini.' : ''}
+        </p>
         {importPreview ? (
-          <div className="mt-4 max-h-72 overflow-auto rounded-xl border border-sand-200">
+          <div className="mt-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+            <p className="font-bold">PRATINJAU — belum ada data yang disimpan.</p>
+            <p className="mt-0.5 text-xs">
+              {importPreview.filter((p) => p.ok).length} baris siap diimport · {importPreview.filter((p) => !p.ok).length} dilewati (duplikat/nama kosong).
+              Periksa lalu klik tombol Import di bawah.
+            </p>
+          </div>
+        ) : null}
+        {importPreview ? (
+          <div className="mt-2 max-h-72 overflow-auto rounded-xl border border-sand-200">
             <table className="w-full text-xs">
               <thead className="sticky top-0 bg-sand-50 text-left text-sand-500">
-                <tr><th className="px-3 py-2">Baris</th><th className="px-3 py-2">Nama</th><th className="px-3 py-2">Hasil Cek</th></tr>
+                <tr><th className="px-3 py-2">Baris</th><th className="px-3 py-2">Nama</th><th className="px-3 py-2">NIS</th><th className="px-3 py-2">NISN</th><th className="px-3 py-2">HP Ortu</th><th className="px-3 py-2">Rombel</th><th className="px-3 py-2">Hasil Cek</th></tr>
               </thead>
               <tbody>
                 {importPreview.map((p) => (
                   <tr key={p.row} className={p.ok ? '' : 'bg-red-50/60 text-red-800'}>
                     <td className="px-3 py-1.5">{p.row}</td>
                     <td className="px-3 py-1.5 font-semibold">{p.name}</td>
+                    <td className="px-3 py-1.5">{p.nis ?? '—'}</td>
+                    <td className="px-3 py-1.5">{p.nisn ?? '—'}</td>
+                    <td className="px-3 py-1.5">{p.hp ?? '—'}</td>
+                    <td className="px-3 py-1.5">{p.kelas ?? '—'}</td>
                     <td className="px-3 py-1.5">{p.msg}</td>
                   </tr>
                 ))}

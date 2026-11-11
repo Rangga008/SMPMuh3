@@ -202,13 +202,17 @@ export const studentPhotoUrl = (id: string) => `${API}/ops/students/${id}/photo`
 
 export interface ImportResult {
   total: number; ok: number; failed: number;
-  results: { row: number; name: string; ok: boolean; msg: string }[];
+  results: { row: number; name: string; ok: boolean; msg: string; nis?: string | null; nisn?: string | null; kelas?: string | null; hp?: string | null }[];
 }
-export const importStudentsDapodik = (academicYearId: string, classMap: Record<string, string>, file: File, dry = false) => {
+/** Template Excel import siswa — sheet Data + Petunjuk + daftar rombel tahun ajaran aktif. */
+export const downloadStudentTemplate = (academicYearId: string) =>
+  downloadFile(`/ops/import/students-template?academicYearId=${academicYearId}`, 'template-import-siswa.xlsx');
+export const importStudentsDapodik = (academicYearId: string, classMap: Record<string, string>, file: File, dry = false, classId?: string) => {
   const fd = new FormData();
   fd.append('academicYearId', academicYearId);
   fd.append('classMap', JSON.stringify(classMap));
   if (dry) fd.append('dry', '1');
+  if (classId) fd.append('classId', classId);
   fd.append('file', file);
   return req<ImportResult>('/ops/import/students', { method: 'POST', body: fd });
 };

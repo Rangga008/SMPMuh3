@@ -29,6 +29,7 @@ import {
   CurriculumDto,
   EmployeeDto,
   EnrollmentDto,
+  LinkAccountDto,
   GradeDto,
   GtkOptionDto,
   UpdateGtkOptionDto,
@@ -69,8 +70,9 @@ export class AcademicController {
     @Query('department') department?: string,
     @Query('kind') kind?: string,
     @Query('duty') duty?: string,
+    @Query('unlinked') unlinked?: string,
   ) {
-    return this.academic.listEmployees(type, search, department, kind, duty);
+    return this.academic.listEmployees(type, search, department, kind, duty, unlinked === '1' || unlinked === 'true');
   }
 
   /** Anggota bidang milik pegawai yang login — untuk kepala bidang. */
@@ -93,6 +95,24 @@ export class AcademicController {
     @Body() dto: EmployeeDto,
   ) {
     return this.academic.updateEmployee(id, dto, u.id);
+  }
+
+  /** Kaitkan akun login yatim ke pegawai yang sudah ada — tanpa membuat record baru. */
+  @Post('employees/:id/link-account')
+  @RequirePermission(EM)
+  linkAccount(
+    @CurrentUser() u: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: LinkAccountDto,
+  ) {
+    return this.academic.linkEmployeeAccount(id, dto.userId, u.id);
+  }
+
+  /** Lepas tautan akun — akun kembali jadi yatim, bisa dikaitkan ke pegawai lain. */
+  @Delete('employees/:id/link-account')
+  @RequirePermission(EM)
+  unlinkAccount(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.academic.unlinkEmployeeAccount(id, u.id);
   }
 
   /** Template Excel import pegawai — header sesuai kolom yang dibaca import. */

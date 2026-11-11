@@ -26,6 +26,7 @@ import {
   deleteGtkOption,
   downloadEmployeeTemplate,
   importEmployees,
+  linkEmployeeAccount,
   listEmployees,
   listGtkOptions,
   listOrphanAccounts,
@@ -72,6 +73,9 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
   const [showForm, setShowForm] = useState(false);
   const [withAccount, setWithAccount] = useState(false);
   const [linkAccount, setLinkAccount] = useState<OrphanAccount | null>(null);
+  /** Mode kaitkan akun yatim — 'create' buat GTK baru, 'link' kaitkan ke pegawai yang ada. */
+  const [linkMode, setLinkMode] = useState<'create' | 'link'>('link');
+  const [unlinked, setUnlinked] = useState<EmployeeDto[]>([]);
   const [formJenis, setFormJenis] = useState<GtkType>(jenis);
   const [busy, setBusy] = useState(false);
   // Import modal — langkah: instruksi → pilih file → preview → konfirmasi → hasil.
@@ -108,6 +112,37 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
     listGtkOptions().then(setOpts).catch(() => setOpts([]));
     listOrphanAccounts().then(setOrphans).catch(() => setOrphans(null));
   }, []);
+
+  // Pegawai tanpa akun — untuk mode "Kaitkan pegawai yang ada".
+  useEffect(() => {
+    if (linkAccount && linkMode === 'link') {
+      listEmployees(undefined, undefined, undefined, undefined, undefined, true)
+        .then(setUnlinked)
+        .catch(() => setUnlinked([]));
+    }
+  }, [linkAccount, linkMode]);
+
+  async function onLinkExisting(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!linkAccount) return;
+    const empId = String(new FormData(e.currentTarget).get('linkEmpId') ?? '');
+    if (!empId) { setError('Pilih pegawai yang akan dikaitkan.'); return; }
+    setBusy(true);
+    setError(null);
+    try {
+      await linkEmployeeAccount(empId, linkAccount.id);
+      const emp = unlinked.find((x) => x.id === empId);
+      setShowForm(false);
+      setLinkAccount(null);
+      setNotice(`Akun ${linkAccount.name} tertaut ke pegawai ${emp?.name ?? ''}.`);
+      load(kind, duty, search);
+      listOrphanAccounts().then(setOrphans).catch(() => undefined);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Gagal mengaitkan akun.');
+    } finally {
+      setBusy(false);
+    }
+  }
 
   // Realtime — search di-debounce.
   const firstRun = useRef(true);
@@ -280,6 +315,7 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
                   className="rounded-md bg-amber-600/90 px-2 py-0.5 font-bold text-white hover:bg-amber-700"
                   onClick={() => {
                     setLinkAccount(o);
+                    setLinkMode('link');
                     setWithAccount(false);
                     setFormJenis(jenis);
                     setShowForm(true);
@@ -404,19 +440,56 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
         <Modal
           open
           onClose={() => { setShowForm(false); setLinkAccount(null); }}
-          title={linkAccount ? 'Buat GTK & Kaitkan Akun' : 'Tambah GTK'}
+          title={linkAccount ? `Kaitkan Akun ${linkAccount.name}` : 'Tambah GTK'}
           description={
             linkAccount
-              ? `Data GTK baru akan langsung tertaut ke akun login ${linkAccount.name}.`
+              ? 'Kaitkan ke pegawai yang sudah ada, atau buat data GTK baru untuk akun ini.'
               : 'Guru atau tenaga kependidikan — opsional sekaligus buatkan akun login.'
           }
           size="xl"
         >
           {linkAccount ? (
-            <p className="mb-4 rounded-xl border border-primary-200 bg-primary-50 px-4 py-2.5 text-xs font-semibold text-primary-800">
-              Tertaut akun: {linkAccount.name} ({(linkAccount.email ?? phoneLocal(linkAccount.phone)) || 'tanpa kontak'}) — pegawai ini langsung memakai akun tsb, tanpa akun baru.
-            </p>
+            <div className="mb-4 space-y-3">
+              <p className="rounded-xl border border-primary-200 bg-primary-50 px-4 py-2.5 text-xs font-semibold text-primary-800">
+                Akun: {linkAccount.name} ({(linkAccount.email ?? phoneLocal(linkAccount.phone)) || 'tanpa kontak'})
+              </p>
+              <div className="flex gap-2">
+                {([['link', 'Kaitkan pegawai yang ada'], ['create', 'Buat GTK baru']] as const).map(([m, l]) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setLinkMode(m)}
+                    className={`rounded-xl px-4 py-2 text-sm font-bold ${
+                      linkMode === m ? 'bg-primary-700 text-white' : 'bg-sand-100 text-sand-600 hover:bg-sand-200'
+                    }`}
+                  >
+                    {l}
+                  </button>
+                ))}
+              </div>
+            </div>
           ) : null}
+          {linkAccount && linkMode === 'link' ? (
+            <form onSubmit={onLinkExisting} className="grid gap-4">
+              <Field label="Pegawai tanpa akun" hint="Ketik nama untuk mencari — akun langsung tertaut ke pegawai ini, tanpa membuat data baru. Email/HP akun mengisi kolom yang kosong.">
+                <PickSelect
+                  name="linkEmpId"
+                  required
+                  options={unlinked.map((e) => ({
+                    value: e.id,
+                    label: `${e.name}${e.nip ? ` · NIP ${e.nip}` : ''} — ${jabatanLabel(e)}`,
+                  }))}
+                  placeholder={unlinked.length ? 'Ketik nama pegawai…' : 'Semua pegawai sudah tertaut akun'}
+                />
+              </Field>
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="secondary" onClick={() => { setShowForm(false); setLinkAccount(null); }}>Batal</Button>
+                <Button type="submit" disabled={busy || !unlinked.length}>
+                  {busy ? 'Mengaitkan…' : 'Kaitkan Akun'}
+                </Button>
+              </div>
+            </form>
+          ) : (
           <form key={linkAccount?.id ?? 'baru'} onSubmit={onCreate} className="grid gap-4 sm:grid-cols-2">
             <Field label="Nama Lengkap" className="sm:col-span-2">
               <Input name="name" required defaultValue={linkAccount?.name ?? ''} />
@@ -502,6 +575,7 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
               </Button>
             </div>
           </form>
+          )}
         </Modal>
       ) : null}
 

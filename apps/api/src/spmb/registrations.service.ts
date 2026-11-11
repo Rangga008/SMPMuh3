@@ -551,27 +551,33 @@ export class RegistrationsService {
           select: { name: true, phone: true },
         })
       : null;
-    const student = await this.prisma.student.create({
-      data: {
-        name: cand.name,
-        gender: cand.gender,
-        birthPlace: cand.birthPlace,
-        birthDate: cand.birthDate,
-        nisn: cand.nisn,
-        nik: cand.nik,
-        address: cand.address,
-        previousSchool: cand.previousSchool,
-        fatherName: parent?.name ?? null,
-        parentPhone: parent?.phone ?? null,
-        candidateId: cand.id,
-        parentId: reg.parentId,
-      },
-    });
-    // Tagihan SPMB yang belum lunas (sisa DSP/seragam/dst) ikut ke siswa —
-    // penagihan berlanjut di modul keuangan, bukan lagi bagian SPMB.
-    await this.prisma.invoice.updateMany({
-      where: { registrationId: id, studentId: null, status: { notIn: ['PAID', 'CANCELLED', 'EXPIRED'] } },
-      data: { studentId: student.id, academicYearId: reg.academicYearId },
+    // Siswa + alih tagihan atomik — siswa tak terbentuk separuh bila
+    // pemindahan invoice gagal (retry tak bikin siswa kembar dari kandidat
+    // yang sama karena `studentId` unik per kandidat).
+    const student = await this.prisma.$transaction(async (tx) => {
+      const s = await tx.student.create({
+        data: {
+          name: cand.name,
+          gender: cand.gender,
+          birthPlace: cand.birthPlace,
+          birthDate: cand.birthDate,
+          nisn: cand.nisn,
+          nik: cand.nik,
+          address: cand.address,
+          previousSchool: cand.previousSchool,
+          fatherName: parent?.name ?? null,
+          parentPhone: parent?.phone ?? null,
+          candidateId: cand.id,
+          parentId: reg.parentId,
+        },
+      });
+      // Tagihan SPMB yang belum lunas (sisa DSP/seragam/dst) ikut ke siswa —
+      // penagihan berlanjut di modul keuangan, bukan lagi bagian SPMB.
+      await tx.invoice.updateMany({
+        where: { registrationId: id, studentId: null, status: { notIn: ['PAID', 'CANCELLED', 'EXPIRED'] } },
+        data: { studentId: s.id, academicYearId: reg.academicYearId },
+      });
+      return s;
     });
     await this.audit.log({
       actorId,
