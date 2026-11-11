@@ -609,6 +609,8 @@ function GtkOptionManager({
   const [addDept, setAddDept] = useState('');
   const [addRole, setAddRole] = useState('');
   const [optQuery, setOptQuery] = useState('');
+  /** Form tambah disembunyikan di balik tombol — tak menghalangi daftar. */
+  const [addOpen, setAddOpen] = useState(false);
   /** Baris yang sedang diedit — panel form terbuka di bawah barisnya. */
   const [editing, setEditing] = useState<{
     id: string; code: string; label: string; department: string; roleKey: string;
@@ -624,8 +626,10 @@ function GtkOptionManager({
       await fn();
       setNote(okMsg);
       onChanged();
+      return true;
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Gagal menyimpan opsi.');
+      return false;
     } finally {
       setBusyId(null);
     }
@@ -636,20 +640,21 @@ function GtkOptionManager({
     const form = e.currentTarget;
     const f = new FormData(form);
     const str = (k: string) => String(f.get(k) ?? '').trim();
-    await act('new', async () => {
+    const ok = await act('new', async () => {
       await createGtkOption({
         group: str('group'),
         code: str('code'),
         label: str('label'),
         ...(addDept ? { department: addDept } : {}),
         isHead: f.get('isHead') === 'on',
-        ...(str('roleKey') ? { roleKey: str('roleKey') } : {}),
+        ...(addRole ? { roleKey: addRole } : {}),
       });
     }, `Opsi "${str('label')}" ditambahkan.`);
-    if (!err) {
+    if (ok) {
       form.reset();
       setAddDept('');
       setAddRole('');
+      setAddOpen(false);
     }
   }
 
@@ -816,8 +821,12 @@ function GtkOptionManager({
       {err ? <p role="alert" className="rounded-xl bg-red-50 px-4 py-2.5 text-sm font-medium text-red-700">{err}</p> : null}
       {note ? <p role="status" className="rounded-xl bg-emerald-50 px-4 py-2.5 text-sm font-medium text-emerald-800">{note}</p> : null}
 
+      {addOpen ? (
       <form onSubmit={onAdd} className="grid gap-3 rounded-xl border border-primary-200 bg-primary-50/50 p-4 sm:grid-cols-2">
-        <p className="text-sm font-bold text-sand-800 sm:col-span-2">Tambah opsi baru</p>
+        <div className="flex items-center justify-between sm:col-span-2">
+          <p className="text-sm font-bold text-sand-800">Tambah opsi baru</p>
+          <Button type="button" variant="ghost" size="sm" onClick={() => setAddOpen(false)}>Tutup</Button>
+        </div>
         <Field label="Grup">
           <Select name="group" value={group} onChange={(e) => setGroup(e.target.value as 'STAFF_KIND' | 'DUTY')}>
             <option value="DUTY">Tugas Tambahan</option>
@@ -857,10 +866,15 @@ function GtkOptionManager({
         </label>
         <div className="sm:col-span-2">
           <Button type="submit" disabled={busyId === 'new'}>
-            {busyId === 'new' ? 'Menyimpan…' : '+ Tambah Opsi'}
+            {busyId === 'new' ? 'Menyimpan…' : 'Simpan Opsi'}
           </Button>
         </div>
       </form>
+      ) : (
+        <Button type="button" variant="outline" onClick={() => setAddOpen(true)}>
+          + Tambah Opsi Baru
+        </Button>
+      )}
 
       <Field label="Cari opsi" className="!mb-0">
         <Input

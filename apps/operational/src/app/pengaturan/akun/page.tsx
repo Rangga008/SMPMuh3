@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Badge, Button, Field, Input, Modal } from '@smpmuh3/ui';
+import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { PageTitle } from '@/components/widgets';
 import { DataTable } from '@/components/data-table';
@@ -35,6 +35,10 @@ export default function AccountSettingsPage() {
   const [resetTarget, setResetTarget] = useState<StaffUser | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [query, setQuery] = useState('');
+  const [roleFilter, setRoleFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [orphanOnly, setOrphanOnly] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -63,6 +67,20 @@ export default function AccountSettingsPage() {
     setEditing(u);
     setPicked(new Set(u.roles.map((r) => r.role.id)));
   };
+
+  const q = query.trim().toLowerCase();
+  const filtered = users.filter((u) => {
+    if (q) {
+      const hay = [u.name, u.email ?? '', u.phone ?? '', u.employee?.name ?? '']
+        .join(' ')
+        .toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    if (roleFilter && !u.roles.some((r) => r.role.key === roleFilter)) return false;
+    if (statusFilter && u.status !== statusFilter) return false;
+    if (orphanOnly && u.employee) return false;
+    return true;
+  });
 
   const rolePicker = (
     <div className="flex flex-wrap gap-2">
@@ -197,11 +215,52 @@ export default function AccountSettingsPage() {
         <p className="mb-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{notice}</p>
       ) : null}
 
+      <div className="mb-5 grid gap-3 rounded-2xl border border-sand-200 bg-white p-4 shadow-card sm:grid-cols-2 lg:grid-cols-4">
+        <Field label="Pencarian" className="!mb-0">
+          <Input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Nama / email / HP / pegawai…"
+          />
+        </Field>
+        <Field label="Role" className="!mb-0">
+          <Select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
+            <option value="">Semua role</option>
+            {roles.map((r) => (
+              <option key={r.id} value={r.key}>{r.name}</option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Status" className="!mb-0">
+          <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <option value="">Semua</option>
+            <option value="ACTIVE">Aktif</option>
+            <option value="DISABLED">Nonaktif</option>
+          </Select>
+        </Field>
+        <label className="flex items-end gap-2 pb-2.5 text-sm font-semibold text-sand-800">
+          <input
+            type="checkbox"
+            checked={orphanOnly}
+            onChange={(e) => setOrphanOnly(e.target.checked)}
+            className="size-4 accent-primary-700"
+          />
+          Belum tertaut pegawai
+        </label>
+      </div>
+
       <DataTable
         head={['Akun', 'Kontak', 'Role', 'Pegawai', 'Status', '']}
-        empty={users.length === 0 ? 'Belum ada akun staf.' : undefined}
+        empty={
+          users.length === 0
+            ? 'Belum ada akun staf.'
+            : filtered.length === 0
+              ? 'Tidak ada akun cocok dengan filter.'
+              : undefined
+        }
       >
-            {users.map((u) => (
+            {filtered.map((u) => (
               <tr key={u.id} className="align-top">
                 <td className="px-5 py-3.5">
                   <p className="font-semibold text-sand-800">{u.name}</p>
