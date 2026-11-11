@@ -21,15 +21,22 @@ import { DataTable } from '@/components/data-table';
 import { PageTitle } from '@/components/widgets';
 import {
   createEmployee,
+  createGtkOption,
   deleteEmployee,
+  deleteGtkOption,
   downloadEmployeeTemplate,
   importEmployees,
   listEmployees,
+  listGtkOptions,
+  listOrphanAccounts,
   listRoles,
   previewEmployeeImport,
+  updateGtkOption,
   type EmployeeDto,
   type EmployeeImportPreviewRow,
   type EmployeeImportResult,
+  type GtkOption,
+  type OrphanAccount,
   type RoleOption,
 } from '@/lib/api';
 import { RowBtn } from '@/components/row-btn';
@@ -40,13 +47,6 @@ const DEPT_LABEL: Record<string, string> = {
   KEUANGAN: 'Keuangan', SARPRAS: 'Sarpras', LAYSUS: 'Laysus',
 };
 
-/** Jabatan pokok untuk tampilan — kind tendik, atau 'Guru'/'Tendik'. */
-const jabatanLabel = (e: EmployeeDto) =>
-  e.staffKind
-    ? (STAFF_KIND_LABELS[e.staffKind as StaffKind] ?? e.staffKind)
-    : GTK_TYPE_LABELS[GTK_GROUP[e.type] ?? 'TENDIK'];
-const dutyLabel = (d?: string | null) =>
-  d ? (ADDITIONAL_DUTY_LABELS[d as AdditionalDuty] ?? d) : '—';
 const jenisLabel = (t: string) =>
   GTK_TYPE_LABELS[GTK_GROUP[t] ?? 'TENDIK'] ??
   EMPLOYEE_TYPE_LABELS[t as EmployeeType] ??
@@ -57,8 +57,12 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
   const [rows, setRows] = useState<EmployeeDto[]>([]);
   const [roles, setRoles] = useState<RoleOption[]>([]);
   const [kind, setKind] = useState('');
-  const [dept, setDept] = useState('');
+  const [duty, setDuty] = useState('');
   const [search, setSearch] = useState('');
+  const [otherCount, setOtherCount] = useState<number | null>(null);
+  const [orphans, setOrphans] = useState<OrphanAccount[] | null>(null);
+  const [opts, setOpts] = useState<GtkOption[]>([]);
+  const [optsOpen, setOptsOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -77,10 +81,20 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
 
   const load = useCallback((k: string, d: string, q: string) => {
     setLoading(true);
-    listEmployees(jenis, q || undefined, d || undefined, k || undefined)
+    listEmployees(jenis, q || undefined, undefined, k || undefined, d || undefined)
       .then((r) => {
         setRows(r);
         setLoadError(null);
+        // Petunjuk lintas-tab — pencarian kosong di tab ini bisa jadi
+        // ketemu di tab satunya (guru dicari di tendik, dst).
+        if (q && r.length === 0) {
+          const other = jenis === 'TEACHER' ? 'TENDIK' : 'TEACHER';
+          listEmployees(other, q)
+            .then((x) => setOtherCount(x.length))
+            .catch(() => setOtherCount(null));
+        } else {
+          setOtherCount(null);
+        }
       })
       .catch(() => setLoadError('Gagal memuat data GTK.'))
       .finally(() => setLoading(false));
@@ -88,15 +102,52 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
 
   useEffect(() => {
     listRoles().then(setRoles).catch(() => setRoles([]));
+    listGtkOptions().then(setOpts).catch(() => setOpts([]));
+    listOrphanAccounts().then(setOrphans).catch(() => setOrphans(null));
   }, []);
 
   // Realtime — search di-debounce.
   const firstRun = useRef(true);
   useEffect(() => {
-    const t = setTimeout(() => load(kind, dept, search), firstRun.current ? 0 : search ? 350 : 100);
+    const t = setTimeout(() => load(kind, duty, search), firstRun.current ? 0 : search ? 350 : 100);
     firstRun.current = false;
     return () => clearTimeout(t);
-  }, [kind, dept, search, load]);
+  }, [kind, duty, search, load]);
+
+  /** Label dinamis — opsi DB dulu, konstanta bawaan sebagai cadangan. */
+  const kindLabel = (code?: string | null) => {
+    if (!code) return null;
+    return (
+      opts.find((o) => o.group === 'STAFF_KIND' && o.code === code)?.label ??
+      STAFF_KIND_LABELS[code as StaffKind] ??
+      code
+    );
+  };
+  const dutyLabel = (code?: string | null) => {
+    if (!code) return '—';
+    return (
+      opts.find((o) => o.group === 'DUTY' && o.code === code)?.label ??
+      ADDITIONAL_DUTY_LABELS[code as AdditionalDuty] ??
+      code
+    );
+  };
+  const jabatanLabel = (e: EmployeeDto) =>
+    kindLabel(e.staffKind) ?? GTK_TYPE_LABELS[GTK_GROUP[e.type] ?? 'TENDIK'];
+
+  // Opsi untuk select/filter — DB dulu, konstanta bila tabel masih kosong.
+  const kindSelect = opts.some((o) => o.group === 'STAFF_KIND' && o.isActive)
+    ? opts.filter((o) => o.group === 'STAFF_KIND' && o.isActive)
+    : STAFF_KINDS.map((k) => ({ id: k, code: k, label: STAFF_KIND_LABELS[k] }));
+  const dutySelect = opts.some((o) => o.group === 'DUTY' && o.isActive)
+    ? opts.filter((o) => o.group === 'DUTY' && o.isActive)
+    : ADDITIONAL_DUTIES.map((d) => ({ id: d, code: d, label: ADDITIONAL_DUTY_LABELS[d] }));
+  // Filter menampilkan semua opsi (aktif+nonaktif) agar nilai historis tetap bisa disaring.
+  const kindFilter = opts.filter((o) => o.group === 'STAFF_KIND').length
+    ? opts.filter((o) => o.group === 'STAFF_KIND')
+    : kindSelect;
+  const dutyFilter = opts.filter((o) => o.group === 'DUTY').length
+    ? opts.filter((o) => o.group === 'DUTY')
+    : dutySelect;
 
   async function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -126,7 +177,7 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
       const res = await importEmployees(importFile, { accounts: makeAccounts });
       setImportResult(res);
       setPreview(null);
-      load(kind, dept, search);
+      load(kind, duty, search);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Import gagal.');
     } finally {
@@ -170,7 +221,7 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
       setFormJenis(jenis);
       setShowForm(false);
       setNotice('GTK ditambahkan.');
-      load(kind, dept, search);
+      load(kind, duty, search);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : 'Gagal menambah pegawai.',
@@ -193,6 +244,9 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
         }
         actions={
           <span className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => setOptsOpen(true)}>
+              ⚙ Jabatan &amp; Tugas
+            </Button>
             <Button size="sm" variant="outline" onClick={() => { setImportOpen(true); setImportFile(null); setPreview(null); setImportResult(null); }}>
               ⭱ Import Excel
             </Button>
@@ -202,6 +256,26 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
           </span>
         }
       />
+
+      {orphans?.length ? (
+        <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <p className="font-bold">
+            {orphans.length} akun login belum tertaut ke data GTK — tak akan tampil di tabel ini:
+          </p>
+          <ul className="mt-1 list-disc pl-5 text-xs">
+            {orphans.slice(0, 6).map((o) => (
+              <li key={o.id}>
+                {o.name} — {o.email ?? o.phone ?? 'tanpa kontak'} ({o.roles.join(', ')})
+              </li>
+            ))}
+            {orphans.length > 6 ? <li>…dan {orphans.length - 6} lainnya</li> : null}
+          </ul>
+          <p className="mt-1.5 text-xs text-amber-800">
+            Buat data GTK-nya lewat tombol <b>+ Tambah GTK</b>, atau kelola akunnya di{' '}
+            <Link href="/pengaturan/akun" className="font-semibold underline">Pengaturan › Akun</Link>.
+          </p>
+        </div>
+      ) : null}
 
       {error ? (
         <p role="alert" className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</p>
@@ -277,9 +351,7 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
                     <td className="px-3 py-1.5">{p.row}</td>
                     <td className="px-3 py-1.5 font-semibold">{p.name}</td>
                     <td className="px-3 py-1.5">
-                      {p.staffKind
-                        ? (STAFF_KIND_LABELS[p.staffKind as StaffKind] ?? p.staffKind)
-                        : jenisLabel(p.type ?? '')}
+                      {p.staffKind ? kindLabel(p.staffKind) : jenisLabel(p.type ?? '')}
                       {p.additionalDuty ? (
                         <span className="block text-sand-400">{dutyLabel(p.additionalDuty)}</span>
                       ) : null}
@@ -334,22 +406,22 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
               </Select>
             </Field>
             {formJenis === 'TENDIK' ? (
-              <Field label="Jabatan" hint="Jabatan pokok tendik">
+              <Field label="Jabatan" hint="Jabatan pokok tendik — kelola lewat tombol ⚙ di atas">
                 <Select name="staffKind" required defaultValue="TU">
-                  {STAFF_KINDS.map((k) => (
-                    <option key={k} value={k}>{STAFF_KIND_LABELS[k]}</option>
+                  {kindSelect.map((k) => (
+                    <option key={k.code} value={k.code}>{k.label}</option>
                   ))}
                 </Select>
               </Field>
             ) : null}
             <Field
               label="Tugas Tambahan"
-              hint="Mis. Wakasek Kurikulum untuk guru, Bendahara BOS untuk tendik — kosongkan bila tidak ada"
+              hint="Mis. Wakasek Kurikulum untuk guru, Bendahara BOS untuk tendik — kelola lewat tombol ⚙ di atas"
             >
               <Select name="additionalDuty" defaultValue="">
                 <option value="">— Tidak ada —</option>
-                {ADDITIONAL_DUTIES.map((d) => (
-                  <option key={d} value={d}>{ADDITIONAL_DUTY_LABELS[d]}</option>
+                {dutySelect.map((d) => (
+                  <option key={d.code} value={d.code}>{d.label}</option>
                 ))}
               </Select>
             </Field>
@@ -410,18 +482,18 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
             <span className="text-xs font-bold uppercase tracking-wider text-sand-500">Jabatan</span>
             <Select value={kind} onChange={(e) => setKind(e.target.value)}>
               <option value="">Semua</option>
-              {STAFF_KINDS.map((k) => (
-                <option key={k} value={k}>{STAFF_KIND_LABELS[k]}</option>
+              {kindFilter.map((k) => (
+                <option key={k.code} value={k.code}>{k.label}</option>
               ))}
             </Select>
           </label>
         ) : null}
         <label className="flex min-w-36 flex-col gap-1.5">
-          <span className="text-xs font-bold uppercase tracking-wider text-sand-500">Bidang</span>
-          <Select value={dept} onChange={(e) => setDept(e.target.value)}>
+          <span className="text-xs font-bold uppercase tracking-wider text-sand-500">Tugas Tambahan</span>
+          <Select value={duty} onChange={(e) => setDuty(e.target.value)}>
             <option value="">Semua</option>
-            {Object.entries(DEPT_LABEL).map(([k, v]) => (
-              <option key={k} value={k}>{v}</option>
+            {dutyFilter.map((d) => (
+              <option key={d.code} value={d.code}>{d.label}</option>
             ))}
           </Select>
         </label>
@@ -432,10 +504,20 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
       </div>
 
       <DataTable
-        head={['Nama', 'NIP/NUPTK', 'Jabatan', 'Tugas Tambahan', 'Bidang', 'Kontak', '']}
+        head={['Nama', 'NIP/NUPTK', 'Jabatan', 'Tugas Tambahan', 'Kontak', '']}
         loading={loading}
         error={loadError}
-        empty={rows.length === 0 ? `Belum ada ${jenis === 'TEACHER' ? 'guru' : 'tendik'}.` : undefined}
+        empty={
+          rows.length === 0
+            ? search
+              ? `Tidak ada ${jenis === 'TEACHER' ? 'guru' : 'tendik'} bernama "${search}"${
+                  otherCount
+                    ? ` — tapi ada ${otherCount} di tab ${jenis === 'TEACHER' ? 'Tendik' : 'Guru'}.`
+                    : '.'
+                }`
+              : `Belum ada ${jenis === 'TEACHER' ? 'guru' : 'tendik'}.`
+            : undefined
+        }
       >
         {rows.map((e) => (
           <tr key={e.id} className={e.isActive ? '' : 'opacity-55'}>
@@ -448,10 +530,6 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
             <td className="px-5 py-3.5 text-sand-600">{e.nip ?? '—'}</td>
             <td className="px-5 py-3.5 text-sand-600">{jabatanLabel(e)}</td>
             <td className="px-5 py-3.5 text-sand-600">{dutyLabel(e.additionalDuty)}</td>
-            <td className="px-5 py-3.5 text-sand-600">
-              {e.department ? (DEPT_LABEL[e.department] ?? e.department) : '—'}
-              {e.isDeptHead ? <Badge tone="accent" className="ml-1">Kepala</Badge> : null}
-            </td>
             <td className="px-5 py-3.5 text-sand-600">
               {e.email ?? '—'}
               {e.phone ? <span className="block text-xs text-sand-400">{e.phone}</span> : null}
@@ -469,7 +547,7 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
                     try {
                       const r = await deleteEmployee(e.id);
                       setNotice(r.deleted ? `${e.name} dihapus.` : `${e.name} dinonaktifkan — ${r.reason ?? ''}`);
-                      load(kind, dept, search);
+                      load(kind, duty, search);
                     } catch (err) {
                       setError(err instanceof Error ? err.message : 'Gagal menghapus.');
                     }
@@ -482,7 +560,175 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
           </tr>
         ))}
       </DataTable>
+
+      <Modal
+        open={optsOpen}
+        onClose={() => setOptsOpen(false)}
+        title="Kelola Jabatan & Tugas Tambahan"
+        description="Opsi ini mengisi dropdown Jabatan (tendik) dan Tugas Tambahan — perubahan langsung memengaruhi bidang & role turunan."
+        size="xl"
+      >
+        <GtkOptionManager
+          opts={opts}
+          roles={roles}
+          onChanged={() => listGtkOptions().then(setOpts).catch(() => undefined)}
+        />
+      </Modal>
       {dialog}
     </Shell>
+  );
+}
+
+/** Panel kelola opsi GTK — tambah/rename/nonaktif/hapus jabatan & tugas tambahan. */
+function GtkOptionManager({
+  opts,
+  roles,
+  onChanged,
+}: {
+  opts: GtkOption[];
+  roles: RoleOption[];
+  onChanged: () => void;
+}) {
+  const [err, setErr] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [group, setGroup] = useState<'STAFF_KIND' | 'DUTY'>('DUTY');
+  const { confirm, dialog } = useConfirm();
+
+  async function act(id: string, fn: () => Promise<unknown>) {
+    setErr(null);
+    setBusyId(id);
+    try {
+      await fn();
+      onChanged();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Gagal menyimpan opsi.');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function onAdd(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    const str = (k: string) => String(f.get(k) ?? '').trim();
+    await act('new', async () => {
+      await createGtkOption({
+        group: str('group'),
+        code: str('code'),
+        label: str('label'),
+        ...(str('department') ? { department: str('department') } : {}),
+        isHead: f.get('isHead') === 'on',
+        ...(str('roleKey') ? { roleKey: str('roleKey') } : {}),
+      });
+    });
+    if (!err) e.currentTarget.reset();
+  }
+
+  const section = (g: 'STAFF_KIND' | 'DUTY', title: string, hint: string) => {
+    const items = opts.filter((o) => o.group === g);
+    return (
+      <div className="rounded-xl border border-sand-200">
+        <p className="border-b border-sand-200 bg-sand-50 px-4 py-2.5 text-sm font-bold text-sand-800">
+          {title} <span className="font-normal text-sand-400">— {hint}</span>
+        </p>
+        <ul className="divide-y divide-sand-100">
+          {items.map((o) => (
+            <li key={o.id} className={`flex flex-wrap items-center gap-2 px-4 py-2 text-sm ${o.isActive ? '' : 'opacity-50'}`}>
+              <code className="rounded bg-sand-100 px-1.5 py-0.5 text-[11px] font-semibold text-sand-700">{o.code}</code>
+              <span className="font-semibold text-sand-800">{o.label}</span>
+              <span className="text-xs text-sand-400">
+                {o.department ? `→ ${DEPT_LABEL[o.department] ?? o.department}` : 'tanpa bidang'}
+                {o.isHead ? ' · kepala' : ''}
+                {o.roleKey ? ` · ${o.roleKey}` : ''}
+              </span>
+              <span className="ml-auto flex items-center gap-1.5">
+                <RowBtn
+                  type="button"
+                  tone="neutral"
+                  disabled={busyId === o.id}
+                  onClick={async () => {
+                    const label = window.prompt('Label baru:', o.label);
+                    if (!label || label === o.label) return;
+                    await act(o.id, () => updateGtkOption(o.id, { label }));
+                  }}
+                >
+                  Rename
+                </RowBtn>
+                <RowBtn
+                  type="button"
+                  tone="neutral"
+                  disabled={busyId === o.id}
+                  onClick={() => void act(o.id, () => updateGtkOption(o.id, { isActive: !o.isActive }))}
+                >
+                  {o.isActive ? 'Nonaktif' : 'Aktifkan'}
+                </RowBtn>
+                <RowBtn
+                  type="button"
+                  tone="danger"
+                  disabled={busyId === o.id}
+                  onClick={async () => {
+                    if (!(await confirm(`Hapus opsi "${o.label}"? Pegawai yang sudah memakai nilai ini tetap menyimpan kodenya.`))) return;
+                    await act(o.id, () => deleteGtkOption(o.id));
+                  }}
+                >
+                  Hapus
+                </RowBtn>
+              </span>
+            </li>
+          ))}
+          {!items.length ? <li className="px-4 py-3 text-sm text-sand-400">Belum ada opsi — pakai daftar bawaan.</li> : null}
+        </ul>
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-4">
+      {err ? <p role="alert" className="rounded-xl bg-red-50 px-4 py-2.5 text-sm font-medium text-red-700">{err}</p> : null}
+      {section('STAFF_KIND', 'Jabatan Tendik', 'isi kolom Jabatan untuk pegawai Tendik')}
+      {section('DUTY', 'Tugas Tambahan', 'isi kolom Tugas Tambahan — guru & tendik')}
+
+      <form onSubmit={onAdd} className="grid gap-3 rounded-xl border border-dashed border-sand-300 bg-sand-50/60 p-4 sm:grid-cols-2">
+        <p className="text-sm font-bold text-sand-800 sm:col-span-2">Tambah opsi baru</p>
+        <Field label="Grup">
+          <Select name="group" value={group} onChange={(e) => setGroup(e.target.value as 'STAFF_KIND' | 'DUTY')}>
+            <option value="DUTY">Tugas Tambahan</option>
+            <option value="STAFF_KIND">Jabatan Tendik</option>
+          </Select>
+        </Field>
+        <Field label="Kode" hint="Huruf besar + garis bawah — mis. WAKASEK_KESISWAAN">
+          <Input name="code" required placeholder="KODE_OPSI" />
+        </Field>
+        <Field label="Label">
+          <Input name="label" required placeholder="Nama tampilan" />
+        </Field>
+        <Field label="Bidang turunan" hint="Otomatis mengisi bidang pegawai — kosongkan bila tidak ada">
+          <Select name="department" defaultValue="">
+            <option value="">— Tidak ada —</option>
+            {Object.entries(DEPT_LABEL).map(([k, v]) => (
+              <option key={k} value={k}>{v}</option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Role akun" hint="Role login bila pegawai dibuatkan akun — kosong = fallback bawaan">
+          <Select name="roleKey" defaultValue="">
+            <option value="">— Bawaan —</option>
+            {roles.filter((r) => r.key !== 'spmb_parent').map((r) => (
+              <option key={r.key} value={r.key}>{r.name}</option>
+            ))}
+          </Select>
+        </Field>
+        <label className="flex items-end gap-2 pb-1 text-sm font-semibold text-sand-800">
+          <input type="checkbox" name="isHead" className="size-4 accent-primary-700" />
+          Menjadikan kepala bidang
+        </label>
+        <div className="sm:col-span-2">
+          <Button type="submit" disabled={busyId === 'new'}>
+            {busyId === 'new' ? 'Menyimpan…' : '+ Tambah Opsi'}
+          </Button>
+        </div>
+      </form>
+      {dialog}
+    </div>
   );
 }

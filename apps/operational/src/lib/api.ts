@@ -634,16 +634,50 @@ export const listEmployees = (
   search?: string,
   department?: string,
   kind?: string,
+  duty?: string,
 ) => {
   const p = new URLSearchParams();
   if (type) p.set('type', type);
   if (search) p.set('search', search);
   if (department) p.set('department', department);
   if (kind) p.set('kind', kind);
+  if (duty) p.set('duty', duty);
   return req<EmployeeDto[]>(`/employees?${p}`);
 };
 export const createEmployee = (dto: Record<string, unknown>) =>
   req<EmployeeDto>('/employees', { method: 'POST', json: dto });
+
+/** Akun login non-orang-tua tanpa data pegawai — audit data yatim. */
+export interface OrphanAccount {
+  id: string;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  roles: string[];
+}
+export const listOrphanAccounts = () =>
+  req<OrphanAccount[]>('/employees/orphan-accounts');
+
+/** Opsi GTK yang dikelola admin — jabatan tendik & tugas tambahan. */
+export interface GtkOption {
+  id: string;
+  group: 'STAFF_KIND' | 'DUTY' | string;
+  code: string;
+  label: string;
+  department?: string | null;
+  isHead: boolean;
+  roleKey?: string | null;
+  sortOrder: number;
+  isActive: boolean;
+}
+export const listGtkOptions = (group?: string) =>
+  req<GtkOption[]>(`/employees/gtk-options${group ? `?group=${group}` : ''}`);
+export const createGtkOption = (dto: Record<string, unknown>) =>
+  req<GtkOption>('/employees/gtk-options', { method: 'POST', json: dto });
+export const updateGtkOption = (id: string, dto: Record<string, unknown>) =>
+  req<GtkOption>(`/employees/gtk-options/${id}`, { method: 'PATCH', json: dto });
+export const deleteGtkOption = (id: string) =>
+  req<{ deleted: boolean }>(`/employees/gtk-options/${id}`, { method: 'DELETE' });
 
 // ---- absensi pegawai (Tata Usaha — mesin fingerprint) ----
 export type DeviceMode = 'ICLOCK' | 'PULL' | 'MANUAL';

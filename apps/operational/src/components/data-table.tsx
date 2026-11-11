@@ -22,7 +22,7 @@ interface DataTableProps {
   children: ReactNode;
 }
 
-const SIZES = [5, 10, 20, 50, 100];
+const SIZES = [5, 10, 20, 30, 50];
 
 /** Ratakan fragment — halaman boleh mengembalikan <>{rows.map()}</>. */
 function flatten(children: ReactNode): ReactNode[] {
@@ -35,7 +35,7 @@ function flatten(children: ReactNode): ReactNode[] {
 
 /**
  * Reusable table with loading/empty/error states, horizontal scroll,
- * and built-in pagination (5/10/20/50/100 + prev/next).
+ * and built-in pagination (5/10/20/30/50/Semua + prev/next).
  */
 export function DataTable({
   head,
@@ -52,7 +52,8 @@ export function DataTable({
 
   const rows = useMemo(() => (paginate ? flatten(children) : []), [children, paginate]);
   const total = rows.length;
-  const pages = Math.max(1, Math.ceil(total / size));
+  // size 0 = "Semua" — satu halaman penuh.
+  const pages = size === 0 ? 1 : Math.max(1, Math.ceil(total / size));
   const current = Math.min(page, pages);
 
   // Balik ke halaman 1 bila data berganti (filter/cari/muat ulang).
@@ -60,9 +61,13 @@ export function DataTable({
     setPage(1);
   }, [total]);
 
-  const paged = paginate ? rows.slice((current - 1) * size, current * size) : children;
-  const from = total === 0 ? 0 : (current - 1) * size + 1;
-  const to = Math.min(current * size, total);
+  const paged = paginate
+    ? size === 0
+      ? rows
+      : rows.slice((current - 1) * size, current * size)
+    : children;
+  const from = total === 0 ? 0 : size === 0 ? 1 : (current - 1) * size + 1;
+  const to = size === 0 ? total : Math.min(current * size, total);
 
   return (
     <div className="overflow-x-auto rounded-3xl border border-sand-200 bg-white shadow-card">
@@ -111,7 +116,7 @@ export function DataTable({
         </tbody>
       </table>
 
-      {paginate && !loading && !error && total > Math.min(...pageSizes) ? (
+      {paginate && !loading && !error && total > 0 ? (
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-sand-200 px-5 py-3">
           <div className="flex items-center gap-2 text-xs font-semibold text-sand-500">
             <span>Tampilkan</span>
@@ -128,6 +133,7 @@ export function DataTable({
                   {s}
                 </option>
               ))}
+              <option value={0}>Semua</option>
             </select>
             <span>
               · {from}–{to} dari {total} data

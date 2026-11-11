@@ -1543,6 +1543,24 @@ model Extracurricular {
   @@map("extracurriculars")
 }
 
+/** Opsi GTK yang bisa dikelola admin — jabatan tendik & tugas tambahan. */
+model GtkOption {
+  id         String   @id @default(uuid()) @db.Uuid
+  group      String   // 'STAFF_KIND' (jabatan tendik) | 'DUTY' (tugas tambahan)
+  code       String   // kode unik per group — disimpan di employees.staff_kind/additional_duty
+  label      String   // label tampilan
+  department String?  // bidang turunan — null = ikuti jabatan/jenis
+  isHead     Boolean  @default(false) @map("is_head") // tugas kepala bidang
+  roleKey    String?  @map("role_key") // role akun bila dibuatkan login — null = fallback bawaan
+  sortOrder  Int      @default(0) @map("sort_order")
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@unique([group, code])
+  @@map("gtk_options")
+}
+
 model ExtracurricularMember {
   id                 String   @id @default(uuid()) @db.Uuid
   extracurricularId  String   @map("extracurricular_id") @db.Uuid

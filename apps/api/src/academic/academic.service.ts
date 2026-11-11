@@ -27,6 +27,15 @@ import type {
   UpdateSubjectDto,
 } from './dto/academic.dto';
 
+/** Peta resolusi GTK — bawaan + override dari tabel gtk_options (admin). */
+interface GtkMaps {
+  dutyToDept: Record<string, string>;
+  kindToDept: Record<string, string | null>;
+  headDuties: Set<string>;
+  dutyRole: Record<string, string>;
+  kindRole: Record<string, string>;
+}
+
 @Injectable()
 export class AcademicService {
   constructor(
@@ -124,40 +133,80 @@ export class AcademicService {
     PRINCIPAL: 'TENDIK',
   };
 
+  /** Ambil opsi GTK dari DB lalu gabung dengan bawaan — DB menang. */
+  private async gtkMaps(): Promise<GtkMaps> {
+    const maps: GtkMaps = {
+      dutyToDept: { ...AcademicService.DUTY_TO_DEPT },
+      kindToDept: { ...AcademicService.KIND_TO_DEPT },
+      headDuties: new Set(AcademicService.HEAD_DUTIES),
+      dutyRole: {},
+      kindRole: {},
+    };
+    const opts = await this.prisma.gtkOption.findMany();
+    for (const o of opts) {
+      if (o.group === 'DUTY') {
+        if (o.department) maps.dutyToDept[o.code] = o.department;
+        if (o.isHead) maps.headDuties.add(o.code);
+        else maps.headDuties.delete(o.code);
+        if (o.roleKey) maps.dutyRole[o.code] = o.roleKey;
+      } else if (o.group === 'STAFF_KIND') {
+        maps.kindToDept[o.code] = o.department;
+        if (o.roleKey) maps.kindRole[o.code] = o.roleKey;
+      }
+    }
+    return maps;
+  }
+
   /**
    * Bidang efektif — urutan: tugas tambahan (wakasek/kepala TU/bendahara…)
    * → nilai tersimpan yang valid → jabatan tendik → jenis.
    */
-  static effectiveDept(e: {
-    type: string;
-    department: string | null;
-    staffKind?: string | null;
-    additionalDuty?: string | null;
-  }) {
-    if (e.additionalDuty && AcademicService.DUTY_TO_DEPT[e.additionalDuty]) {
-      return AcademicService.DUTY_TO_DEPT[e.additionalDuty];
+  static effectiveDept(
+    e: {
+      type: string;
+      department: string | null;
+      staffKind?: string | null;
+      additionalDuty?: string | null;
+    },
+    maps?: GtkMaps,
+  ) {
+    const dutyMap = maps?.dutyToDept ?? AcademicService.DUTY_TO_DEPT;
+    const kindMap = maps?.kindToDept ?? AcademicService.KIND_TO_DEPT;
+    if (e.additionalDuty && dutyMap[e.additionalDuty]) {
+      return dutyMap[e.additionalDuty];
     }
     if (e.department && AcademicService.VALID_DEPTS.has(e.department)) {
       return e.department;
     }
-    if (e.staffKind && e.staffKind in AcademicService.KIND_TO_DEPT) {
-      return AcademicService.KIND_TO_DEPT[e.staffKind] ?? null;
+    if (e.staffKind && e.staffKind in kindMap) {
+      return kindMap[e.staffKind] ?? null;
     }
     return AcademicService.DEPT_OF_TYPE[e.type] ?? null;
   }
 
   /** Kepala bidang efektif — flag tersimpan atau tugas tambahan kepala. */
-  static effectiveHead(e: { isDeptHead?: boolean; additionalDuty?: string | null }) {
-    return !!e.isDeptHead || AcademicService.HEAD_DUTIES.has(e.additionalDuty ?? '');
+  static effectiveHead(
+    e: { isDeptHead?: boolean; additionalDuty?: string | null },
+    maps?: GtkMaps,
+  ) {
+    const heads = maps?.headDuties ?? AcademicService.HEAD_DUTIES;
+    return !!e.isDeptHead || heads.has(e.additionalDuty ?? '');
   }
 
   /** Role akun login dari GTK — tugas tambahan dulu, lalu jabatan, lalu bidang/jenis. */
-  static roleForGtk(e: {
-    type?: string | null;
-    staffKind?: string | null;
-    additionalDuty?: string | null;
-    department?: string | null;
-  }): string {
+  static roleForGtk(
+    e: {
+      type?: string | null;
+      staffKind?: string | null;
+      additionalDuty?: string | null;
+      department?: string | null;
+    },
+    maps?: GtkMaps,
+  ): string {
+    const dutyRole = e.additionalDuty ? maps?.dutyRole[e.additionalDuty] : undefined;
+    if (dutyRole) return dutyRole;
+    const kindRole = e.staffKind ? maps?.kindRole[e.staffKind] : undefined;
+    if (kindRole) return kindRole;
     switch (e.additionalDuty) {
       case 'WAKASEK_KURIKULUM':
         return 'staff_kurikulum';
@@ -211,14 +260,23 @@ export class AcademicService {
     return legacy === 'TEACHER' ? 'guru_mapel' : 'staff_tu';
   }
 
-  async listEmployees(type?: string, search?: string, department?: string, kind?: string) {
+  async listEmployees(
+    type?: string,
+    search?: string,
+    department?: string,
+    kind?: string,
+    duty?: string,
+  ) {
     const where: Prisma.EmployeeWhereInput = {};
     if (type === 'TEACHER' || type === 'TENDIK') {
-      // Filter GTK — type lama yang segolongan ikut terbawa.
-      const group = Object.keys(AcademicService.GTK_GROUP).filter(
-        (t) => AcademicService.GTK_GROUP[t] === type,
+      // Filter GTK — Guru = daftar eksplisit; Tendik = SISANYA (notIn) supaya
+      // type baru/tak dikenal tak pernah hilang dari tabel.
+      const teachers = Object.keys(AcademicService.GTK_GROUP).filter(
+        (t) => AcademicService.GTK_GROUP[t] === 'TEACHER',
       );
-      where.type = { in: group } as Prisma.EnumEmployeeTypeFilter<'Employee'>;
+      where.type = (
+        type === 'TEACHER' ? { in: teachers } : { notIn: teachers }
+      ) as Prisma.EnumEmployeeTypeFilter<'Employee'>;
     } else if (type) {
       where.type = type as import('@prisma/client').EmployeeType;
     }
@@ -228,37 +286,146 @@ export class AcademicService {
         { nip: { contains: search, mode: 'insensitive' } },
       ];
     }
-    const rows = await this.prisma.employee.findMany({
-      where,
-      orderBy: { name: 'asc' },
-    });
+    const [rows, maps] = await Promise.all([
+      this.prisma.employee.findMany({ where, orderBy: { name: 'asc' } }),
+      this.gtkMaps(),
+    ]);
     return rows
       .map((e) => ({
         ...e,
         staffKind: AcademicService.effectiveKind(e),
-        department: AcademicService.effectiveDept(e),
-        isDeptHead: AcademicService.effectiveHead(e),
+        department: AcademicService.effectiveDept(e, maps),
+        isDeptHead: AcademicService.effectiveHead(e, maps),
       }))
       .filter(
         (e) =>
           (!department || e.department === department) &&
-          (!kind || e.staffKind === kind),
+          (!kind || e.staffKind === kind) &&
+          (!duty || e.additionalDuty === duty),
       );
+  }
+
+  /** Akun login non-orang-tua yang tidak tertaut ke data pegawai — deteksi data yatim. */
+  async orphanAccounts() {
+    const users = await this.prisma.user.findMany({
+      where: {
+        roles: { none: { role: { key: 'spmb_parent' } } },
+        employee: null,
+      },
+      select: {
+        id: true, name: true, email: true, phone: true,
+        roles: { select: { role: { select: { key: true, name: true } } } },
+      },
+      orderBy: { name: 'asc' },
+    });
+    // Akun murni superadmin bukan "yatim" — admin memang tak punya data pegawai.
+    return users
+      .filter((u) => u.roles.some((r) => r.role.key !== 'superadmin'))
+      .map((u) => ({
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        phone: u.phone,
+        roles: u.roles.map((r) => r.role.name ?? r.role.key),
+      }));
+  }
+
+  // ---------- Opsi GTK yang dikelola admin (jabatan tendik & tugas tambahan) ----------
+
+  listGtkOptions(group?: string) {
+    return this.prisma.gtkOption.findMany({
+      where: group ? { group } : {},
+      orderBy: [{ group: 'asc' }, { sortOrder: 'asc' }, { code: 'asc' }],
+    });
+  }
+
+  async createGtkOption(
+    dto: {
+      group: string;
+      code: string;
+      label: string;
+      department?: string | undefined;
+      isHead?: boolean | undefined;
+      roleKey?: string | undefined;
+      sortOrder?: number | undefined;
+    },
+    actorId: string,
+  ) {
+    const group = dto.group.toUpperCase();
+    if (!['STAFF_KIND', 'DUTY'].includes(group)) {
+      throw new BadRequestException("Group harus 'STAFF_KIND' atau 'DUTY'.");
+    }
+    const code = dto.code.toUpperCase().replace(/[\s-]+/g, '_');
+    const clash = await this.prisma.gtkOption.findUnique({
+      where: { group_code: { group, code } },
+    });
+    if (clash) throw new ConflictException(`Kode ${code} sudah ada pada group ini.`);
+    const row = await this.prisma.gtkOption.create({
+      data: {
+        group,
+        code,
+        label: dto.label.trim(),
+        department: dto.department || null,
+        isHead: dto.isHead ?? false,
+        roleKey: dto.roleKey || null,
+        sortOrder: dto.sortOrder ?? 0,
+      },
+    });
+    await this.audit.log({ actorId, action: 'gtk_option.create', entity: 'gtk_option', entityId: row.id });
+    return row;
+  }
+
+  async updateGtkOption(
+    id: string,
+    dto: {
+      label?: string | undefined;
+      department?: string | null | undefined;
+      isHead?: boolean | undefined;
+      roleKey?: string | null | undefined;
+      sortOrder?: number | undefined;
+      isActive?: boolean | undefined;
+    },
+    actorId: string,
+  ) {
+    await this.prisma.gtkOption.findUniqueOrThrow({ where: { id } });
+    const row = await this.prisma.gtkOption.update({
+      where: { id },
+      data: {
+        ...(dto.label !== undefined ? { label: dto.label.trim() } : {}),
+        ...(dto.department !== undefined ? { department: dto.department || null } : {}),
+        ...(dto.isHead !== undefined ? { isHead: dto.isHead } : {}),
+        ...(dto.roleKey !== undefined ? { roleKey: dto.roleKey || null } : {}),
+        ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),
+        ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+      },
+    });
+    await this.audit.log({ actorId, action: 'gtk_option.update', entity: 'gtk_option', entityId: id });
+    return row;
+  }
+
+  async deleteGtkOption(id: string, actorId: string) {
+    await this.prisma.gtkOption.findUniqueOrThrow({ where: { id } });
+    await this.prisma.gtkOption.delete({ where: { id } });
+    await this.audit.log({ actorId, action: 'gtk_option.delete', entity: 'gtk_option', entityId: id });
+    return { deleted: true };
   }
 
   /** Anggota bidang dari pegawai yang login — untuk kepala bidang. */
   async myDepartment(userId: string) {
     const me = await this.prisma.employee.findUnique({ where: { userId } });
     if (!me) throw new NotFoundException('Akun ini belum tertaut ke data pegawai.');
-    const dept = AcademicService.effectiveDept(me);
-    if (!dept) return { department: null, isHead: AcademicService.effectiveHead(me), members: [] };
+    const maps = await this.gtkMaps();
+    const dept = AcademicService.effectiveDept(me, maps);
+    if (!dept) {
+      return { department: null, isHead: AcademicService.effectiveHead(me, maps), members: [] };
+    }
     const members = (
       await this.prisma.employee.findMany({
         where: { isActive: true },
         orderBy: [{ isDeptHead: 'desc' }, { name: 'asc' }],
       })
-    ).filter((e) => AcademicService.effectiveDept(e) === dept);
-    return { department: dept, isHead: AcademicService.effectiveHead(me), members };
+    ).filter((e) => AcademicService.effectiveDept(e, maps) === dept);
+    return { department: dept, isHead: AcademicService.effectiveHead(me, maps), members };
   }
 
   async createEmployee(dto: EmployeeDto, actorId: string) {
@@ -307,6 +474,7 @@ export class AcademicService {
     const type = dto.type ?? 'TEACHER';
     const staffKind = dto.staffKind || null;
     const additionalDuty = dto.additionalDuty || null;
+    const maps = await this.gtkMaps();
     const emp = await this.prisma.employee.create({
       data: {
         name: dto.name.trim(),
@@ -317,14 +485,14 @@ export class AcademicService {
         email: dto.email ?? null,
         phone: dto.phone ?? null,
         department:
-          AcademicService.DUTY_TO_DEPT[additionalDuty ?? ''] ??
+          maps.dutyToDept[additionalDuty ?? ''] ??
           dto.department ??
-          AcademicService.KIND_TO_DEPT[staffKind ?? ''] ??
+          maps.kindToDept[staffKind ?? ''] ??
           AcademicService.DEPT_OF_TYPE[type] ??
           null,
         isDeptHead:
           dto.isDeptHead ??
-          AcademicService.HEAD_DUTIES.has(additionalDuty ?? ''),
+          maps.headDuties.has(additionalDuty ?? ''),
         isActive: dto.isActive ?? true,
         userId,
       },
@@ -355,6 +523,7 @@ export class AcademicService {
       dto.additionalDuty !== undefined
         ? dto.additionalDuty || null
         : existing.additionalDuty;
+    const maps = await this.gtkMaps();
     const emp = await this.prisma.employee.update({
       where: { id },
       data: {
@@ -368,15 +537,15 @@ export class AcademicService {
         // Bidang mengikuti tugas tambahan/jabatan/jenis — kecuali admin
         // mengisi bidang secara eksplisit.
         department:
-          AcademicService.DUTY_TO_DEPT[additionalDuty ?? ''] ??
+          maps.dutyToDept[additionalDuty ?? ''] ??
           (dto.department !== undefined
             ? dto.department || null
-            : AcademicService.KIND_TO_DEPT[staffKind ?? ''] ??
+            : maps.kindToDept[staffKind ?? ''] ??
               AcademicService.DEPT_OF_TYPE[type] ??
               null),
         isDeptHead:
           dto.isDeptHead ??
-          AcademicService.HEAD_DUTIES.has(additionalDuty ?? ''),
+          maps.headDuties.has(additionalDuty ?? ''),
         ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
       },
     });
@@ -449,6 +618,7 @@ export class AcademicService {
     const seenNip = new Set<string>();
     const seenEmail = new Set<string>();
     const seenPhone = new Set<string>();
+    const maps = await this.gtkMaps();
 
     for (const [i, raw] of rows.entries()) {
       const row = i + 2; // baris Excel (header = 1)
@@ -463,9 +633,9 @@ export class AcademicService {
       const phone = raw.phone ? normalizePhone(raw.phone) : null;
       // Bidang efektif — ditampilkan di pratinjau sama seperti yang disimpan.
       const dept =
-        AcademicService.DUTY_TO_DEPT[raw.additionalDuty ?? ''] ??
+        maps.dutyToDept[raw.additionalDuty ?? ''] ??
         raw.department ??
-        AcademicService.KIND_TO_DEPT[raw.staffKind ?? ''] ??
+        maps.kindToDept[raw.staffKind ?? ''] ??
         AcademicService.DEPT_OF_TYPE[raw.type ?? 'TEACHER'] ??
         null;
       // Duplikat di dalam file import sendiri.
@@ -535,7 +705,7 @@ export class AcademicService {
         department: dept,
         isDeptHead:
           raw.isDeptHead ??
-          AcademicService.HEAD_DUTIES.has(raw.additionalDuty ?? ''),
+          maps.headDuties.has(raw.additionalDuty ?? ''),
       };
 
       if (existing) {
@@ -546,12 +716,15 @@ export class AcademicService {
         // Password dari kolom `password` di Excel bila diisi; kosong → acak.
         let userId: string | null = null;
         if (opts.createAccounts && (email || phone) && !accountNote) {
-          const roleKey = AcademicService.roleForGtk({
-            type: data.type,
-            staffKind: data.staffKind,
-            additionalDuty: data.additionalDuty,
-            department: dept,
-          });
+          const roleKey = AcademicService.roleForGtk(
+            {
+              type: data.type,
+              staffKind: data.staffKind,
+              additionalDuty: data.additionalDuty,
+              department: dept,
+            },
+            maps,
+          );
           const role = await this.prisma.role.findUnique({
             where: { key: roleKey },
           });
@@ -637,11 +810,12 @@ export class AcademicService {
       },
     });
     if (!emp) throw new NotFoundException('Pegawai tidak ditemukan.');
+    const maps = await this.gtkMaps();
     return {
       ...emp,
       staffKind: AcademicService.effectiveKind(emp),
-      department: AcademicService.effectiveDept(emp),
-      isDeptHead: AcademicService.effectiveHead(emp),
+      department: AcademicService.effectiveDept(emp, maps),
+      isDeptHead: AcademicService.effectiveHead(emp, maps),
     };
   }
 

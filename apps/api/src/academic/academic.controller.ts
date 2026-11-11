@@ -30,6 +30,8 @@ import {
   EmployeeDto,
   EnrollmentDto,
   GradeDto,
+  GtkOptionDto,
+  UpdateGtkOptionDto,
   ScheduleEntryDto,
   SemesterDto,
   SubjectDto,
@@ -66,8 +68,9 @@ export class AcademicController {
     @Query('search') search?: string,
     @Query('department') department?: string,
     @Query('kind') kind?: string,
+    @Query('duty') duty?: string,
   ) {
-    return this.academic.listEmployees(type, search, department, kind);
+    return this.academic.listEmployees(type, search, department, kind, duty);
   }
 
   /** Anggota bidang milik pegawai yang login — untuk kepala bidang. */
@@ -95,14 +98,26 @@ export class AcademicController {
   /** Template Excel import pegawai — header sesuai kolom yang dibaca import. */
   @Get('employees/import-template')
   @RequirePermission(ER)
-  importTemplate(@Res({ passthrough: true }) res: Response) {
+  async importTemplate(@Res({ passthrough: true }) res: Response) {
+    // Daftar jabatan & tugas tambahan diambil dari opsi GTK yang dikelola
+    // admin — bila tabel kosong, pakai daftar bawaan.
+    const opts = await this.academic.listGtkOptions();
+    const active = (g: string) =>
+      opts.filter((o) => o.group === g && o.isActive).map((o) => o.code);
+    const kinds = active('STAFF_KIND');
+    const duties = active('DUTY');
+    const kindText =
+      kinds.join(' / ') || 'TU / LAYSUS / SATPAM / KEPALA_SEKOLAH';
+    const dutyText =
+      duties.join(' / ') ||
+      'WAKASEK_KURIKULUM / WAKASEK_KESISWAAN / WAKASEK_SARPRAS / KEPALA_TU / BENDAHARA_SEKOLAH / BENDAHARA_BOS / BENDAHARA_RMP / OPERATOR_DAPODIK / KONTEN_KREATOR / KEPALA_PERPUSTAKAAN / STAF_PERPUSTAKAAN / PETUGAS_KEBERSIHAN_L1-L4 / SATPAM';
     // Sheet utama berbahasa Indonesia — model GTK ala Dapodik.
     // Blok keterangan baris 1-5, header baris 6, contoh baris 7, data mulai 8.
     const ws = XLSX.utils.aoa_to_sheet([
       ['TEMPLATE IMPORT GTK — isi data mulai BARIS 8 (baris keterangan & contoh abaikan, jangan diubah/dihapus)'],
       ['Jenis          : GURU / TENDIK (kosong = GURU)'],
-      ['Jabatan        : khusus TENDIK — TU / LAYSUS / SATPAM / KEPALA_SEKOLAH (kosongkan untuk GURU)'],
-      ['Tugas Tambahan : WAKASEK_KURIKULUM / WAKASEK_KESISWAAN / WAKASEK_SARPRAS / KEPALA_TU / BENDAHARA_SEKOLAH / BENDAHARA_BOS / BENDAHARA_RMP / OPERATOR_DAPODIK / KONTEN_KREATOR / KEPALA_PERPUSTAKAAN / STAF_PERPUSTAKAAN / PETUGAS_KEBERSIHAN_L1-L4 / SATPAM (kosongkan bila tidak ada)'],
+      [`Jabatan        : khusus TENDIK — ${kindText} (kosongkan untuk GURU)`],
+      [`Tugas Tambahan : ${dutyText} (kosongkan bila tidak ada)`],
       ['Bidang & akses : OTOMATIS dari tugas tambahan/jabatan — wakasek Kurikulum→bidang Kurikulum, Bendahara→Keuangan, dst'],
       [],
       ['Nama Lengkap', 'NIP/NUPTK', 'Jenis', 'Jabatan', 'Tugas Tambahan', 'Telepon/HP', 'Email', 'Password'],
@@ -115,8 +130,8 @@ export class AcademicController {
       { kolom: 'Nama Lengkap', wajib: 'YA', keterangan: 'Nama lengkap pegawai — contoh: Ahmad Hidayat, S.Pd.' },
       { kolom: 'NIP/NUPTK', wajib: 'tidak', keterangan: 'NIP atau NUPTK — dipakai untuk dedup; jangan dobel — contoh: 19750101001' },
       { kolom: 'Jenis', wajib: 'tidak', keterangan: 'GURU atau TENDIK (Tenaga Kependidikan) — kosong = GURU' },
-      { kolom: 'Jabatan', wajib: 'khusus TENDIK', keterangan: 'TU / LAYSUS / SATPAM / KEPALA_SEKOLAH — kosongkan untuk GURU' },
-      { kolom: 'Tugas Tambahan', wajib: 'tidak', keterangan: 'Guru → WAKASEK_KURIKULUM/WAKASEK_KESISWAAN/WAKASEK_SARPRAS; tendik → KEPALA_TU / BENDAHARA_SEKOLAH / BENDAHARA_BOS / BENDAHARA_RMP / OPERATOR_DAPODIK / KONTEN_KREATOR / KEPALA_PERPUSTAKAAN / STAF_PERPUSTAKAAN; laysus → PETUGAS_KEBERSIHAN_L1-L4 / SATPAM' },
+      { kolom: 'Jabatan', wajib: 'khusus TENDIK', keterangan: `${kindText} — kosongkan untuk GURU` },
+      { kolom: 'Tugas Tambahan', wajib: 'tidak', keterangan: `Nilai aktif: ${dutyText} — juga menerima ejaan bebas (mis. "wakasek kesiswaan", "kepala perpustakaan")` },
       { kolom: 'Telepon/HP', wajib: 'tidak*', keterangan: 'No. HP — dipakai login akun; harus unik — contoh: 081234567890' },
       { kolom: 'Email', wajib: 'tidak*', keterangan: 'Email — dipakai login akun; harus unik — contoh: ahmad@smpmuh3.sch.id' },
       { kolom: 'Password', wajib: 'tidak', keterangan: 'Password akun — diisi = dipakai; KOSONG = digenerate acak & tampil di hasil import — contoh: guru123' },
@@ -166,6 +181,15 @@ export class AcademicController {
     }
     const rows: Parameters<AcademicService['importEmployees']>[0] = [];
     let foundHeader = false;
+    // Lookup opsi GTK dari DB — kode/label opsi yang dikelola admin ikut
+    // dikenali parser; regex bawaan tetap jadi cadangan ejaan bebas.
+    const gtkOpts = await this.academic.listGtkOptions();
+    const optLookup = new Map<string, string>();
+    const norm = (s: string) => s.toUpperCase().replace(/[\s-]+/g, '_');
+    for (const o of gtkOpts) {
+      optLookup.set(`${o.group}:${norm(o.code)}`, o.code);
+      optLookup.set(`${o.group}:${norm(o.label)}`, o.code);
+    }
     /**
      * Jenis → {type, staffKind?, additionalDuty?} — menerima istilah GTK baru
      * (GURU/TENDIK) maupun type lama (TU, KESISWAAN, KS, dst) dari template usang.
@@ -196,6 +220,8 @@ export class AcademicController {
     };
     const normKind = (v: string) => {
       const k = v.toUpperCase().replace(/\s+/g, '_');
+      const fromDb = optLookup.get(`STAFF_KIND:${k}`);
+      if (fromDb) return fromDb;
       if (/^(TU|TATA_?USAHA)/.test(k)) return 'TU';
       if (/^LAYSUS|^LAYANAN_?KHUSUS/.test(k)) return 'LAYSUS';
       if (/^SATPAM|^KEAMANAN|^SECURITY|^PENJAGA/.test(k)) return 'SATPAM';
@@ -204,6 +230,8 @@ export class AcademicController {
     };
     const normDuty = (v: string) => {
       const d = v.toUpperCase().replace(/[\s-]+/g, '_');
+      const fromDb = optLookup.get(`DUTY:${d}`);
+      if (fromDb) return fromDb;
       if (/^WAKASEK_?KURIKULUM|^WAKIL_?KEPALA_?SEKOLAH_?KURIKULUM|^WAKA_?KUR/.test(d))
         return 'WAKASEK_KURIKULUM';
       if (/^WAKASEK_?KESISWAAN|^WAKA_?KES/.test(d)) return 'WAKASEK_KESISWAAN';
@@ -306,6 +334,45 @@ export class AcademicController {
       dryRun: dry === '1' || dry === 'true',
       createAccounts: accounts === '1' || accounts === 'true',
     });
+  }
+
+  /** Akun login non-orang-tua tanpa data pegawai — audit data yatim. */
+  @Get('employees/orphan-accounts')
+  @RequirePermission(ER)
+  orphanAccounts() {
+    return this.academic.orphanAccounts();
+  }
+
+  /** Opsi jabatan tendik & tugas tambahan yang dikelola admin. */
+  @Get('employees/gtk-options')
+  @RequirePermission(ER)
+  gtkOptions(@Query('group') group?: string) {
+    return this.academic.listGtkOptions(group);
+  }
+
+  @Post('employees/gtk-options')
+  @RequirePermission(EM)
+  createGtkOption(@CurrentUser() u: AuthUser, @Body() dto: GtkOptionDto) {
+    return this.academic.createGtkOption(dto, u.id);
+  }
+
+  @Patch('employees/gtk-options/:id')
+  @RequirePermission(EM)
+  updateGtkOption(
+    @CurrentUser() u: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateGtkOptionDto,
+  ) {
+    return this.academic.updateGtkOption(id, dto, u.id);
+  }
+
+  @Delete('employees/gtk-options/:id')
+  @RequirePermission(EM)
+  deleteGtkOption(
+    @CurrentUser() u: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.academic.deleteGtkOption(id, u.id);
   }
 
   /**

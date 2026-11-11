@@ -20,11 +20,13 @@ import { PageTitle, Widget } from '@/components/widgets';
 import {
   getAttendanceMonthly,
   getEmployee,
+  listGtkOptions,
   me,
   updateEmployee,
   type AttendanceDayRow,
   type EmployeeDetail,
   type EmployeeMonthly,
+  type GtkOption,
 } from '@/lib/api';
 
 const DOW = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
@@ -46,10 +48,6 @@ const DEPT_LABEL: Record<string, string> = {
   KEUANGAN: 'Keuangan', SARPRAS: 'Sarpras', LAYSUS: 'Laysus', LAINNYA: 'Lainnya',
 };
 const gtkLabel = (t: string) => GTK_TYPE_LABELS[GTK_GROUP[t] ?? 'TENDIK'] ?? t;
-const kindLabel = (k?: string | null) =>
-  k ? (STAFF_KIND_LABELS[k as StaffKind] ?? k) : '—';
-const dutyLabel = (d?: string | null) =>
-  d ? (ADDITIONAL_DUTY_LABELS[d as AdditionalDuty] ?? d) : '—';
 
 export default function EmployeeDetailPage({
   params,
@@ -66,6 +64,33 @@ export default function EmployeeDetailPage({
   const [editModal, setEditModal] = useState(false);
   const [editJenis, setEditJenis] = useState<GtkType>('TEACHER');
   const [busy, setBusy] = useState(false);
+  const [opts, setOpts] = useState<GtkOption[]>([]);
+
+  /** Label dinamis — opsi DB dulu, konstanta bawaan sebagai cadangan. */
+  const kindLabel = (k?: string | null) =>
+    k
+      ? (opts.find((o) => o.group === 'STAFF_KIND' && o.code === k)?.label ??
+        STAFF_KIND_LABELS[k as StaffKind] ??
+        k)
+      : '—';
+  const dutyLabel = (d?: string | null) =>
+    d
+      ? (opts.find((o) => o.group === 'DUTY' && o.code === d)?.label ??
+        ADDITIONAL_DUTY_LABELS[d as AdditionalDuty] ??
+        d)
+      : '—';
+  // Daftar opsi select — DB dulu, konstanta bila kosong; nilai tersimpan
+  // yang sudah nonaktif tetap ikut agar bisa dibaca/dipertahankan.
+  const kindSelect = (
+    opts.some((o) => o.group === 'STAFF_KIND')
+      ? opts.filter((o) => o.group === 'STAFF_KIND')
+      : STAFF_KINDS.map((k) => ({ id: k, code: k, label: STAFF_KIND_LABELS[k], isActive: true }))
+  );
+  const dutySelect = (
+    opts.some((o) => o.group === 'DUTY')
+      ? opts.filter((o) => o.group === 'DUTY')
+      : ADDITIONAL_DUTIES.map((d) => ({ id: d, code: d, label: ADDITIONAL_DUTY_LABELS[d], isActive: true }))
+  );
 
   const loadEmp = useCallback(() => {
     getEmployee(id)
@@ -83,6 +108,9 @@ export default function EmployeeDetailPage({
 
   useEffect(() => {
     loadEmp();
+    listGtkOptions()
+      .then(setOpts)
+      .catch(() => setOpts([]));
     me()
       .then((u) => setCanManage(u.permissions.includes(PERMISSIONS.EMPLOYEE_MANAGE)))
       .catch(() => undefined);
@@ -334,10 +362,12 @@ export default function EmployeeDetailPage({
                 </Select>
               </Field>
               {editJenis === 'TENDIK' ? (
-                <Field label="Jabatan" hint="Jabatan pokok tendik">
+                <Field label="Jabatan" hint="Jabatan pokok tendik — opsi nonaktif tetap tampil untuk data lama">
                   <Select name="staffKind" defaultValue={emp.staffKind ?? 'TU'}>
-                    {STAFF_KINDS.map((k) => (
-                      <option key={k} value={k}>{STAFF_KIND_LABELS[k]}</option>
+                    {kindSelect.map((k) => (
+                      <option key={k.code} value={k.code}>
+                        {k.label}{k.isActive ? '' : ' (nonaktif)'}
+                      </option>
                     ))}
                   </Select>
                 </Field>
@@ -345,8 +375,10 @@ export default function EmployeeDetailPage({
               <Field label="Tugas Tambahan" hint="Mis. Wakasek Kurikulum, Kepala TU, Bendahara BOS">
                 <Select name="additionalDuty" defaultValue={emp.additionalDuty ?? ''}>
                   <option value="">— Tidak ada —</option>
-                  {ADDITIONAL_DUTIES.map((d) => (
-                    <option key={d} value={d}>{ADDITIONAL_DUTY_LABELS[d]}</option>
+                  {dutySelect.map((d) => (
+                    <option key={d.code} value={d.code}>
+                      {d.label}{d.isActive ? '' : ' (nonaktif)'}
+                    </option>
                   ))}
                 </Select>
               </Field>

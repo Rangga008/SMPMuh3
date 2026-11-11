@@ -88,6 +88,78 @@ export class EmployeeDto {
   roleKey?: string;
 }
 
+export class GtkOptionDto {
+  @IsIn(['STAFF_KIND', 'DUTY', 'staff_kind', 'duty'])
+  group!: string;
+
+  @IsString()
+  @MinLength(2)
+  @MaxLength(60)
+  code!: string;
+
+  @IsString()
+  @MinLength(2)
+  @MaxLength(80)
+  label!: string;
+
+  /** Bidang yang otomatis diisi dari opsi ini — kosong = tak memetakan bidang. */
+  @emptyToUndefined()
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  department?: string;
+
+  /** Menandai pemegang opsi sebagai kepala bidang. */
+  @IsOptional()
+  @IsBoolean()
+  isHead?: boolean;
+
+  /** Role akun bila pegawai memegang opsi ini. */
+  @emptyToUndefined()
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  roleKey?: string;
+
+  @IsOptional()
+  @IsInt()
+  sortOrder?: number;
+}
+
+export class UpdateGtkOptionDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  @MaxLength(80)
+  label?: string;
+
+  /** Kosongkan lewat null untuk melepas pemetaan bidang. */
+  @IsOptional()
+  @ValidateIf((o: UpdateGtkOptionDto) => o.department !== null)
+  @IsString()
+  @MaxLength(40)
+  department?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  isHead?: boolean;
+
+  /** Kosongkan lewat null untuk melepas pemetaan role. */
+  @IsOptional()
+  @ValidateIf((o: UpdateGtkOptionDto) => o.roleKey !== null)
+  @IsString()
+  @MaxLength(60)
+  roleKey?: string | null;
+
+  @IsOptional()
+  @IsInt()
+  sortOrder?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}
+
 export class CurriculumDto {
   @IsString()
   @MinLength(3)
