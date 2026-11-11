@@ -40,7 +40,7 @@ export default function KwitansiPage() {
     const s = school;
     const kop = `
       <div class="kop">
-        ${s?.logoUrl ? `<img src="${s.logoUrl}" alt="Logo" class="logo" onerror="this.style.display='none'" />` : ''}
+        ${s?.logoUrl ? `<img src="/logo.png" alt="Logo" class="logo" onerror="this.style.display='none'" />` : ''}
         <div class="kop-text">
           <p class="kop-name">${s?.name ?? 'SMP Muhammadiyah 3 Kota Bandung'}</p>
           ${s?.tagline ? `<p class="kop-tag">${s.tagline}</p>` : ''}

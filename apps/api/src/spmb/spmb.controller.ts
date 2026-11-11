@@ -28,6 +28,7 @@ import { RegistrationsService } from './registrations.service';
 import { SpmbSettingsService } from './settings.service';
 import {
   CreateCandidateDto,
+  DaftarByCodeDto,
   GuestTitipanDto,
   ParentTitipanDto,
   RedeemTitipanDto,
@@ -164,6 +165,17 @@ export class SpmbController {
     @Body() dto: RedeemTitipanDto,
   ) {
     return this.registrations.redeemCode(user.id, dto);
+  }
+
+  /**
+   * Alur utama publik "Daftar Sekarang": kode formulir + No. HP titipan +
+   * kata sandi → akun otomatis dibuat bila belum ada → pendaftaran
+   * langsung terbuat untuk calon murid dari titipan tersebut.
+   */
+  @Public()
+  @Post('titipan/redeem')
+  redeemPublic(@Body() dto: DaftarByCodeDto) {
+    return this.registrations.redeemPublic(dto);
   }
 
   @Get('registrations/lookup')

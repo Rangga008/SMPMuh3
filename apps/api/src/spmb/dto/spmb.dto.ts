@@ -5,6 +5,7 @@ import {
   IsEnum,
   IsIn,
   IsInt,
+  IsNotEmpty,
   IsObject,
   IsOptional,
   IsString,
@@ -22,41 +23,50 @@ const emptyToUndefined = () =>
   Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' && value.trim() === '' ? undefined : value,
   );
-import { PATHWAYS, PRESTASI_SUBTYPES, REGISTRATION_DOC_TYPES } from '@smpmuh3/types';
+import { PATHWAYS, REGISTRATION_DOC_TYPES } from '@smpmuh3/types';
 import type { RegistrationDocType } from '@smpmuh3/types';
 
 export class CreateCandidateDto {
   @IsString()
   @MinLength(3)
   @MaxLength(120)
+  @IsNotEmpty({ message: 'name wajib diisi' })
   name!: string;
 
   @IsIn(['MALE', 'FEMALE'])
+  @IsNotEmpty({ message: 'gender wajib dipilih' })
   gender!: 'MALE' | 'FEMALE';
 
   @IsDateString()
+  @IsNotEmpty({ message: 'birthDate wajib diisi' })
   birthDate!: string;
 
   @IsString()
   @MinLength(3)
   @MaxLength(160)
+  @IsNotEmpty({ message: 'previousSchool wajib diisi' })
   previousSchool!: string;
 
-  @emptyToUndefined()
-  @IsOptional()
   @IsString()
+  @MinLength(2)
   @MaxLength(80)
-  birthPlace?: string;
+  @IsNotEmpty({ message: 'birthPlace wajib diisi' })
+  birthPlace!: string;
+
+  @IsString()
+  @MinLength(3)
+  @MaxLength(120)
+  @IsNotEmpty({ message: 'motherName wajib diisi' })
+  motherName!: string;
 
   @emptyToUndefined()
   @IsOptional()
-  @Matches(/^\d{10}$/, { message: 'nisn must be 10 digits' })
+  @Matches(/^\d{10}$/, { message: 'nisn harus 10 digit' })
   nisn?: string;
 
-  @emptyToUndefined()
-  @IsOptional()
-  @Matches(/^\d{16}$/, { message: 'nik harus 16 digit' })
-  nik?: string;
+  @Matches(/^\d{16}$/, { message: 'nik harus 16 digit angka' })
+  @IsNotEmpty({ message: 'nik wajib diisi' })
+  nik!: string;
 
   @emptyToUndefined()
   @IsOptional()
@@ -87,7 +97,8 @@ export class UpdateRegistrationDto {
   pathway?: string;
 
   @IsOptional()
-  @IsIn(PRESTASI_SUBTYPES)
+  @IsString()
+  @MaxLength(60)
   pathwayDetail?: string;
 
   @IsOptional()
@@ -238,6 +249,21 @@ export class UpdateFeeDto {
   amount!: number;
 }
 
+export class CreateFeeDto {
+  @IsString()
+  @MaxLength(120)
+  label!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  key?: string;
+
+  @IsInt()
+  @Min(0)
+  amount!: number;
+}
+
 export class SaveDiscountDto {
   @IsString()
   @MaxLength(120)
@@ -257,6 +283,11 @@ export class SaveDiscountDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  /** Grup jalur prestasi di formulir ortu. */
+  @IsOptional()
+  @IsIn(['akademik', 'non_akademik', 'alumni_sdm'])
+  category?: string;
 }
 
 export class SaveQuestionDto {
@@ -294,6 +325,7 @@ export class SaveQuestionDto {
 
 export class GuestTitipanDto {
   @IsUUID()
+  @IsNotEmpty({ message: 'academicYearId wajib dipilih' })
   academicYearId!: string;
 
   /** Gelombang sasaran — opsional; default gelombang aktif pertama TA tsb. */
@@ -305,6 +337,7 @@ export class GuestTitipanDto {
   @IsString()
   @MinLength(3)
   @MaxLength(120)
+  @IsNotEmpty({ message: 'candidateName wajib diisi' })
   candidateName!: string;
 
   @emptyToUndefined()
@@ -334,6 +367,11 @@ export class GuestTitipanDto {
   @IsString()
   @MinLength(9)
   @MaxLength(20)
+  @Matches(/^(?:\+?62|0)8\d{6,13}$/, {
+    message:
+      'guardianPhone bukan nomor HP Indonesia yang valid — contoh 0812xxxxxxx',
+  })
+  @IsNotEmpty({ message: 'guardianPhone wajib diisi' })
   guardianPhone!: string;
 
   @emptyToUndefined()
@@ -380,12 +418,62 @@ export class RedeemTitipanDto {
   @Length(4, 40)
   formCode!: string;
 
+  /**
+   * Opsional — kode terkunci ke kandidat dari titipannya. Bila titipan
+   * belum tertaut kandidat (titipan tamu), kandidat dibuat otomatis
+   * dari data titipan — ortu tak perlu memilih.
+   */
+  @emptyToUndefined()
+  @IsOptional()
   @IsUUID()
-  candidateId!: string;
+  candidateId?: string;
 
+  @emptyToUndefined()
   @IsOptional()
   @IsUUID()
   waveId?: string;
+}
+
+/**
+ * Daftar akun + pendaftaran sekaligus lewat kode formulir titipan
+ * (alur utama): kode unik + No. HP sesuai titipan + kata sandi baru.
+ * HP yang sudah punya akun → kata sandi harus cocok akun tsb.
+ */
+export class DaftarByCodeDto {
+  @IsString()
+  @Length(4, 40)
+  formCode!: string;
+
+  @IsString()
+  @MinLength(9)
+  @MaxLength(20)
+  phone!: string;
+
+  @IsString()
+  @MinLength(8)
+  @MaxLength(100)
+  password!: string;
+}
+
+/** Aksi massal admin titipan — verifikasi, kirim kode, ubah status, batalkan, hapus. */
+export class BulkTitipanDto {
+  @IsUUID('4', { each: true })
+  ids!: string[];
+
+  @IsIn(['approve', 'send_code', 'status', 'cancel', 'delete'])
+  action!: 'approve' | 'send_code' | 'status' | 'cancel' | 'delete';
+
+  /** Wajib bila action=status — tujuan status baru. */
+  @emptyToUndefined()
+  @IsOptional()
+  @IsIn(['PENDING', 'WAITING', 'CANCELLED'])
+  status?: 'PENDING' | 'WAITING' | 'CANCELLED';
+
+  @emptyToUndefined()
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  note?: string;
 }
 
 export class AdminTitipanNoteDto {

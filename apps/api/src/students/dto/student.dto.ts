@@ -6,6 +6,7 @@ import {
   IsDateString,
   IsIn,
   IsInt,
+  IsNotEmpty,
   IsOptional,
   IsString,
   IsUUID,
@@ -27,6 +28,7 @@ export class CreateStudentDto {
   @IsString()
   @MinLength(3)
   @MaxLength(120)
+  @IsNotEmpty({ message: 'name wajib diisi' })
   name!: string;
 
   @IsOptional()
@@ -35,25 +37,34 @@ export class CreateStudentDto {
   nis?: string;
 
   @IsOptional()
-  @Matches(/^\d{10}$/, { message: 'nisn must be 10 digits' })
+  @Matches(/^\d{10}$/, { message: 'nisn harus 10 digit' })
   nisn?: string;
 
-  @IsOptional()
-  @Matches(/^\d{16}$/, { message: 'nik harus 16 digit' })
-  nik?: string;
+  /** NIK wajib — disamakan dengan formulir SPMB agar data sinkron. */
+  @Matches(/^\d{16}$/, { message: 'nik harus 16 digit angka' })
+  @IsNotEmpty({ message: 'nik wajib diisi' })
+  nik!: string;
 
-  @IsOptional()
   @IsIn(['MALE', 'FEMALE'])
-  gender?: Gender;
+  @IsNotEmpty({ message: 'gender wajib dipilih' })
+  gender!: Gender;
 
-  @IsOptional()
   @IsString()
+  @MinLength(2)
   @MaxLength(80)
-  birthPlace?: string;
+  @IsNotEmpty({ message: 'birthPlace wajib diisi' })
+  birthPlace!: string;
 
-  @IsOptional()
   @IsDateString()
-  birthDate?: string;
+  @IsNotEmpty({ message: 'birthDate wajib diisi' })
+  birthDate!: string;
+
+  /** Nama ibu kandung — wajib, sama seperti formulir SPMB. */
+  @IsString()
+  @MinLength(3)
+  @MaxLength(120)
+  @IsNotEmpty({ message: 'motherName wajib diisi' })
+  motherName!: string;
 
   @IsOptional()
   @IsString()
@@ -113,6 +124,11 @@ export class UpdateStudentDto {
   @IsOptional()
   @IsDateString()
   birthDate?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  motherName?: string;
 
   @IsOptional()
   @IsString()

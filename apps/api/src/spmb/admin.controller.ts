@@ -42,11 +42,13 @@ import { SpmbImportService } from './import.service';
 import { UsersService, normalizePhone } from '../identity/users/users.service';
 import {
   AdminTitipanNoteDto,
+  BulkTitipanDto,
   WaSettingsUpdateDto,
   CreateInvoiceDto,
   DiscountDto,
   InstallmentPlanDto,
   PsikotesDto,
+  CreateFeeDto,
   SaveDiscountDto,
   SaveQuestionDto,
   SaveWaveDto,
@@ -525,6 +527,12 @@ export class AdminSpmbController {
     return this.settings.listFees();
   }
 
+  @Post('spmb/fees')
+  @RequirePermission(PERMISSIONS.SPMB_REGISTRATION_MANAGE)
+  createFee(@CurrentUser() user: AuthUser, @Body() dto: CreateFeeDto) {
+    return this.settings.createFee(dto, user.id);
+  }
+
   @Patch('spmb/fees/:key')
   @RequirePermission(PERMISSIONS.SPMB_REGISTRATION_MANAGE)
   updateFee(
@@ -533,6 +541,12 @@ export class AdminSpmbController {
     @Body() dto: UpdateFeeDto,
   ) {
     return this.settings.updateFee(key, dto.amount, user.id);
+  }
+
+  @Delete('spmb/fees/:key')
+  @RequirePermission(PERMISSIONS.SPMB_REGISTRATION_MANAGE)
+  deleteFee(@Param('key') key: string) {
+    return this.settings.deleteFee(key);
   }
 
   // ---------- Pengaturan: diskon prestasi ----------
@@ -549,6 +563,12 @@ export class AdminSpmbController {
     @Body() dto: SaveDiscountDto,
   ) {
     return this.settings.upsertDiscount(subType, dto);
+  }
+
+  @Delete('spmb/discounts/:subType')
+  @RequirePermission(PERMISSIONS.SPMB_REGISTRATION_MANAGE)
+  deleteDiscount(@Param('subType') subType: string) {
+    return this.settings.deleteDiscount(subType);
   }
 
   // ---------- Pengaturan: pertanyaan formulir ----------
@@ -658,6 +678,23 @@ export class AdminSpmbController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.titipan.updateNote(id, dto, user.id);
+  }
+
+  /** Aksi massal — verifikasi/ubah status/batalkan/hapus banyak entri sekaligus. */
+  @Post('titipan/bulk')
+  @RequirePermission(PERMISSIONS.SPMB_TITIPAN_MANAGE)
+  bulkTitipan(@Body() dto: BulkTitipanDto, @CurrentUser() user: AuthUser) {
+    return this.titipan.bulkAction(dto.ids, dto.action, user.id, {
+      ...(dto.status !== undefined ? { status: dto.status } : {}),
+      ...(dto.note !== undefined ? { note: dto.note } : {}),
+    });
+  }
+
+  @Delete('titipan/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @RequirePermission(PERMISSIONS.SPMB_TITIPAN_MANAGE)
+  deleteTitipan(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
+    return this.titipan.remove(id, user.id);
   }
 
   // ---------- WhatsApp gateway & antrean ----------

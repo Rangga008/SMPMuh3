@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { Prisma, RegistrationStatus } from '@prisma/client';
+import type { Prisma, RegistrationStatus, TitipanEntry } from '@prisma/client';
 import {
   PATHWAYS,
   REGISTRATION_EDITABLE,
@@ -13,9 +13,13 @@ import {
   REQUIRED_DOC_TYPES,
 } from '@smpmuh3/types';
 import { randomInt } from 'node:crypto';
+import argon2 from 'argon2';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../core/prisma/prisma.service';
-import { normalizePhone } from '../identity/users/users.service';
+import {
+  normalizePhone,
+  UsersService,
+} from '../identity/users/users.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PaymentsService } from '../payments/payments.service';
 import { CandidatesService } from './candidates.service';
@@ -32,6 +36,7 @@ const include = {
       birthDate: true,
       nisn: true,
       nik: true,
+      motherName: true,
       previousSchool: true,
       address: true,
       tkaScore: true,
@@ -62,6 +67,7 @@ export class RegistrationsService {
     private readonly payments: PaymentsService,
     private readonly audit: AuditService,
     private readonly titipan: TitipanService,
+    private readonly users: UsersService,
   ) {}
 
   listByParent(parentId: string) {
@@ -73,34 +79,108 @@ export class RegistrationsService {
   }
 
   /**
-   * Buat pendaftaran lewat kode formulir daftar titipan. Kode memetakan
-   * tahun ajaran (boleh tahun jauh); gelombang dipilih bila tahun itu
-   * punya lebih dari satu gelombang aktif.
+   * Ortu login memakai kode formulir — kandidat diambil dari titipannya.
+   * Titipan tamu (tanpa kandidat) → kandidat dibuat otomatis dari data
+   * titipan di dalam transaksi yang sama; kode terkunci ke kandidat tsb.
    */
   async redeemCode(
     parentId: string,
-    dto: { formCode: string; candidateId: string; waveId?: string | undefined },
+    dto: { formCode: string; candidateId?: string | undefined; waveId?: string | undefined },
   ) {
     const entry = await this.titipan.findByCode(dto.formCode);
-    if (entry.status !== 'CODE_SENT') {
-      throw new BadRequestException(
-        entry.status === 'REGISTERED'
-          ? 'Kode formulir ini sudah dipakai.'
-          : 'Kode formulir ini belum aktif.',
-      );
-    }
-    if (entry.candidateId && entry.candidateId !== dto.candidateId) {
+    this.assertCodeUsable(entry);
+    if (entry.candidateId && dto.candidateId && entry.candidateId !== dto.candidateId) {
       throw new BadRequestException(
         'Kode formulir ini diterbitkan untuk calon murid lain.',
       );
     }
-    await this.candidates.owned(parentId, dto.candidateId);
-    const year = entry.academicYear;
+    return this.redeemForUser(parentId, entry, dto.waveId, dto.candidateId);
+  }
 
+  /**
+   * Alur utama "Daftar Sekarang": kode unik + No. HP titipan + kata sandi.
+   * - HP belum punya akun → akun ortu dibuat (nama sementara "Wali <anak>").
+   * - HP sudah punya akun → kata sandi harus cocok (anak kedua dst: pakai
+   *   sandi akun yang sama — kode berikutnya otomatis menambah kandidat).
+   * Setelah itu kode langsung diredeem → pendaftaran terbuat.
+   */
+  async redeemPublic(dto: {
+    formCode: string;
+    phone: string;
+    password: string;
+    waveId?: string | undefined;
+  }) {
+    const entry = await this.titipan.findByCode(dto.formCode);
+    this.assertCodeUsable(entry);
+    const phone = normalizePhone(dto.phone);
+    if (!entry.guardianPhone || normalizePhone(entry.guardianPhone) !== phone) {
+      throw new BadRequestException(
+        'Nomor HP tidak cocok dengan data titipan kode ini — masukkan nomor yang Anda pakai saat titipan.',
+      );
+    }
+
+    let user = await this.users.findByPhone(phone);
+    const existingAccount = !!user;
+    if (user) {
+      const ok = await argon2
+        .verify(user.passwordHash, dto.password)
+        .catch(() => false);
+      if (!ok) {
+        throw new BadRequestException(
+          'Nomor HP sudah punya akun — kata sandi salah. Masukkan kata sandi akun Anda, atau pakai Lupa Password bila lupa.',
+        );
+      }
+    } else {
+      user = await this.users.createWithRole({
+        name: `Wali ${entry.candidateName.trim()}`,
+        phone,
+        passwordHash: await argon2.hash(dto.password),
+        roleKey: 'spmb_parent',
+      });
+    }
+
+    const registration = await this.redeemForUser(
+      user.id,
+      entry,
+      dto.waveId,
+      entry.candidateId ?? undefined,
+    );
+    return { registration, accountExisted: existingAccount };
+  }
+
+  private assertCodeUsable(entry: TitipanEntry) {
+    if (entry.status !== 'CODE_SENT') {
+      throw new BadRequestException(
+        entry.status === 'REGISTERED'
+          ? 'Kode formulir ini sudah dipakai.'
+          : 'Kode formulir ini belum aktif — tunggu panitia mengirimkannya.',
+      );
+    }
+  }
+
+  /**
+   * Inti redeem: resolve kandidat (milik titipan / dibuat dari data
+   * titipan), validasi gelombang, lalu buat pendaftaran + klaim kode
+   * dalam satu transaksi — kode terkunci ke satu calon murid.
+   */
+  private async redeemForUser(
+    parentId: string,
+    entry: TitipanEntry & { academicYear: { id: string; name: string } },
+    requestedWaveId?: string | undefined,
+    requestedCandidateId?: string | undefined,
+  ) {
+    // Kandidat: pakai punya titipan; kalau tamu → buat dari data titipan.
+    const candidateId = entry.candidateId ?? requestedCandidateId ?? null;
+    if (entry.candidateId) {
+      await this.candidates.owned(parentId, entry.candidateId);
+    } else if (candidateId) {
+      await this.candidates.owned(parentId, candidateId);
+    }
+    const year = entry.academicYear;
     let waveId: string | null = null;
-    if (dto.waveId) {
+    if (requestedWaveId) {
       const wave = await this.prisma.registrationWave.findUnique({
-        where: { id: dto.waveId },
+        where: { id: requestedWaveId },
       });
       if (!wave || !wave.isActive || wave.academicYearId !== year.id) {
         throw new BadRequestException('Gelombang tidak tersedia');
@@ -129,30 +209,41 @@ export class RegistrationsService {
       }
     }
 
-    const existing = await this.prisma.registration.findUnique({
-      where: {
-        candidateId_academicYearId: {
-          candidateId: dto.candidateId,
-          academicYearId: year.id,
-        },
-      },
-    });
-    if (existing) {
-      throw new ConflictException(
-        'Pendaftaran untuk calon siswa ini sudah ada',
-      );
-    }
-
     const feeAmount = await this.settings.feeAmountFor(waveId, 'registration');
     const number = await this.generateNumber(year);
-    // Kode sekali pakai: klaim entry secara atomik di dalam transaksi yang sama
-    // dengan pembuatan pendaftaran — request kedua yang balapan akan mendapat
-    // count 0 dan seluruh transaksinya dibatalkan.
+    // Semua dalam satu transaksi: kandidat titipan-tamu dibuat di sini
+    // juga — kode formulir terkunci ke calon murid ini. Klaim entry secara
+    // atomik: request kedua yang balapan mendapat count 0 → rollback.
     const registration = await this.prisma.$transaction(async (tx) => {
+      let cid = candidateId;
+      if (!cid) {
+        const cand = await this.candidates.createFromTitipan(parentId, tx, {
+          name: entry.candidateName,
+          birthPlace: entry.birthPlace,
+          birthDate: entry.birthDate,
+          previousSchool: entry.previousSchool,
+          address: entry.address,
+        });
+        cid = cand.id;
+      } else {
+        const existing = await tx.registration.findUnique({
+          where: {
+            candidateId_academicYearId: {
+              candidateId: cid,
+              academicYearId: year.id,
+            },
+          },
+        });
+        if (existing) {
+          throw new ConflictException(
+            'Pendaftaran untuk calon siswa ini sudah ada',
+          );
+        }
+      }
       const created = await tx.registration.create({
         data: {
           number,
-          candidateId: dto.candidateId,
+          candidateId: cid,
           parentId,
           academicYearId: year.id,
           waveId,
@@ -175,7 +266,7 @@ export class RegistrationsService {
           status: 'REGISTERED',
           codeUsedAt: new Date(),
           parentId,
-          candidateId: dto.candidateId,
+          candidateId: cid,
           registrationId: created.id,
           // Sinkron gelombang entri dengan gelombang pendaftaran yang dipilih.
           waveId,
@@ -225,6 +316,16 @@ export class RegistrationsService {
     }
     if (dto.pathway === 'prestasi' && !dto.pathwayDetail) {
       throw new BadRequestException('Pilih jenis prestasi untuk jalur prestasi');
+    }
+    // Jenis prestasi harus ada aturan diskon aktifnya — jenisnya dikelola
+    // admin di Pengaturan SPMB → Diskon (bisa jenis kustom, tak hanya bawaan).
+    if (dto.pathway === 'prestasi' && dto.pathwayDetail) {
+      const ok = await this.settings.discountSubtypeActive(dto.pathwayDetail);
+      if (!ok) {
+        throw new BadRequestException(
+          'Jenis prestasi tidak aktif — pilih jenis lain atau minta admin mengaktifkannya di pengaturan diskon.',
+        );
+      }
     }
     const data: Prisma.RegistrationUpdateInput = {};
     if (dto.pathway !== undefined) data.pathway = dto.pathway;
@@ -287,8 +388,11 @@ export class RegistrationsService {
 
     const cand = reg.candidate as Record<string, unknown> | null;
     const missingFields = [
+      ['gender', 'jenis kelamin'],
       ['birthPlace', 'tempat lahir'],
       ['birthDate', 'tanggal lahir'],
+      ['nik', 'NIK'],
+      ['motherName', 'nama ibu kandung'],
       ['previousSchool', 'asal sekolah'],
       ['address', 'alamat'],
     ]
@@ -566,6 +670,7 @@ export class RegistrationsService {
           address: cand.address,
           previousSchool: cand.previousSchool,
           fatherName: parent?.name ?? null,
+          motherName: cand.motherName ?? null,
           parentPhone: parent?.phone ?? null,
           candidateId: cand.id,
           parentId: reg.parentId,

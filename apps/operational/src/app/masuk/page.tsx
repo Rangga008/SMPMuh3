@@ -9,7 +9,11 @@ export default function LoginPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [school, setSchool] = useState<{ name: string; logoUrl?: string | null } | null>(null);
+  const [school, setSchool] = useState<{
+    name: string;
+    hasLogo?: boolean;
+    logoVersion?: number;
+  } | null>(null);
 
   useEffect(() => {
     fetch(`${API}/school/public`, { cache: 'no-store' })
@@ -43,10 +47,10 @@ export default function LoginPage() {
       <div aria-hidden="true" className="pattern-islami-light pointer-events-none absolute inset-0" />
       <div className="relative w-full max-w-md">
         <div className="text-center">
-          {school?.logoUrl ? (
+          {school?.hasLogo ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src="/logo.png"
+              src={`/logo.png?v=${school.logoVersion ?? 1}`}
               alt=""
               className="mx-auto size-14 rounded-2xl bg-white object-contain p-1.5 shadow-card"
             />

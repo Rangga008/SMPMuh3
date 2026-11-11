@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { spmbConfig } from '@/config/spmb.config';
+import { SchoolMark } from './school-mark';
 
 export function AuthShell({
   title,
@@ -20,9 +21,10 @@ export function AuthShell({
         <div className="text-center">
           <Link
             href="/"
-            className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-primary-700 text-base font-extrabold text-white shadow-card focus-visible:focus-ring"
+            className="mx-auto inline-block focus-visible:focus-ring"
+            aria-label="Beranda"
           >
-            M3
+            <SchoolMark className="size-12" />
           </Link>
           <h1 className="mt-5 text-2xl font-extrabold tracking-tight text-sand-950">
             {title}

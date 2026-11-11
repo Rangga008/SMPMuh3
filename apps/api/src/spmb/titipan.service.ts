@@ -52,13 +52,18 @@ export class TitipanService {
     });
     const counts = await this.countsByYear(years.map((y) => y.id));
     return Promise.all(
-      years.map(async (y) => ({
-        academicYearId: y.id,
-        name: y.name,
-        quota: y.quota,
-        occupied: await this.occupiedSeats(y.id),
-        ...counts.get(y.id)!,
-      })),
+      years.map(async (y) => {
+        const occupied = await this.occupiedSeats(y.id);
+        return {
+          academicYearId: y.id,
+          name: y.name,
+          quota: y.quota,
+          occupied,
+          /** Kuota penuh → titipan tahun ini otomatis terkunci. */
+          full: y.quota != null && occupied >= y.quota,
+          ...counts.get(y.id)!,
+        };
+      }),
     );
   }
 
@@ -71,9 +76,9 @@ export class TitipanService {
     await this.reconcileRegistered();
     const entries = await this.prisma.titipanEntry.findMany({
       where: {
-        // Antrean + yang menunggu verifikasi; REGISTERED/CANCELLED tidak
-        // tampil — sudah pindah ke data pendaftar / keluar antrean.
-        status: { notIn: ['REGISTERED', 'CANCELLED'] },
+        // Antrean + verifikasi + yang sudah lanjut daftar tetap tampil
+        // (status "Sudah Daftar"); hanya yang batal yang hilang.
+        status: { notIn: ['CANCELLED'] },
         ...(academicYearId ? { academicYearId } : {}),
       },
       orderBy: [{ academicYearId: 'asc' }, { queueNo: 'asc' }],
@@ -196,9 +201,9 @@ export class TitipanService {
     const where: Prisma.TitipanEntryWhereInput = {};
     if (options.academicYearId) where.academicYearId = options.academicYearId;
     if (options.waveId) where.waveId = options.waveId;
-    // Tanpa filter status → antrean aktif saja; REGISTERED/CANCELLED
-    // tetap bisa dilihat lewat filter status (riwayat, bukan antrean).
-    where.status = options.status ?? { notIn: ['REGISTERED', 'CANCELLED'] };
+    // Tanpa filter status → semua kecuali batal — entri yang sudah lanjut
+    // daftar tetap terlihat dengan status "Sudah Daftar", bukan hilang.
+    where.status = options.status ?? { notIn: ['CANCELLED'] };
     if (options.search) {
       where.OR = [
         { candidateName: { contains: options.search, mode: 'insensitive' } },
@@ -274,6 +279,15 @@ export class TitipanService {
         'Kode hanya bisa dikirim untuk entri yang masih mengantre.',
       );
     }
+    // Kode hanya diterbitkan saat masih ada kursi — sinkron dengan kuota.
+    if (entry.academicYear.quota != null) {
+      const occupied = await this.occupiedSeats(entry.academicYearId);
+      if (occupied >= entry.academicYear.quota) {
+        throw new BadRequestException(
+          `Kuota ${entry.academicYear.name} sudah penuh (${occupied}/${entry.academicYear.quota}) — terbitkan kode saat ada kursi kosong.`,
+        );
+      }
+    }
     const code = entry.formCode ?? (await this.generateCode());
     const updated = await this.prisma.titipanEntry.update({
       where: { id },
@@ -345,6 +359,78 @@ export class TitipanService {
       metadata: note ? { note } : undefined,
     });
     return this.toDto(updated, await this.positionMap([entry.academicYearId]), 'admin');
+  }
+
+  /** Hapus entri permanen — hanya yang belum jadi pendaftaran. */
+  async remove(id: string, actorId: string) {
+    const entry = await this.mustGet(id);
+    if (entry.status === 'REGISTERED') {
+      throw new BadRequestException(
+        'Entri sudah menjadi pendaftaran — tidak bisa dihapus.',
+      );
+    }
+    await this.prisma.titipanEntry.delete({ where: { id } });
+    await this.audit.log({
+      actorId,
+      action: 'titipan.delete',
+      entity: 'titipan_entry',
+      entityId: id,
+      metadata: { candidate: entry.candidateName },
+    });
+  }
+
+  /**
+   * Aksi massal — tiap entri diproses terpisah; satu gagal tak menghentikan
+   * yang lain. Hasil per-entri dilaporkan ke UI.
+   */
+  async bulkAction(
+    ids: string[],
+    action: 'approve' | 'send_code' | 'status' | 'cancel' | 'delete',
+    actorId: string,
+    options: { status?: 'PENDING' | 'WAITING' | 'CANCELLED'; note?: string },
+  ) {
+    const results: { id: string; candidateName: string; ok: boolean; message: string }[] = [];
+    for (const id of ids) {
+      const entry = await this.prisma.titipanEntry.findUnique({
+        where: { id },
+        include: entryInclude,
+      });
+      const name = entry?.candidateName ?? id.slice(0, 8);
+      try {
+        if (!entry) throw new BadRequestException('Data tidak ditemukan.');
+        if (action === 'approve') {
+          await this.approve(id, actorId);
+          results.push({ id, candidateName: name, ok: true, message: 'Diverifikasi.' });
+        } else if (action === 'send_code') {
+          const r = await this.sendCode(id, actorId);
+          results.push({
+            id,
+            candidateName: name,
+            ok: true,
+            message: `Kode ${r.entry.formCode} ${r.queued ? 'masuk antrean WA' : 'diterbitkan'}.`,
+          });
+        } else if (action === 'status' && options.status) {
+          await this.updateNote(id, { status: options.status }, actorId);
+          results.push({ id, candidateName: name, ok: true, message: `Status → ${options.status}.` });
+        } else if (action === 'cancel') {
+          await this.cancel(id, actorId, options.note);
+          results.push({ id, candidateName: name, ok: true, message: 'Dibatalkan.' });
+        } else if (action === 'delete') {
+          await this.remove(id, actorId);
+          results.push({ id, candidateName: name, ok: true, message: 'Dihapus.' });
+        } else {
+          throw new BadRequestException('Aksi tidak valid.');
+        }
+      } catch (err) {
+        results.push({
+          id,
+          candidateName: name,
+          ok: false,
+          message: err instanceof Error ? err.message : 'Gagal.',
+        });
+      }
+    }
+    return results;
   }
 
   /**
@@ -532,6 +618,14 @@ export class TitipanService {
       throw new BadRequestException(
         'Tahun ajaran ini tidak membuka daftar titipan.',
       );
+    }
+    if (year.quota != null) {
+      const occupied = await this.occupiedSeats(academicYearId);
+      if (occupied >= year.quota) {
+        throw new BadRequestException(
+          `Kuota ${year.name} sudah penuh (${occupied}/${year.quota}) — daftar titipan ditutup.`,
+        );
+      }
     }
     return year;
   }

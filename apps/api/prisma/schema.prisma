@@ -203,6 +203,7 @@ model Candidate {
   birthDate      DateTime? @map("birth_date") @db.Date
   nisn           String?
   nik            String?   // NIK calon murid — ikut ke Student saat diterima
+  motherName     String?   @map("mother_name") // wajib sebelum submit formulir — sinkron dg data siswa
   previousSchool String?   @map("previous_school")
   address        String?
   tkaScore       Int?      @map("tka_score")
@@ -323,8 +324,10 @@ model WaveFee {
 /** Aturan diskon DSP untuk jalur prestasi — di-set admin. */
 model DiscountRule {
   id        String   @id @default(uuid()) @db.Uuid
-  subType   String   @unique // akademik | tahfidz_2 | tahfidz_3plus | non_akademik | alumni_sdm
+  subType   String   @unique // akademik | tahfidz_2 | tahfidz_3plus | non_akademik | alumni_sdm | kustom
   label     String
+  /** Grup jalur prestasi di formulir ortu: akademik | non_akademik | alumni_sdm. */
+  category  String   @default("non_akademik")
   percent   Int      @default(0)
   minScore  Int?     @map("min_score") // syarat nilai rapor untuk akademik
   isActive  Boolean  @default(true) @map("is_active")

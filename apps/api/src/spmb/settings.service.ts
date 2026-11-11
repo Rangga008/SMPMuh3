@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -54,10 +55,15 @@ export class SpmbSettingsService {
     const yearId =
       dto.academicYearId ??
       (
-        await this.prisma.academicYear.findFirstOrThrow({
+        await this.prisma.academicYear.findFirst({
           where: { isActive: true },
         })
-      ).id;
+      )?.id;
+    if (!yearId) {
+      throw new BadRequestException(
+        'Belum ada tahun ajaran aktif — aktifkan dulu di Master Data → Tahun Ajaran, lalu tambah gelombang.',
+      );
+    }
     const data = {
       name: dto.name,
       startDate: new Date(dto.startDate),
@@ -100,6 +106,45 @@ export class SpmbSettingsService {
       where: { key },
       data: { amount, updatedBy: actorId },
     });
+  }
+
+  /** Biaya baku — dipakai penagihan otomatis; hanya nominalnya yang diubah. */
+  private static readonly CORE_FEES = new Set([
+    'registration', 'pendaftaran', 'dsp', 'dsp_dp', 'spp', 'seragam',
+  ]);
+
+  /** Tambah jenis biaya — key dibuat dari label bila tak diisi. */
+  async createFee(
+    dto: { key?: string | undefined; label: string; amount: number },
+    actorId: string,
+  ) {
+    const key = (
+      dto.key?.trim() ||
+      dto.label
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+    ).slice(0, 40);
+    if (!key) throw new BadRequestException('Nama biaya tidak valid.');
+    const clash = await this.prisma.spmbFee.findUnique({ where: { key } });
+    if (clash) {
+      throw new ConflictException(
+        `Biaya '${key}' (${clash.label}) sudah ada — ubah nominalnya saja.`,
+      );
+    }
+    return this.prisma.spmbFee.create({
+      data: { key, label: dto.label.trim(), amount: dto.amount, updatedBy: actorId },
+    });
+  }
+
+  async deleteFee(key: string) {
+    if (SpmbSettingsService.CORE_FEES.has(key)) {
+      throw new BadRequestException(
+        `Biaya '${key}' adalah biaya baku penagihan — ubah nominalnya saja, jangan dihapus.`,
+      );
+    }
+    return this.prisma.spmbFee.delete({ where: { key } });
   }
 
   // ---------- Biaya per gelombang (override) ----------
@@ -156,24 +201,44 @@ export class SpmbSettingsService {
 
   // ---------- Diskon ----------
   listDiscounts() {
-    return this.prisma.discountRule.findMany({ orderBy: { subType: 'asc' } });
+    return this.prisma.discountRule.findMany({
+      orderBy: [{ category: 'asc' }, { label: 'asc' }],
+    });
   }
 
   async upsertDiscount(
     subType: string,
-    dto: { label: string; percent: number; minScore?: number; isActive?: boolean },
+    dto: {
+      label: string;
+      percent: number;
+      minScore?: number;
+      isActive?: boolean;
+      category?: string;
+    },
   ) {
+    const key = subType
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 40);
+    if (!key) throw new BadRequestException('Kode jenis diskon tidak valid.');
     const data = {
-      label: dto.label,
+      label: dto.label.trim(),
       percent: dto.percent,
       minScore: dto.minScore ?? null,
       isActive: dto.isActive ?? true,
+      ...(dto.category ? { category: dto.category } : {}),
     };
     return this.prisma.discountRule.upsert({
-      where: { subType },
+      where: { subType: key },
       update: data,
-      create: { subType, ...data },
+      create: { subType: key, ...data },
     });
+  }
+
+  async deleteDiscount(subType: string) {
+    return this.prisma.discountRule.delete({ where: { subType } });
   }
 
   /** Diskon yang disarankan untuk sub-jalur prestasi (dari aturan aktif). */
@@ -183,6 +248,15 @@ export class SpmbSettingsService {
       where: { subType },
     });
     return rule?.isActive ? rule.percent : 0;
+  }
+
+  /** Subtype prestasi valid = ada aturan diskon aktif untuknya. */
+  async discountSubtypeActive(subType: string): Promise<boolean> {
+    const rule = await this.prisma.discountRule.findUnique({
+      where: { subType },
+      select: { isActive: true },
+    });
+    return rule?.isActive ?? false;
   }
 
   // ---------- Pertanyaan formulir ----------

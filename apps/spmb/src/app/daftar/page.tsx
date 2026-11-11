@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Button, Field, Input } from '@smpmuh3/ui';
-import { ApiError, registerParent, setTokens } from '@/lib/api';
+import { ApiError, login, redeemPublic, setTokens } from '@/lib/api';
 import { AuthShell } from '@/components/auth-shell';
 
 export default function RegisterPage() {
@@ -17,48 +17,81 @@ export default function RegisterPage() {
     setError(null);
     setBusy(true);
     const f = new FormData(e.currentTarget);
+    const formCode = String(f.get('formCode') ?? '').trim().toUpperCase();
+    const phone = String(f.get('phone') ?? '').trim();
+    const password = String(f.get('password') ?? '');
     try {
-      const email = String(f.get('email') ?? '').trim();
-      const tokens = await registerParent({
-        name: String(f.get('name')),
-        phone: String(f.get('phone')),
-        ...(email ? { email } : {}),
-        password: String(f.get('password')),
-      });
+      // Kode + HP cocok dengan titipan → akun dibuat (bila belum ada) dan
+      // pendaftaran langsung terbentuk untuk calon murid titipan tersebut.
+      const { registration } = await redeemPublic({ formCode, phone, password });
+      const tokens = await login(phone, password);
       setTokens(tokens);
-      router.push('/akun');
+      router.push(`/akun/pendaftaran/${registration.id}`);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Pendaftaran gagal. Coba lagi.');
-    } finally {
+      setError(
+        err instanceof ApiError ? err.message : 'Pendaftaran gagal. Coba lagi.',
+      );
       setBusy(false);
     }
   }
 
   return (
     <AuthShell
-      title="Daftar Akun SPMB"
-      subtitle="Buat akun orang tua/wali untuk mendaftarkan calon murid"
+      title="Daftar SPMB"
+      subtitle="Masukkan kode formulir unik yang Anda terima lewat WhatsApp setelah titipan diverifikasi"
       footer={
         <>
           Sudah punya akun?{' '}
           <Link href="/masuk" className="font-semibold text-primary-700 hover:text-primary-800 focus-visible:focus-ring">
             Masuk di sini
           </Link>
+          {' · '}
+          Belum punya kode?{' '}
+          <Link href="/daftar-titipan" className="font-semibold text-primary-700 hover:text-primary-800 focus-visible:focus-ring">
+            Daftar Titipan dulu
+          </Link>
         </>
       }
     >
       <form onSubmit={onSubmit} className="space-y-4">
-        <Field label="Nama Lengkap Orang Tua/Wali">
-          <Input name="name" required autoComplete="name" placeholder="Nama sesuai identitas" />
+        <Field
+          label="Kode Formulir Unik"
+          hint="Dari WhatsApp panitia — satu kode untuk satu calon murid. Anak kedua memakai kodenya masing-masing."
+        >
+          <Input
+            name="formCode"
+            required
+            placeholder="SPMB-XXXXXX"
+            autoComplete="off"
+            className="font-mono uppercase tracking-widest"
+            style={{ textTransform: 'uppercase' }}
+          />
         </Field>
-        <Field label="Nomor HP" hint="Wajib — untuk login & pengiriman kwitansi pembayaran">
-          <Input name="phone" type="tel" required autoComplete="tel" inputMode="tel" placeholder="08xxxxxxxxxx" />
+        <Field
+          label="No. HP Orang Tua/Wali"
+          hint="Harus sama dengan nomor yang dipakai saat daftar titipan — jadi verifikasi bahwa kode ini milik Anda."
+        >
+          <Input
+            name="phone"
+            type="tel"
+            required
+            inputMode="tel"
+            autoComplete="tel"
+            placeholder="08xxxxxxxxxx"
+          />
         </Field>
-        <Field label="Email (opsional)" hint="Bisa dipakai untuk login & cek status">
-          <Input name="email" type="email" autoComplete="email" placeholder="nama@email.com" />
-        </Field>
-        <Field label="Kata Sandi" hint="Minimal 8 karakter">
-          <Input name="password" type="password" required minLength={8} autoComplete="new-password" placeholder="••••••••" />
+        <Field
+          label="Kata Sandi"
+          hint="Minimal 8 karakter. Sudah punya akun? Masukkan kata sandi akun Anda — anak ini otomatis ditambahkan ke akun yang sama."
+        >
+          <Input
+            name="password"
+            type="password"
+            required
+            minLength={8}
+            autoComplete="new-password"
+            placeholder="••••••••"
+          />
         </Field>
         {error ? (
           <p role="alert" className="rounded-xl bg-red-50 px-4 py-2.5 text-sm font-medium text-red-700">
@@ -66,8 +99,12 @@ export default function RegisterPage() {
           </p>
         ) : null}
         <Button type="submit" disabled={busy} className="w-full">
-          {busy ? 'Memproses…' : 'Buat Akun'}
+          {busy ? 'Memproses…' : 'Daftar & Buka Formulir'}
         </Button>
+        <p className="text-center text-xs leading-relaxed text-sand-500">
+          Akun dibuat otomatis dari No. HP Anda — selanjutnya cukup masuk
+          memakai No. HP + kata sandi ini.
+        </p>
       </form>
     </AuthShell>
   );

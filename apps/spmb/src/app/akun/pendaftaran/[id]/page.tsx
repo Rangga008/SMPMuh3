@@ -337,6 +337,7 @@ export default function RegistrationDetailPage() {
         birthDate: val('birthDate'),
         nisn: val('nisn') || undefined,
         nik: val('nik') || undefined,
+        motherName: val('motherName') || undefined,
         previousSchool: val('previousSchool'),
         address: val('address') || undefined,
         tkaScore: val('tkaScore') ? Number(val('tkaScore')) : undefined,
@@ -347,14 +348,8 @@ export default function RegistrationDetailPage() {
         if (v) answers[q.id] = v;
       }
       const pathway = pathwaySel || 'reguler';
-      let pathwayDetail: string | undefined;
-      if (pathway === 'prestasi') {
-        const group = PRESTASI_GROUPS.find((g) => g.key === prestasiGroup);
-        if (group) {
-          pathwayDetail =
-            group.subTypes.length === 1 ? group.subTypes[0] : val('pathwayDetail') || undefined;
-        }
-      }
+      const pathwayDetail =
+        pathway === 'prestasi' ? val('pathwayDetail') || undefined : undefined;
       await updateRegistration(reg.id, {
         pathway,
         ...(pathwayDetail ? { pathwayDetail } : {}),
@@ -362,8 +357,8 @@ export default function RegistrationDetailPage() {
       });
       await refresh();
       setNotice('Formulir tersimpan.');
-    } catch {
-      setError('Gagal menyimpan formulir.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Gagal menyimpan formulir.');
     } finally {
       setBusy(false);
     }
@@ -462,7 +457,7 @@ export default function RegistrationDetailPage() {
                 {' · '}
                 {PATHWAY_LABELS[reg.pathway as keyof typeof PATHWAY_LABELS] ?? reg.pathway}
                 {reg.pathwayDetail
-                  ? ` (${PRESTASI_SUBTYPE_LABELS[reg.pathwayDetail as keyof typeof PRESTASI_SUBTYPE_LABELS] ?? reg.pathwayDetail})`
+                  ? ` (${discounts.find((d) => d.subType === reg.pathwayDetail)?.label ?? PRESTASI_SUBTYPE_LABELS[reg.pathwayDetail as keyof typeof PRESTASI_SUBTYPE_LABELS] ?? reg.pathwayDetail})`
                   : ''}
               </p>
             </div>
@@ -630,11 +625,14 @@ export default function RegistrationDetailPage() {
                 <Field label="Asal Sekolah">
                   <Input name="previousSchool" required defaultValue={reg.candidate.previousSchool ?? ''} />
                 </Field>
+                <Field label="Nama Ibu Kandung" hint="Sesuai KK — wajib untuk buku induk.">
+                  <Input name="motherName" required defaultValue={reg.candidate.motherName ?? ''} />
+                </Field>
                 <Field label="NISN (opsional)">
                   <Input name="nisn" defaultValue={reg.candidate.nisn ?? ''} />
                 </Field>
-                <Field label="NIK (opsional)" hint="16 digit — dari KK/KIA.">
-                  <Input name="nik" inputMode="numeric" maxLength={16} defaultValue={reg.candidate.nik ?? ''} />
+                <Field label="NIK" hint="16 digit — dari KK/KIA, wajib untuk data siswa.">
+                  <Input name="nik" required inputMode="numeric" maxLength={16} minLength={16} defaultValue={reg.candidate.nik ?? ''} />
                 </Field>
                 <Field label="Alamat" className="sm:col-span-2">
                   <Input name="address" required defaultValue={reg.candidate.address ?? ''} />
@@ -665,19 +663,26 @@ export default function RegistrationDetailPage() {
                     </Select>
                   </Field>
                 ) : null}
-                {pathwaySel === 'prestasi' && prestasiGroup === 'non_akademik' ? (
-                  <Field label="Jenis Prestasi Non-Akademik" className="sm:col-span-2">
+                {pathwaySel === 'prestasi' && prestasiGroup ? (
+                  <Field label={`Jenis ${PRESTASI_GROUPS.find((g) => g.key === prestasiGroup)?.label ?? 'Prestasi'}`} className="sm:col-span-2">
                     <Select name="pathwayDetail" required defaultValue={reg.pathwayDetail ?? ''}>
                       <option value="">Pilih jenis…</option>
-                      {PRESTASI_GROUPS.find((g) => g.key === 'non_akademik')!.subTypes.map((st) => {
-                        const rule = discounts.find((d) => d.subType === st);
-                        return (
-                          <option key={st} value={st}>
-                            {PRESTASI_SUBTYPE_LABELS[st]}
-                            {rule ? ` — diskon DSP ${rule.percent}%` : ''}
+                      {discounts
+                        .filter(
+                          (d) =>
+                            d.isActive &&
+                            (d.category ??
+                              (d.subType === 'akademik'
+                                ? 'akademik'
+                                : d.subType === 'alumni_sdm'
+                                  ? 'alumni_sdm'
+                                  : 'non_akademik')) === prestasiGroup,
+                        )
+                        .map((d) => (
+                          <option key={d.subType} value={d.subType}>
+                            {d.label} — diskon DSP {d.percent}%
                           </option>
-                        );
-                      })}
+                        ))}
                     </Select>
                   </Field>
                 ) : null}

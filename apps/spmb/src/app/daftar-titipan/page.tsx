@@ -123,16 +123,20 @@ export default function DaftarTitipanPage() {
                 {years.map((y) => (
                   <label
                     key={y.academicYearId}
-                    className={`flex cursor-pointer items-center justify-between rounded-xl border px-4 py-3 text-sm font-semibold transition-colors ${
-                      yearId === y.academicYearId
-                        ? 'border-primary-400 bg-primary-50 text-primary-800'
-                        : 'border-sand-200 bg-white text-sand-700 hover:border-sand-300'
+                    className={`flex items-center justify-between rounded-xl border px-4 py-3 text-sm font-semibold transition-colors ${
+                      y.full
+                        ? 'cursor-not-allowed border-sand-200 bg-sand-50 text-sand-400'
+                        : yearId === y.academicYearId
+                          ? 'cursor-pointer border-primary-400 bg-primary-50 text-primary-800'
+                          : 'cursor-pointer border-sand-200 bg-white text-sand-700 hover:border-sand-300'
                     }`}
                   >
                     <span>{y.name}</span>
-                    {y.quota != null ? (
+                    {y.full ? (
+                      <Badge tone="danger">KUOTA PENUH</Badge>
+                    ) : y.quota != null ? (
                       <span className="text-xs font-medium text-sand-500">
-                        kuota {y.quota}
+                        terisi {y.occupied ?? 0}/{y.quota}
                       </span>
                     ) : null}
                     <input
@@ -140,6 +144,7 @@ export default function DaftarTitipanPage() {
                       name="academicYearId"
                       value={y.academicYearId}
                       checked={yearId === y.academicYearId}
+                      disabled={y.full}
                       onChange={() => setYearId(y.academicYearId)}
                       className="sr-only"
                       required
@@ -158,13 +163,27 @@ export default function DaftarTitipanPage() {
                   Pilih tahun ajaran…
                 </option>
                 {years.map((y) => (
-                  <option key={y.academicYearId} value={y.academicYearId}>
+                  <option
+                    key={y.academicYearId}
+                    value={y.academicYearId}
+                    disabled={y.full}
+                  >
                     {y.name}
-                    {y.quota != null ? ` (kuota ${y.quota})` : ''}
+                    {y.full
+                      ? ' — KUOTA PENUH'
+                      : y.quota != null
+                        ? ` (terisi ${y.occupied ?? 0}/${y.quota})`
+                        : ''}
                   </option>
                 ))}
               </Select>
             )}
+            {years.every((y) => y.full) && years.length > 0 ? (
+              <p className="mt-2 rounded-xl bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
+                Semua tahun ajaran yang dibuka sudah penuh — titipan baru tidak
+                bisa diterima.
+              </p>
+            ) : null}
           </Field>
 
           <Field label="Nama Calon Siswa">
@@ -227,7 +246,7 @@ export default function DaftarTitipanPage() {
               {error}
             </p>
           ) : null}
-          <Button type="submit" disabled={busy || years.length === 0 || !yearId} className="w-full">
+          <Button type="submit" disabled={busy || years.every((y) => y.full) || !yearId} className="w-full">
             {busy ? 'Mengirim…' : 'Kirim Titipan'}
           </Button>
         </form>

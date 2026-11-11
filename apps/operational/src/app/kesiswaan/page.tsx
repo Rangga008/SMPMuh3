@@ -126,6 +126,7 @@ export default function StudentsPage() {
         gender: val('gender'),
         birthPlace: val('birthPlace'),
         birthDate: val('birthDate'),
+        motherName: val('motherName'),
         address: val('address'),
         parentName: val('parentName'),
         parentPhone: val('parentPhone'),
@@ -184,21 +185,24 @@ export default function StudentsPage() {
             <Field label="NISN">
               <Input name="nisn" />
             </Field>
-            <Field label="NIK" hint="16 digit — boleh diisi nanti.">
-              <Input name="nik" inputMode="numeric" maxLength={16} />
+            <Field label="NIK *" hint="16 digit — wajib, sama seperti formulir SPMB.">
+              <Input name="nik" required inputMode="numeric" maxLength={16} minLength={16} />
             </Field>
-            <Field label="Jenis Kelamin">
-              <Select name="gender" defaultValue="">
-                <option value="">Pilih…</option>
+            <Field label="Jenis Kelamin *">
+              <Select name="gender" required defaultValue="">
+                <option value="" disabled>Pilih…</option>
                 <option value="MALE">Laki-laki</option>
                 <option value="FEMALE">Perempuan</option>
               </Select>
             </Field>
-            <Field label="Tempat Lahir">
-              <Input name="birthPlace" />
+            <Field label="Tempat Lahir *">
+              <Input name="birthPlace" required />
             </Field>
-            <Field label="Tanggal Lahir">
-              <Input name="birthDate" type="date" />
+            <Field label="Tanggal Lahir *">
+              <Input name="birthDate" type="date" required />
+            </Field>
+            <Field label="Nama Ibu Kandung *" hint="Sesuai KK — untuk buku induk.">
+              <Input name="motherName" required />
             </Field>
             <Field label="Alamat">
               <Input name="address" />

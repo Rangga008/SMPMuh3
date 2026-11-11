@@ -155,7 +155,7 @@ export type TitipanStatus = (typeof TITIPAN_STATUSES)[number];
 export const TITIPAN_STATUS_LABELS: Record<TitipanStatus, string> = {
   PENDING: 'Menunggu Verifikasi',
   WAITING: 'Dalam Antrean',
-  CODE_SENT: 'Kode Terkirim',
+  CODE_SENT: 'Lanjut ke Pendaftaran',
   REGISTERED: 'Sudah Daftar',
   CANCELLED: 'Batal',
 };
@@ -239,6 +239,8 @@ export interface TitipanYearSummaryDto {
   quota?: number | null | undefined;
   /** Pendaftaran resmi yang menempati kuota. */
   occupied?: number | undefined;
+  /** Kuota penuh → titipan tahun ini terkunci otomatis. */
+  full?: boolean | undefined;
   waitingCount: number;
   codeSentCount: number;
   registeredCount: number;
@@ -277,6 +279,8 @@ export interface CandidateDto {
   nisn?: string | undefined;
   /** NIK calon murid — ikut ke data siswa saat diterima. */
   nik?: string | undefined;
+  /** Nama ibu kandung — wajib sebelum submit formulir. */
+  motherName?: string | undefined;
   previousSchool?: string | undefined;
   address?: string | undefined;
   tkaScore?: number | undefined;
@@ -328,16 +332,20 @@ export interface DocumentDto {
 
 export interface FeeDto {
   id: string;
-  key: FeeKey;
+  key: string;
   label: string;
   amount: number;
   isActive: boolean;
 }
 
+export type DiscountCategory = 'akademik' | 'non_akademik' | 'alumni_sdm';
+
 export interface DiscountRuleDto {
   id: string;
   subType: string;
   label: string;
+  /** Grup jalur prestasi di formulir ortu. */
+  category?: DiscountCategory | undefined;
   percent: number;
   minScore?: number | undefined;
   isActive: boolean;

@@ -16,6 +16,7 @@ const select = {
   birthDate: true,
   nisn: true,
   nik: true,
+  motherName: true,
   previousSchool: true,
   address: true,
   tkaScore: true,
@@ -39,6 +40,34 @@ export class CandidatesService {
   create(parentId: string, dto: CreateCandidateDto) {
     return this.prisma.candidate.create({
       data: this.toData(parentId, dto),
+      select,
+    });
+  }
+
+  /**
+   * Kandidat otomatis dari data titipan saat kode formulir dipakai —
+   * field wajib (NIK, ibu, tempat lahir) dilengkapi ortu di formulir.
+   */
+  async createFromTitipan(
+    parentId: string,
+    tx: Prisma.TransactionClient,
+    data: {
+      name: string;
+      birthPlace?: string | null;
+      birthDate?: Date | null;
+      previousSchool?: string | null;
+      address?: string | null;
+    },
+  ) {
+    return tx.candidate.create({
+      data: {
+        parentId,
+        name: data.name.trim().toUpperCase(),
+        birthPlace: data.birthPlace ?? null,
+        birthDate: data.birthDate ?? null,
+        previousSchool: data.previousSchool ?? null,
+        address: data.address ?? null,
+      },
       select,
     });
   }
@@ -74,10 +103,11 @@ export class CandidatesService {
       parentId,
       name: dto.name.trim().toUpperCase(),
       gender: dto.gender,
-      birthPlace: dto.birthPlace ?? null,
+      birthPlace: dto.birthPlace.trim(),
       birthDate: new Date(dto.birthDate),
       nisn: dto.nisn ?? null,
-      nik: dto.nik ?? null,
+      nik: dto.nik,
+      motherName: dto.motherName.trim(),
       previousSchool: dto.previousSchool.trim(),
       address: dto.address ?? null,
       tkaScore: dto.tkaScore ?? null,

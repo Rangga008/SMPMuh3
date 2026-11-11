@@ -92,12 +92,17 @@ export async function req<T>(
   }
   const body = (await res.json().catch(() => null)) as {
     data?: T;
-    error?: { code?: string; message?: string };
+    error?: { code?: string; message?: string; details?: unknown };
   } | null;
   if (!res.ok) {
     if (res.status === 401) clearTokens();
+    const fields = (
+      body?.error?.details as { fields?: unknown } | undefined
+    )?.fields;
     throw new ApiError(
-      body?.error?.message ?? `Request failed (${res.status})`,
+      Array.isArray(fields) && fields.length > 0
+        ? fields.map(String).join(' · ')
+        : (body?.error?.message ?? `Request failed (${res.status})`),
       res.status,
       body?.error?.code,
     );
@@ -362,12 +367,18 @@ export const saveWave = (dto: Record<string, unknown>, id?: string) =>
 export const deleteWave = (id: string) =>
   req(`/admin/spmb/waves/${id}`, { method: 'DELETE' });
 export const listAdminFees = () => req<FeeDto[]>('/admin/spmb/fees');
+export const createFee = (dto: { label: string; amount: number; key?: string }) =>
+  req<FeeDto>('/admin/spmb/fees', { method: 'POST', json: dto });
 export const updateFee = (key: string, amount: number) =>
   req(`/admin/spmb/fees/${key}`, { method: 'PATCH', json: { amount } });
+export const deleteFee = (key: string) =>
+  req(`/admin/spmb/fees/${key}`, { method: 'DELETE' });
 export const listAdminDiscounts = () =>
   req<DiscountRuleDto[]>('/admin/spmb/discounts');
 export const saveDiscount = (subType: string, dto: Record<string, unknown>) =>
   req(`/admin/spmb/discounts/${subType}`, { method: 'PUT', json: dto });
+export const deleteDiscount = (subType: string) =>
+  req(`/admin/spmb/discounts/${subType}`, { method: 'DELETE' });
 export const listAdminQuestions = () =>
   req<FormQuestionDto[]>('/admin/spmb/questions');
 export const saveQuestion = (dto: Record<string, unknown>, id?: string) =>
@@ -1565,6 +1576,24 @@ export const setTitipanStatus = (
 /** Tugaskan gelombang ke entri titipan — null untuk melepas. */
 export const setTitipanWave = (id: string, waveId: string | null) =>
   req<TitipanAdmin>(`/admin/titipan/${id}`, { method: 'PATCH', json: { waveId } });
+export interface BulkTitipanResult {
+  id: string;
+  candidateName: string;
+  ok: boolean;
+  message: string;
+}
+/** Aksi massal — verifikasi / kirim kode / status / batalkan / hapus. */
+export const bulkTitipan = (
+  ids: string[],
+  action: 'approve' | 'send_code' | 'status' | 'cancel' | 'delete',
+  options?: { status?: 'PENDING' | 'WAITING' | 'CANCELLED'; note?: string },
+) =>
+  req<BulkTitipanResult[]>('/admin/titipan/bulk', {
+    method: 'POST',
+    json: { ids, action, ...options },
+  });
+export const deleteTitipan = (id: string) =>
+  req<unknown>(`/admin/titipan/${id}`, { method: 'DELETE' });
 
 // ---------- Orang tua / wali (Kesiswaan) ----------
 export interface ParentListItem {

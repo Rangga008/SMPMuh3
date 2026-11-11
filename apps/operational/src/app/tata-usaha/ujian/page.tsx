@@ -41,7 +41,7 @@ export default function UjianPage() {
     if (!w) return;
     const cards = room.seats.map((s) => `
       <div class="card">
-        <div class="kop">${school?.logoUrl ? `<img src="${school.logoUrl}" class="logo" onerror="this.style.display='none'"/>` : ''}<div>
+        <div class="kop">${school?.logoUrl ? `<img src="/logo.png" class="logo" onerror="this.style.display='none'"/>` : ''}<div>
           <b>${school?.name ?? 'SMP Muhammadiyah 3 Kota Bandung'}</b>${school?.npsn ? ` · NPSN ${school.npsn}` : ''}<br>
           <span class="sub">Kartu Peserta ${room.period} · TA ${room.academicYear?.name ?? ''}</span></div></div>
         <table>

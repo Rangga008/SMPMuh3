@@ -48,6 +48,9 @@ async function bootstrap() {
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,
+      // Satu pesan paling relevan per field — bukan semua aturan sekaligus,
+      // supaya error ke ortu/staff jelas dan tidak berisik.
+      stopAtFirstError: true,
     }),
   );
   app.useGlobalFilters(new AllExceptionsFilter());

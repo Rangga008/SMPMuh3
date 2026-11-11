@@ -834,6 +834,7 @@ export class StudentsService {
     if (dto.nisn !== undefined) data.nisn = dto.nisn || null;
     if (dto.nik !== undefined) data.nik = dto.nik || null;
     if (dto.gender !== undefined) data.gender = dto.gender;
+    if (dto.motherName !== undefined) data.motherName = dto.motherName || null;
     if (dto.birthPlace !== undefined) data.birthPlace = dto.birthPlace || null;
     if (dto.birthDate !== undefined) {
       data.birthDate = dto.birthDate ? new Date(dto.birthDate) : null;
@@ -853,7 +854,8 @@ export class StudentsService {
       name: dto.name.trim(),
       nis: dto.nis ?? null,
       nisn: dto.nisn ?? null,
-      nik: dto.nik ?? null,
+      nik: dto.nik,
+      motherName: dto.motherName.trim(),
       fatherName: dto.parentName ?? null,
       parentPhone: dto.parentPhone ? normalizePhone(dto.parentPhone) : null,
       gender: dto.gender ?? null,

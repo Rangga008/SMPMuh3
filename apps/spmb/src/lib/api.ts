@@ -18,7 +18,7 @@ import type {
   WaveDto,
 } from '@smpmuh3/types';
 
-const API =
+export const API =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
 
 const TOKEN_KEY = 'spmb.tokens';
@@ -119,8 +119,13 @@ async function req<T>(
     // Session is definitively dead — drop stored tokens so the header
     // falls back to Masuk/Daftar instead of a stale "Akun Saya".
     if (res.status === 401) clearTokens();
+    const fields = (
+      body?.error?.details as { fields?: unknown } | undefined
+    )?.fields;
     throw new ApiError(
-      body?.error?.message ?? `Request failed (${res.status})`,
+      Array.isArray(fields) && fields.length > 0
+        ? fields.map(String).join(' · ')
+        : (body?.error?.message ?? `Request failed (${res.status})`),
       res.status,
       body?.error?.code,
     );
@@ -232,15 +237,26 @@ export const createTitipan = (dto: {
 // ---- registrations ----
 export const listRegistrations = () => req<RegistrationDto[]>('/registrations');
 /** Buat pendaftaran lewat kode formulir titipan. */
-export const createRegistration = (
-  candidateId: string,
-  formCode: string,
-  waveId?: string,
-) =>
+export const createRegistration = (formCode: string, waveId?: string) =>
   req<RegistrationDto>('/registrations', {
     method: 'POST',
-    json: { candidateId, formCode, waveId },
+    json: { formCode, waveId },
   });
+
+/**
+ * Alur utama "Daftar Sekarang" publik: kode formulir + No. HP titipan +
+ * kata sandi → akun dibuat bila belum ada → pendaftaran langsung terbuat.
+ * Setelah sukses panggil login(phone, password) untuk token.
+ */
+export const redeemPublic = (dto: {
+  formCode: string;
+  phone: string;
+  password: string;
+}) =>
+  req<{ registration: RegistrationDto; accountExisted: boolean }>(
+    '/titipan/redeem',
+    { method: 'POST', json: dto },
+  );
 export const getRegistration = (id: string) =>
   req<RegistrationDto>(`/registrations/${id}`);
 export const updateRegistration = (

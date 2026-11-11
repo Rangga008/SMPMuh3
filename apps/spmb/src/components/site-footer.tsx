@@ -26,12 +26,21 @@ export async function SiteFooter() {
       <div className="mx-auto grid max-w-7xl gap-10 px-4 py-14 sm:px-6 md:grid-cols-3 lg:px-8">
         <div>
           <div className="flex items-center gap-2.5">
-            <span
-              aria-hidden="true"
-              className="flex size-9 items-center justify-center rounded-xl bg-accent-400 text-xs font-extrabold text-primary-950"
-            >
-              M3
-            </span>
+            {school?.hasLogo ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={`/logo.png?v=${school.logoVersion ?? 1}`}
+                alt="Logo sekolah"
+                className="size-9 rounded-xl bg-white object-contain p-0.5"
+              />
+            ) : (
+              <span
+                aria-hidden="true"
+                className="flex size-9 items-center justify-center rounded-xl bg-accent-400 text-xs font-extrabold text-primary-950"
+              >
+                M3
+              </span>
+            )}
             <span className="text-sm font-extrabold tracking-tight text-white">
               SPMB · {schoolName}
             </span>

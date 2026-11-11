@@ -84,7 +84,6 @@ export default function AccountPage() {
     candidateName: string;
     waves: WaveDto[];
   } | null>(null);
-  const [redeemCandidate, setRedeemCandidate] = useState('');
   const [redeemWave, setRedeemWave] = useState('');
   const [redeemError, setRedeemError] = useState<string | null>(null);
   const [checkingCode, setCheckingCode] = useState(false);
@@ -127,6 +126,7 @@ export default function AccountPage() {
         birthDate: val('birthDate'),
         previousSchool: val('previousSchool'),
         birthPlace: val('birthPlace'),
+        motherName: val('motherName'),
         nisn: val('nisn'),
         nik: val('nik'),
         address: val('address'),
@@ -171,9 +171,8 @@ export default function AccountPage() {
   }
 
   // ---- redeem kode ----
-  function openRedeem(prefillCode?: string, lockedCandidateId?: string) {
+  function openRedeem(prefillCode?: string, _lockedCandidateId?: string) {
     setRedeemCode(prefillCode ?? '');
-    setRedeemCandidate(lockedCandidateId ?? '');
     setRedeemWave('');
     setRedeemInfo(null);
     setRedeemError(null);
@@ -216,10 +215,6 @@ export default function AccountPage() {
 
   async function onRedeem(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!redeemCandidate) {
-      setRedeemError('Pilih calon murid untuk kode ini.');
-      return;
-    }
     if (redeemInfo && redeemInfo.waves.length > 1 && !redeemWave) {
       setRedeemError('Pilih gelombang pendaftaran.');
       return;
@@ -227,8 +222,9 @@ export default function AccountPage() {
     setRedeemError(null);
     setBusy(true);
     try {
+      // Kode terkunci ke calon murid dari titipannya — titipan tamu
+      // otomatis dibuatkan kandidat dari data titipan.
       const reg = await createRegistration(
-        redeemCandidate,
         redeemCode.trim().toUpperCase(),
         redeemWave || undefined,
       );
@@ -505,14 +501,17 @@ export default function AccountPage() {
           <Field label="Asal Sekolah" hint="SD/MI asal">
             <Input name="previousSchool" required placeholder="Contoh: SD Muhammadiyah 3" />
           </Field>
-          <Field label="Tempat Lahir (opsional)">
-            <Input name="birthPlace" placeholder="Kota kelahiran" />
+          <Field label="Tempat Lahir *">
+            <Input name="birthPlace" required placeholder="Kota kelahiran" />
+          </Field>
+          <Field label="Nama Ibu Kandung *">
+            <Input name="motherName" required placeholder="Nama ibu sesuai KK" />
+          </Field>
+          <Field label="NIK *" hint="16 digit — dari KK/KIA, wajib untuk data siswa.">
+            <Input name="nik" required inputMode="numeric" maxLength={16} minLength={16} placeholder="16 digit" />
           </Field>
           <Field label="NISN (opsional)">
             <Input name="nisn" placeholder="10 digit" />
-          </Field>
-          <Field label="NIK (opsional)" hint="16 digit — dari KK/KIA; boleh diisi nanti.">
-            <Input name="nik" inputMode="numeric" maxLength={16} placeholder="16 digit" />
           </Field>
           <Field label="Alamat (opsional)">
             <Input name="address" placeholder="Alamat domisili" />
@@ -538,9 +537,17 @@ export default function AccountPage() {
                 Pilih tahun ajaran…
               </option>
               {years.map((y) => (
-                <option key={y.academicYearId} value={y.academicYearId}>
+                <option
+                  key={y.academicYearId}
+                  value={y.academicYearId}
+                  disabled={y.full}
+                >
                   {y.name}
-                  {y.quota != null ? ` (kuota ${y.quota})` : ''}
+                  {y.full
+                    ? ' — KUOTA PENUH'
+                    : y.quota != null
+                      ? ` (terisi ${y.occupied ?? 0}/${y.quota})`
+                      : ''}
                 </option>
               ))}
             </Select>
@@ -548,6 +555,11 @@ export default function AccountPage() {
           {years.length === 0 ? (
             <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
               Daftar titipan belum dibuka — hubungi panitia SPMB.
+            </p>
+          ) : null}
+          {years.length > 0 && years.every((y) => y.full) ? (
+            <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
+              Semua tahun ajaran yang dibuka sudah penuh.
             </p>
           ) : null}
           <Field
@@ -608,30 +620,10 @@ export default function AccountPage() {
                 Kode valid — TA {redeemInfo.academicYearName}
               </p>
               <p className="mt-0.5 text-xs text-primary-700">
-                untuk {redeemInfo.candidateName}
+                untuk {redeemInfo.candidateName} — kode ini terkunci ke
+                calon murid tersebut, tidak bisa dipakai untuk anak lain.
               </p>
             </div>
-          ) : null}
-          <Field label="Calon Murid" hint="Pilih anak yang akan didaftarkan dengan kode ini">
-            <Select
-              required
-              value={redeemCandidate}
-              onChange={(e) => setRedeemCandidate(e.target.value)}
-            >
-              <option value="" disabled>
-                Pilih calon murid…
-              </option>
-              {candidates.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          {candidates.length === 0 ? (
-            <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
-              Tambahkan data calon murid dulu di halaman ini, lalu ulangi.
-            </p>
           ) : null}
           {redeemInfo && redeemInfo.waves.length > 1 ? (
             <Field label="Gelombang">
