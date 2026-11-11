@@ -336,6 +336,7 @@ export default function RegistrationDetailPage() {
         birthPlace: val('birthPlace') || undefined,
         birthDate: val('birthDate'),
         nisn: val('nisn') || undefined,
+        nik: val('nik') || undefined,
         previousSchool: val('previousSchool'),
         address: val('address') || undefined,
         tkaScore: val('tkaScore') ? Number(val('tkaScore')) : undefined,
@@ -631,6 +632,9 @@ export default function RegistrationDetailPage() {
                 </Field>
                 <Field label="NISN (opsional)">
                   <Input name="nisn" defaultValue={reg.candidate.nisn ?? ''} />
+                </Field>
+                <Field label="NIK (opsional)" hint="16 digit — dari KK/KIA.">
+                  <Input name="nik" inputMode="numeric" maxLength={16} defaultValue={reg.candidate.nik ?? ''} />
                 </Field>
                 <Field label="Alamat" className="sm:col-span-2">
                   <Input name="address" required defaultValue={reg.candidate.address ?? ''} />

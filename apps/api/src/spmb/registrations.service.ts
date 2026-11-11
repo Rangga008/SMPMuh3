@@ -31,6 +31,7 @@ const include = {
       birthPlace: true,
       birthDate: true,
       nisn: true,
+      nik: true,
       previousSchool: true,
       address: true,
       tkaScore: true,
@@ -542,6 +543,14 @@ export class RegistrationsService {
     }
     const cand = reg.candidate;
     if (cand.student) return cand.student; // sudah jadi murid
+    // Nama/HP ortu berasal dari akun ortu pendaftar — disalin ke kolom buku
+    // induk (fatherName/parentPhone) agar tidak input ulang.
+    const parent = reg.parentId
+      ? await this.prisma.user.findUnique({
+          where: { id: reg.parentId },
+          select: { name: true, phone: true },
+        })
+      : null;
     const student = await this.prisma.student.create({
       data: {
         name: cand.name,
@@ -549,7 +558,11 @@ export class RegistrationsService {
         birthPlace: cand.birthPlace,
         birthDate: cand.birthDate,
         nisn: cand.nisn,
+        nik: cand.nik,
         address: cand.address,
+        previousSchool: cand.previousSchool,
+        fatherName: parent?.name ?? null,
+        parentPhone: parent?.phone ?? null,
         candidateId: cand.id,
         parentId: reg.parentId,
       },

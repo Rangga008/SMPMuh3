@@ -3,10 +3,12 @@ import {
   IsBoolean,
   IsInt,
   IsNotEmpty,
+  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
   Max,
+  MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -94,4 +96,57 @@ export class UniformDayDto {
   @IsInt() @Min(1) @Max(7) day!: number;
   @IsString() @IsNotEmpty() name!: string;
   @IsOptional() @IsString() note?: string;
+}
+
+// ---- Sarpras ----
+export class SaranaTypeDto {
+  @IsString() @IsNotEmpty() @MaxLength(80) label!: string;
+  @IsOptional() @IsString() @MaxLength(60) code?: string;
+  @IsOptional() @IsBoolean() isActive?: boolean;
+  @IsOptional() @IsInt() sortOrder?: number;
+}
+export class SaranaTypeUpdateDto {
+  @IsOptional() @IsString() @MaxLength(80) label?: string;
+  @IsOptional() @IsBoolean() isActive?: boolean;
+  @IsOptional() @IsInt() sortOrder?: number;
+}
+
+export class SaranaItemDto {
+  @IsUUID() typeId!: string;
+  /** Letak — nama rombel/kelas (dipilih dari data rombel) atau teks bebas. */
+  @IsOptional() @IsString() @MaxLength(120) location?: string;
+  /** Kepemilikan — Milik / Bukan Milik / Sewa / Hibah / dst. */
+  @IsOptional() @IsString() @MaxLength(60) ownership?: string;
+  @IsOptional() @IsString() @MaxLength(300) spec?: string;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) qty?: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) good?: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) bad?: number;
+  @IsOptional() @IsBoolean() isActive?: boolean;
+}
+export class SaranaItemUpdateDto {
+  @IsOptional() @IsUUID() typeId?: string;
+  @IsOptional() @IsString() @MaxLength(120) location?: string;
+  @IsOptional() @IsString() @MaxLength(60) ownership?: string;
+  @IsOptional() @IsString() @MaxLength(300) spec?: string;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) qty?: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) good?: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) bad?: number;
+  @IsOptional() @IsBoolean() isActive?: boolean;
+}
+
+export class PrasaranaDto {
+  @IsString() @IsNotEmpty() @MaxLength(120) name!: string;
+  @IsOptional() @IsString() @MaxLength(300) note?: string;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) length?: number;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) width?: number;
+  @IsOptional() @IsString() @MaxLength(60) ownership?: string;
+  @IsOptional() @IsBoolean() isActive?: boolean;
+}
+export class PrasaranaUpdateDto {
+  @IsOptional() @IsString() @MaxLength(120) name?: string;
+  @IsOptional() @IsString() @MaxLength(300) note?: string;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) length?: number;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) width?: number;
+  @IsOptional() @IsString() @MaxLength(60) ownership?: string;
+  @IsOptional() @IsBoolean() isActive?: boolean;
 }

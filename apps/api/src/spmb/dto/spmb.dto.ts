@@ -55,6 +55,11 @@ export class CreateCandidateDto {
 
   @emptyToUndefined()
   @IsOptional()
+  @Matches(/^\d{16}$/, { message: 'nik harus 16 digit' })
+  nik?: string;
+
+  @emptyToUndefined()
+  @IsOptional()
   @IsString()
   @MaxLength(300)
   address?: string;

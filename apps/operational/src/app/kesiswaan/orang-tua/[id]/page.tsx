@@ -12,6 +12,7 @@ import {
   remindStudentParent,
   sendTitipanCode,
   type ParentDetail,
+  phoneLocal,
 } from '@/lib/api';
 
 const rupiah = (n: number) => `Rp${n.toLocaleString('id-ID')}`;
@@ -186,7 +187,7 @@ export default function OrangTuaDetailPage({ params }: { params: Promise<{ id: s
           <Widget title="Data Orang Tua">
             <dl className="space-y-3 px-5 py-4 text-sm">
               <div><dt className="text-xs text-sand-500">Nama</dt><dd className="font-semibold text-sand-900">{p?.name ?? '—'}</dd></div>
-              <div><dt className="text-xs text-sand-500">Nomor HP / WhatsApp</dt><dd className="font-semibold text-sand-900">{p?.phone ?? '—'}</dd></div>
+              <div><dt className="text-xs text-sand-500">Nomor HP / WhatsApp</dt><dd className="font-semibold text-sand-900">{phoneLocal(p?.phone) || '—'}</dd></div>
               <div><dt className="text-xs text-sand-500">Email</dt><dd className="font-semibold text-sand-900">{p?.email ?? '—'}</dd></div>
               <div><dt className="text-xs text-sand-500">Terdaftar sejak</dt><dd className="font-semibold text-sand-900">{fmtDate(p?.createdAt)}</dd></div>
             </dl>

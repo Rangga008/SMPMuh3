@@ -7,7 +7,7 @@ import { Shell } from '@/components/shell';
 import { DataTable } from '@/components/data-table';
 import { PageTitle, Widget } from '@/components/widgets';
 import { RowBtn } from '@/components/row-btn';
-import { listStudentParents, type ParentListItem } from '@/lib/api';
+import { listStudentParents, phoneLocal, type ParentListItem } from '@/lib/api';
 
 const rupiah = (n: number) => `Rp${n.toLocaleString('id-ID')}`;
 
@@ -73,7 +73,7 @@ export default function OrangTuaPage() {
                 </Link>
               </td>
               <td className="px-5 py-3 text-sand-600">
-                <p>{p.phone ?? '—'}</p>
+                <p>{phoneLocal(p.phone) || '—'}</p>
                 {p.email ? <p className="text-xs text-sand-400">{p.email}</p> : null}
               </td>
               <td className="px-5 py-3">

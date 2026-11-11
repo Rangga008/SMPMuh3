@@ -202,6 +202,7 @@ model Candidate {
   birthPlace     String?   @map("birth_place")
   birthDate      DateTime? @map("birth_date") @db.Date
   nisn           String?
+  nik            String?   // NIK calon murid — ikut ke Student saat diterima
   previousSchool String?   @map("previous_school")
   address        String?
   tkaScore       Int?      @map("tka_score")
@@ -1271,6 +1272,7 @@ model Student {
   id           String        @id @default(uuid()) @db.Uuid
   nis          String?       @unique
   nisn         String?       @unique
+  nik          String?       // NIK siswa — dari pendaftaran / diisi TU nanti
   name         String
   gender       Gender?
   birthPlace   String?       @map("birth_place")
@@ -2072,4 +2074,53 @@ model ExamSeat {
   @@unique([roomId, studentId])
   @@index([classId])
   @@map("exam_seats")
+}
+
+// ================= Sarpras — sarana & prasarana (fasilitas) =================
+
+/** Jenis sarana yang dikelola TU — Meja Siswa, Kursi Siswa, dst (mirip GtkOption). */
+model SaranaType {
+  id        String       @id @default(uuid()) @db.Uuid
+  code      String       @unique
+  label     String
+  isActive  Boolean      @default(true) @map("is_active")
+  sortOrder Int          @default(0) @map("sort_order")
+  items     SaranaItem[]
+
+  @@map("sarana_types")
+}
+
+/** Baris inventaris sarana — sesuai ekspor Dapodik (jenis/letak/kepemilikan/spesifikasi/jumlah/laik/tidak laik). */
+model SaranaItem {
+  id        String     @id @default(uuid()) @db.Uuid
+  typeId    String     @map("type_id") @db.Uuid
+  location  String?    // letak — nama rombel (dipilih dari data kelas) atau teks bebas
+  ownership String?    // kepemilikan — Milik / Bukan Milik / dst
+  spec      String?    // spesifikasi barang
+  qty       Int        @default(0) // jumlah
+  good      Int        @default(0) // laik
+  bad       Int        @default(0) // tidak laik
+  isActive  Boolean    @default(true) @map("is_active")
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+
+  type      SaranaType @relation(fields: [typeId], references: [id], onDelete: Restrict)
+
+  @@index([typeId])
+  @@map("sarana_items")
+}
+
+/** Prasarana — ruang/bangunan: kelas, perpus, wc, lab; ukuran & status kepemilikan. */
+model Prasarana {
+  id        String    @id @default(uuid()) @db.Uuid
+  name      String
+  note      String?   // keterangan
+  length    Float?    // panjang (meter)
+  width     Float?    // lebar (meter)
+  ownership String?   // status kepemilikan — Milik / Sewa / Hibah / dst
+  isActive  Boolean   @default(true) @map("is_active")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  @@map("prasaranas")
 }

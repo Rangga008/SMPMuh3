@@ -26,6 +26,7 @@ import {
   listAdminWaves,
   type AcademicYear,
   type AdminRegistration,
+  phoneLocal,
 } from '@/lib/api';
 
 const DOC_FLAGS = ['akta', 'kk', 'ktp_ortu', 'ijazah'] as const;
@@ -446,7 +447,7 @@ function SpmbList() {
             </td>
             <td className="px-5 py-3.5 text-sand-600">
               {r.parent.name}
-              <span className="block text-xs text-sand-400">{r.parent.phone ?? r.parent.email}</span>
+              <span className="block text-xs text-sand-400">{phoneLocal(r.parent.phone) || r.parent.email}</span>
             </td>
             <td className="px-5 py-3.5">
               <span className="flex flex-wrap gap-1">

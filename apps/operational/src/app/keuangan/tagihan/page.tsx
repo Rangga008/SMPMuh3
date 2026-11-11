@@ -38,6 +38,7 @@ import {
   type ClassView,
   type PaymentReceipt,
   type StudentInvoice,
+  phoneLocal,
 } from '@/lib/api';
 
 import { RowBtn, rowActionClasses } from '@/components/row-btn';
@@ -174,7 +175,7 @@ export default function TagihanPage() {
     }
     if (
       !(await confirm(
-        `Kirim pengingat tagihan ${inv.number} (${rupiah(inv.remaining)}) via WhatsApp ke ${inv.student.parent.phone}?`,
+        `Kirim pengingat tagihan ${inv.number} (${rupiah(inv.remaining)}) via WhatsApp ke ${phoneLocal(inv.student.parent.phone)}?`,
       ))
     ) {
       return;
@@ -184,7 +185,7 @@ export default function TagihanPage() {
     try {
       const res = await notifyInvoice(inv.id);
       if (res.queued) {
-        setNotice(`Pengingat masuk antrean WhatsApp ke ${res.phone}.`);
+        setNotice(`Pengingat masuk antrean WhatsApp ke ${phoneLocal(res.phone)}.`);
         if (res.waUrl) window.open(res.waUrl, '_blank', 'noopener');
       } else if (res.waUrl) {
         window.open(res.waUrl, '_blank', 'noopener');
@@ -338,7 +339,7 @@ export default function TagihanPage() {
               <td className="px-5 py-3 text-sand-600">{inv.class?.name ?? '—'}</td>
               <td className="whitespace-nowrap px-5 py-3 text-sand-600">
                 {inv.student?.parent?.phone ? (
-                  <span title={inv.student.parent.name}>{inv.student.parent.phone}</span>
+                  <span title={inv.student.parent.name}>{phoneLocal(inv.student.parent.phone)}</span>
                 ) : '—'}
               </td>
               <td className="whitespace-nowrap px-5 py-3 text-right font-semibold text-sand-900">{rupiah(inv.amount)}</td>
@@ -741,7 +742,7 @@ function ReceiptView({ receipt }: { receipt: PaymentReceipt }) {
           rel="noreferrer"
           className="block rounded-xl bg-emerald-600 px-4 py-2.5 text-center text-sm font-bold text-white hover:bg-emerald-700"
 >
-          Kirim Kwitansi via WhatsApp ({parent.phone})
+          Kirim Kwitansi via WhatsApp ({phoneLocal(parent.phone)})
         </a>
       ) : (
         <p className="text-center text-xs text-sand-500">No. HP ortu tidak tersedia untuk kwitansi WA.</p>

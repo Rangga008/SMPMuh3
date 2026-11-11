@@ -15,6 +15,7 @@ import {
   updateStaffUser,
   type RoleOption,
   type StaffUser,
+  phoneLocal,
 } from '@/lib/api';
 
 const roleBadge = (key: string) =>
@@ -270,7 +271,7 @@ export default function AccountSettingsPage() {
                 </td>
                 <td className="px-5 py-3.5 text-xs text-sand-600">
                   <p>{u.email ?? '—'}</p>
-                  <p>{u.phone ?? ''}</p>
+                  <p>{phoneLocal(u.phone)}</p>
                 </td>
                 <td className="px-5 py-3.5">
                   <div className="flex flex-wrap gap-1">
@@ -379,7 +380,7 @@ export default function AccountSettingsPage() {
                 <Input name="email" type="email" defaultValue={editing.email ?? ''} />
               </Field>
               <Field label="Nomor HP">
-                <Input name="phone" defaultValue={editing.phone ?? ''} />
+                <Input name="phone" defaultValue={phoneLocal(editing.phone)} />
               </Field>
             </div>
             <Field label="Role / Akses">

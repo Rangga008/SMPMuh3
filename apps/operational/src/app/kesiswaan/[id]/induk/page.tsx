@@ -6,7 +6,7 @@ import { useParams } from 'next/navigation';
 import { Button } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { getStudentRecord, updateStudentRecord, uploadStudentPhoto, studentPhotoUrl } from '@/lib/api-ops';
-import { ApiError } from '@/lib/api';
+import { ApiError, phoneLocal } from '@/lib/api';
 
 type Details = Record<string, string>;
 type Penyakit = { jenis: string; kelas: string; tahun: string; lama: string; ket: string };
@@ -91,6 +91,7 @@ export default function BukuIndukPage() {
   const [nilaiEkskul, setNilaiEkskul] = useState<NilaiEkskul[]>(KOSONG_EKSKUL);
   const [nilaiHadir, setNilaiHadir] = useState<NilaiHadir>(KOSONG_HADIR);
   const [nilaiKeputusan, setNilaiKeputusan] = useState<NilaiKeputusan[]>(KOSONG_KEPUTUSAN);
+  const [nik, setNik] = useState('');
   const [photoV, setPhotoV] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -100,13 +101,14 @@ export default function BukuIndukPage() {
   useEffect(() => {
     getStudentRecord(id).then((r) => {
       setS(r);
+      setNik(r.nik ?? '');
       const det = { ...(r.recordDetails ?? {}) } as Details;
       // Prefill dari kolom kanonik siswa agar buku induk sinkron dengan
       // data diri — kolom ini juga ditulis balik saat simpan.
       if (!det.ayahNama) det.ayahNama = r.fatherName ?? '';
       if (!det.ibuNama) det.ibuNama = r.motherName ?? '';
       if (!det.ayahPekerjaan) det.ayahPekerjaan = r.parentOccupation ?? '';
-      if (!det.ayahHp) det.ayahHp = r.parentPhone ?? r.parent?.phone ?? '';
+      if (!det.ayahHp) det.ayahHp = phoneLocal(r.parentPhone ?? r.parent?.phone);
       // Format wali baru = 2 kolom (L/P) — data lama kolom tunggal masuk kolom L.
       if (!det.waliLNama) det.waliLNama = det.waliNama ?? r.parent?.name ?? '';
       if (!det.waliLTtl) det.waliLTtl = det.waliTtl ?? '';
@@ -183,6 +185,7 @@ export default function BukuIndukPage() {
         nilaiKeputusan: JSON.stringify(nilaiKeputusan.filter((x) => x.tp || x.ket)),
       };
       await updateStudentRecord(id, {
+        nik: nik.trim() || null,
         fatherName: g('ayahNama'), motherName: g('ibuNama'),
         parentOccupation: g('ayahPekerjaan'), parentPhone: g('ayahHp'),
         previousSchool: g('asalSd'), healthNotes: g('kelainan'),
@@ -256,6 +259,7 @@ export default function BukuIndukPage() {
               <div className="hrows">
                 <div className="induk-row"><span className="induk-label" style={{ width: 120 }}>Nomor Induk</span><span className="induk-sep">:</span><span className="induk-val"><span className="induk-text">{s.nis ?? '—'}</span></span></div>
                 <div className="induk-row"><span className="induk-label" style={{ width: 120 }}>NISN</span><span className="induk-sep">:</span><span className="induk-val"><span className="induk-text">{s.nisn ?? '—'}</span></span></div>
+                <div className="induk-row"><span className="induk-label" style={{ width: 120 }}>NIK</span><span className="induk-sep">:</span><span className="induk-val"><input className="induk-input" inputMode="numeric" maxLength={16} value={nik} onChange={(e) => setNik(e.target.value.replace(/\D/g, ''))} placeholder="16 digit" /></span></div>
                 <div className="induk-row"><span className="induk-label" style={{ width: 120 }}>Waktu Diterima<br />Di Sekolah Ini</span><span className="induk-sep">:</span><span className="induk-val"><T k="waktuDiterima" get={g} set={set} /></span></div>
               </div>
               <div className="photo-box" onClick={() => fileRef.current?.click()} title="Klik untuk unggah pas foto">

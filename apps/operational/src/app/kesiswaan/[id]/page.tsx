@@ -35,6 +35,7 @@ import {
   type StudentInvoice,
   type StudentPaymentRow,
   type EkskulDto,
+  phoneLocal,
 } from '@/lib/api';
 
 import { RowBtn, rowActionClasses } from '@/components/row-btn';
@@ -182,7 +183,7 @@ export default function StudentDetailPage() {
     setWaUrl(null);
     notifyInvoice(inv.id)
       .then((r) => {
-        setNotice(`Pengingat ${r.queued ? 'masuk antrean WA' : 'terkirim'} ke ${r.phone}.`);
+        setNotice(`Pengingat ${r.queued ? 'masuk antrean WA' : 'terkirim'} ke ${phoneLocal(r.phone)}.`);
         setWaUrl(r.waUrl);
       })
       .catch((err) => setError(err instanceof Error ? err.message : 'Gagal mengantre WA.'))
@@ -303,6 +304,7 @@ export default function StudentDetailPage() {
                 <div><dt className="text-xs font-bold uppercase tracking-wide text-sand-400">Jenis Kelamin</dt><dd className="mt-0.5 text-sand-800">{s.gender === 'MALE' ? 'Laki-laki' : s.gender === 'FEMALE' ? 'Perempuan' : '—'}</dd></div>
                 <div><dt className="text-xs font-bold uppercase tracking-wide text-sand-400">NIS</dt><dd className="mt-0.5 text-sand-800">{s.nis ?? '—'}</dd></div>
                 <div><dt className="text-xs font-bold uppercase tracking-wide text-sand-400">NISN</dt><dd className="mt-0.5 text-sand-800">{s.nisn ?? '—'}</dd></div>
+                <div><dt className="text-xs font-bold uppercase tracking-wide text-sand-400">NIK</dt><dd className="mt-0.5 text-sand-800">{s.nik ?? '—'}</dd></div>
                 <div><dt className="text-xs font-bold uppercase tracking-wide text-sand-400">Tempat, Tanggal Lahir</dt><dd className="mt-0.5 text-sand-800">{[s.birthPlace, s.birthDate ? fmtDate(s.birthDate) : null].filter(Boolean).join(', ') || '—'}</dd></div>
                 <div><dt className="text-xs font-bold uppercase tracking-wide text-sand-400">Alamat</dt><dd className="mt-0.5 text-sand-800">{s.address ?? '—'}</dd></div>
               </dl>
@@ -387,7 +389,7 @@ export default function StudentDetailPage() {
                   <p className="font-semibold text-sand-900">{s.parent.name}</p>
                   {s.parent.email ? <p className="text-xs text-sand-500">{s.parent.email}</p> : null}
                   <p className="flex items-center gap-2">
-                    <span className="font-medium text-sand-800">{s.parent.phone ?? '—'}</span>
+                    <span className="font-medium text-sand-800">{phoneLocal(s.parent.phone) || '—'}</span>
                     {s.parent.phone ? (
                       <a
                         href={`https://wa.me/${s.parent.phone.replace(/[^0-9]/g, '').replace(/^0/, '62')}`}
@@ -664,6 +666,7 @@ export default function StudentDetailPage() {
                     name: val(f, 'name'),
                     nis: val(f, 'nis'),
                     nisn: val(f, 'nisn'),
+                    nik: val(f, 'nik'),
                     gender: val(f, 'gender'),
                     birthPlace: val(f, 'birthPlace'),
                     birthDate: val(f, 'birthDate'),
@@ -679,6 +682,7 @@ export default function StudentDetailPage() {
             </Field>
             <Field label="NIS"><Input name="nis" defaultValue={s.nis ?? ''} /></Field>
             <Field label="NISN"><Input name="nisn" defaultValue={s.nisn ?? ''} /></Field>
+            <Field label="NIK"><Input name="nik" inputMode="numeric" maxLength={16} defaultValue={s.nik ?? ''} placeholder="16 digit" /></Field>
             <Field label="Jenis Kelamin">
               <Select name="gender" defaultValue={s.gender ?? ''}>
                 <option value="">Pilih…</option>
@@ -725,7 +729,7 @@ export default function StudentDetailPage() {
               <Input name="parentName" required minLength={3} defaultValue={s.parent?.name ?? ''} placeholder="mis. Budi Santoso" />
             </Field>
             <Field label="No. HP / WhatsApp" hint="Format bebas — dinormalisasi ke 62… saat mengirim WA">
-              <Input name="parentPhone" defaultValue={s.parent?.phone ?? ''} placeholder="08xxxxxxxxxx" />
+              <Input name="parentPhone" defaultValue={phoneLocal(s.parent?.phone)} placeholder="08xxxxxxxxxx" />
             </Field>
             <div className="flex justify-end gap-2">
               <Button type="button" variant="ghost" onClick={() => setModal(null)}>Batal</Button>

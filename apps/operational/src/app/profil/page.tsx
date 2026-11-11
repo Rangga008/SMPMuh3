@@ -17,6 +17,7 @@ import {
   updateMyEmployee,
   uploadMyEmployeePhoto,
   type MyEmployee,
+  phoneLocal,
 } from '@/lib/api';
 
 const EMPLOYEE_TYPE = EMPLOYEE_TYPE_LABELS as Record<string, string>;
@@ -263,7 +264,7 @@ export default function ProfilePage() {
               <Input name="name" required minLength={3} defaultValue={user.name} />
             </Field>
             <Field label="No. HP">
-              <Input name="phone" defaultValue={user.phone ?? ''} placeholder="08xxxxxxxxxx" />
+              <Input name="phone" defaultValue={phoneLocal(user.phone)} placeholder="08xxxxxxxxxx" />
             </Field>
             <Field label="Email">
               <Input name="email" type="email" defaultValue={user.email ?? ''} />
@@ -311,7 +312,7 @@ export default function ProfilePage() {
               <Input name="empEmail" type="email" defaultValue={employee.email ?? ''} />
             </Field>
             <Field label="No. HP Pegawai">
-              <Input name="empPhone" defaultValue={employee.phone ?? ''} placeholder="08xxxxxxxxxx" />
+              <Input name="empPhone" defaultValue={phoneLocal(employee.phone)} placeholder="08xxxxxxxxxx" />
             </Field>
             <Field label="Alamat">
               <Textarea name="empAddress" rows={3} defaultValue={employee.address ?? ''} />

@@ -28,6 +28,7 @@ import {
   type School,
   type SemesterView,
   type StudentInvoice,
+  phoneLocal,
 } from '@/lib/api';
 
 const STD_FULL: Record<string, string> = {
@@ -914,7 +915,7 @@ export default function LaporanPage() {
                               ) : '—'}
                             </td>
                             <td className={`${td} text-xs opacity-70`}>{i.class?.name ?? '—'}</td>
-                            <td className={`${td} text-xs`}>{i.student?.parent?.phone ?? '—'}</td>
+                            <td className={`${td} text-xs`}>{phoneLocal(i.student?.parent?.phone) || '—'}</td>
                             <td className={`${td} max-w-64 truncate`} title={i.title}>{i.title}</td>
                             <td className={`${td} whitespace-nowrap text-xs opacity-70`}>{i.dueAt ? i.dueAt.slice(0, 10) : '—'}</td>
                             <td className={`${tdr} font-medium text-amber-600`}>{rupiah(i.remaining)}</td>

@@ -21,6 +21,7 @@ const GROUPS: { label: string; match: string[] }[] = [
   { label: 'Kepegawaian', match: ['employee.'] },
   { label: 'Akademik', match: ['academic.', 'school.academic-year.'] },
   { label: 'Tata Usaha', match: ['tatausaha.'] },
+  { label: 'Sarpras', match: ['sarpras.'] },
   { label: 'Keuangan & Payroll', match: ['finance.', 'payroll.'] },
   { label: 'Sekolah', match: ['school.school.'] },
   { label: 'Pengguna & Role', match: ['identity.'] },

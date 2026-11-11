@@ -21,6 +21,7 @@ import {
   listWaMessages,
   retryWaMessage,
   updateWaSettings,
+  phoneLocal,
 } from '@/lib/api';
 
 import { RowBtn, rowActionClasses } from '@/components/row-btn';
@@ -279,7 +280,7 @@ export default function WhatsappSettingsPage() {
                   {WA_MESSAGE_TYPE_LABELS[m.type] ?? m.type}
                 </td>
                 <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-sand-700">
-                  {m.phone}
+                  {phoneLocal(m.phone)}
                 </td>
                 <td className="max-w-56 px-4 py-3 text-xs text-sand-600">
                   <p className="line-clamp-2" title={m.message}>

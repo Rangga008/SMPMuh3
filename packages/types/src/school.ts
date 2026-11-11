@@ -139,6 +139,8 @@ export interface StudentDto {
   id: string;
   nis?: string | undefined;
   nisn?: string | undefined;
+  /** NIK — dari pendaftaran/import; diisi TU bila belum ada. */
+  nik?: string | undefined;
   name: string;
   gender?: Gender | undefined;
   birthPlace?: string | undefined;

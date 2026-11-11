@@ -24,8 +24,14 @@ import {
   CollectionDto,
   ExamRoomDto,
   ExamSeatDto,
+  PrasaranaDto,
+  PrasaranaUpdateDto,
   QuestionDto,
   ReviewDto,
+  SaranaItemDto,
+  SaranaItemUpdateDto,
+  SaranaTypeDto,
+  SaranaTypeUpdateDto,
   SaveAnswersDto,
   SaveAttendanceDto,
   ScheduleBlockDto,
@@ -143,14 +149,17 @@ export class OpsController {
 
   // ---- Absen siswa harian ----
   @Get('attendance/my-today')
+  @RequirePermission(PERMISSIONS.ATTENDANCE_READ)
   myToday(@CurrentUser() u: AuthUser, @Query('date') date?: string) {
     return this.ops.teacherToday(u.id, date);
   }
   @Get('attendance/class')
+  @RequirePermission(PERMISSIONS.ATTENDANCE_READ)
   classAttendance(@Query('classId') c: string, @Query('date') d: string) {
     return this.ops.classAttendance(c, d);
   }
   @Post('attendance')
+  @RequirePermission(PERMISSIONS.ATTENDANCE_MANAGE)
   saveAttendance(@Body() dto: SaveAttendanceDto, @CurrentUser() u: AuthUser) {
     return this.ops.saveAttendance(dto, u.id);
   }
@@ -405,6 +414,62 @@ export class OpsController {
     res.setHeader('Cache-Control', 'public, max-age=300');
     res.send(f.buf);
   }
+
+  // ---- Sarpras: jenis sarana, sarana, prasarana ----
+  @Get('sarana-types')
+  @RequirePermission(PERMISSIONS.SARPRAS_READ)
+  saranaTypes() { return this.ops.saranaTypes(); }
+  @Post('sarana-types')
+  @RequirePermission(PERMISSIONS.SARPRAS_MANAGE)
+  createSaranaType(@Body() dto: SaranaTypeDto) { return this.ops.createSaranaType(dto); }
+  @Patch('sarana-types/:id')
+  @RequirePermission(PERMISSIONS.SARPRAS_MANAGE)
+  updateSaranaType(@Param('id') id: string, @Body() dto: SaranaTypeUpdateDto) { return this.ops.updateSaranaType(id, dto); }
+  @Delete('sarana-types/:id')
+  @RequirePermission(PERMISSIONS.SARPRAS_MANAGE)
+  deleteSaranaType(@Param('id') id: string) { return this.ops.deleteSaranaType(id); }
+
+  @Get('saranas')
+  @RequirePermission(PERMISSIONS.SARPRAS_READ)
+  saranas() { return this.ops.saranas(); }
+  @Get('saranas.xlsx')
+  @RequirePermission(PERMISSIONS.SARPRAS_READ)
+  async saranasXlsx(@Res() res: Response) {
+    const buf = await this.ops.saranaXlsx();
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', "attachment; filename*=UTF-8''sarana.xlsx");
+    res.send(buf);
+  }
+  @Post('saranas')
+  @RequirePermission(PERMISSIONS.SARPRAS_MANAGE)
+  createSarana(@Body() dto: SaranaItemDto) { return this.ops.createSarana(dto); }
+  @Patch('saranas/:id')
+  @RequirePermission(PERMISSIONS.SARPRAS_MANAGE)
+  updateSarana(@Param('id') id: string, @Body() dto: SaranaItemUpdateDto) { return this.ops.updateSarana(id, dto); }
+  @Delete('saranas/:id')
+  @RequirePermission(PERMISSIONS.SARPRAS_MANAGE)
+  deleteSarana(@Param('id') id: string) { return this.ops.deleteSarana(id); }
+
+  @Get('prasaranas')
+  @RequirePermission(PERMISSIONS.SARPRAS_READ)
+  prasaranas() { return this.ops.prasaranas(); }
+  @Get('prasaranas.xlsx')
+  @RequirePermission(PERMISSIONS.SARPRAS_READ)
+  async prasaranasXlsx(@Res() res: Response) {
+    const buf = await this.ops.prasaranaXlsx();
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', "attachment; filename*=UTF-8''prasarana.xlsx");
+    res.send(buf);
+  }
+  @Post('prasaranas')
+  @RequirePermission(PERMISSIONS.SARPRAS_MANAGE)
+  createPrasarana(@Body() dto: PrasaranaDto) { return this.ops.createPrasarana(dto); }
+  @Patch('prasaranas/:id')
+  @RequirePermission(PERMISSIONS.SARPRAS_MANAGE)
+  updatePrasarana(@Param('id') id: string, @Body() dto: PrasaranaUpdateDto) { return this.ops.updatePrasarana(id, dto); }
+  @Delete('prasaranas/:id')
+  @RequirePermission(PERMISSIONS.SARPRAS_MANAGE)
+  deletePrasarana(@Param('id') id: string) { return this.ops.deletePrasarana(id); }
 
   // ---- Import Dapodik ----
   @Post('import/students')

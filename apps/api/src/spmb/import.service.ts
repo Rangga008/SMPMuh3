@@ -20,6 +20,8 @@ interface ImportRow {
   namaOrtu: string;
   noHp: string;
   emailOrtu?: string;
+  nisn?: string;
+  nik?: string;
   gelombang?: string;
 }
 
@@ -181,6 +183,8 @@ export class SpmbImportService {
               gender: row.jenisKelamin,
               birthDate: row.tanggalLahir,
               previousSchool: row.asalSekolah,
+              nisn: row.nisn ?? null,
+              nik: row.nik ?? null,
             },
           });
           await this.prisma.registration.create({
@@ -468,6 +472,8 @@ export class SpmbImportService {
     const hp = String(get('no_hp', 'no hp', 'phone', 'hp')).trim();
     const email = String(get('email_ortu', 'email')).trim();
     const gel = String(get('gelombang', 'wave')).trim();
+    const nisn = String(get('nisn')).trim();
+    const nik = String(get('nik')).trim();
 
     if (!nama) throw new BadRequestException('kolom nama kosong');
     const jenisKelamin =
@@ -499,6 +505,8 @@ export class SpmbImportService {
       noHp,
       ...(email ? { emailOrtu: email.toLowerCase() } : {}),
       ...(gel ? { gelombang: gel } : {}),
+      ...(nisn ? { nisn } : {}),
+      ...(nik ? { nik } : {}),
     };
   }
 

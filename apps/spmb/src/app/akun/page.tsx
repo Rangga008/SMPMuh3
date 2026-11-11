@@ -128,6 +128,7 @@ export default function AccountPage() {
         previousSchool: val('previousSchool'),
         birthPlace: val('birthPlace'),
         nisn: val('nisn'),
+        nik: val('nik'),
         address: val('address'),
       });
       e.currentTarget.reset();
@@ -509,6 +510,9 @@ export default function AccountPage() {
           </Field>
           <Field label="NISN (opsional)">
             <Input name="nisn" placeholder="10 digit" />
+          </Field>
+          <Field label="NIK (opsional)" hint="16 digit — dari KK/KIA; boleh diisi nanti.">
+            <Input name="nik" inputMode="numeric" maxLength={16} placeholder="16 digit" />
           </Field>
           <Field label="Alamat (opsional)">
             <Input name="address" placeholder="Alamat domisili" />

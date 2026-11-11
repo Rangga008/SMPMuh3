@@ -8,6 +8,7 @@ import { Prisma } from '@prisma/client';
 import * as XLSX from 'xlsx';
 import { PrismaService } from '../core/prisma/prisma.service';
 import { StorageService } from '../core/storage/storage.service';
+import { normalizePhone } from '../identity/users/users.service';
 import {
   AttendanceRowDto,
   CollectionDto,
@@ -910,11 +911,15 @@ export class OpsService {
     const FIELDS = [
       'previousSchool', 'healthNotes', 'fatherName', 'motherName',
       'parentOccupation', 'parentPhone', 'intelligenceNotes', 'leavingNotes', 'otherNotes',
+      'nik',
     ] as const;
     const data: Record<string, unknown> = {};
     for (const f of FIELDS) {
       const v = dto[f];
       if (v !== undefined) data[f] = typeof v === 'string' ? v || null : v;
+    }
+    if (typeof data.parentPhone === 'string' && data.parentPhone) {
+      data.parentPhone = normalizePhone(data.parentPhone as string);
     }
     if (dto.recordDetails !== undefined) data.recordDetails = dto.recordDetails;
     return this.prisma.student.update({ where: { id }, data: data as never });
@@ -957,8 +962,132 @@ export class OpsService {
     return { buf, mime, name: `pas-foto-${s.nis ?? s.id}.${s.photoKey.split('.').pop()}` };
   }
 
+  // ================= Sarpras — sarana & prasarana =================
+  saranaTypes() {
+    return this.prisma.saranaType.findMany({
+      orderBy: [{ sortOrder: 'asc' }, { label: 'asc' }],
+      include: { _count: { select: { items: true } } },
+    });
+  }
+  createSaranaType(dto: { label: string; code?: string; isActive?: boolean; sortOrder?: number }) {
+    const code = (dto.code || dto.label).trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'JENIS';
+    return this.prisma.saranaType.create({
+      data: { code, label: dto.label.trim(), isActive: dto.isActive ?? true, sortOrder: dto.sortOrder ?? 0 },
+    });
+  }
+  async updateSaranaType(id: string, dto: { label?: string; isActive?: boolean; sortOrder?: number }) {
+    const data: Record<string, unknown> = {};
+    if (dto.label !== undefined) data.label = dto.label.trim();
+    if (dto.isActive !== undefined) data.isActive = dto.isActive;
+    if (dto.sortOrder !== undefined) data.sortOrder = dto.sortOrder;
+    return this.prisma.saranaType.update({ where: { id }, data });
+  }
+  async deleteSaranaType(id: string) {
+    const n = await this.prisma.saranaItem.count({ where: { typeId: id } });
+    if (n > 0) throw new ConflictException(`Jenis masih dipakai ${n} sarana — nonaktifkan saja atau pindahkan dulu.`);
+    await this.prisma.saranaType.delete({ where: { id } });
+    return { deleted: true };
+  }
+
+  saranas() {
+    return this.prisma.saranaItem.findMany({
+      where: { isActive: true },
+      include: { type: true },
+      orderBy: [{ type: { sortOrder: 'asc' } }, { location: 'asc' }, { createdAt: 'asc' }],
+    });
+  }
+  createSarana(dto: { typeId: string; location?: string; ownership?: string; spec?: string; qty?: number; good?: number; bad?: number }) {
+    return this.prisma.saranaItem.create({
+      data: {
+        typeId: dto.typeId,
+        location: dto.location || null,
+        ownership: dto.ownership || null,
+        spec: dto.spec || null,
+        qty: dto.qty ?? 0,
+        good: dto.good ?? 0,
+        bad: dto.bad ?? 0,
+      },
+      include: { type: true },
+    });
+  }
+  updateSarana(id: string, dto: Partial<{ typeId: string; location: string; ownership: string; spec: string; qty: number; good: number; bad: number; isActive: boolean }>) {
+    const data: Record<string, unknown> = {};
+    for (const f of ['typeId', 'qty', 'good', 'bad', 'isActive'] as const) {
+      if (dto[f] !== undefined) data[f] = dto[f];
+    }
+    for (const f of ['location', 'ownership', 'spec'] as const) {
+      if (dto[f] !== undefined) data[f] = dto[f] || null;
+    }
+    return this.prisma.saranaItem.update({ where: { id }, data, include: { type: true } });
+  }
+  async deleteSarana(id: string) {
+    await this.prisma.saranaItem.update({ where: { id }, data: { isActive: false } });
+    return { deleted: true };
+  }
+
+  prasaranas() {
+    return this.prisma.prasarana.findMany({ where: { isActive: true }, orderBy: { name: 'asc' } });
+  }
+  createPrasarana(dto: { name: string; note?: string; length?: number; width?: number; ownership?: string }) {
+    return this.prisma.prasarana.create({
+      data: { name: dto.name.trim(), note: dto.note || null, length: dto.length ?? null, width: dto.width ?? null, ownership: dto.ownership || null },
+    });
+  }
+  updatePrasarana(id: string, dto: Partial<{ name: string; note: string; length: number; width: number; ownership: string; isActive: boolean }>) {
+    const data: Record<string, unknown> = {};
+    if (dto.name !== undefined) data.name = dto.name.trim();
+    for (const f of ['note', 'ownership'] as const) if (dto[f] !== undefined) data[f] = dto[f] || null;
+    for (const f of ['length', 'width'] as const) if (dto[f] !== undefined) data[f] = dto[f] ?? null;
+    if (dto.isActive !== undefined) data.isActive = dto.isActive;
+    return this.prisma.prasarana.update({ where: { id }, data });
+  }
+  async deletePrasarana(id: string) {
+    await this.prisma.prasarana.update({ where: { id }, data: { isActive: false } });
+    return { deleted: true };
+  }
+
+  /** Ekspor Excel format Dapodik — header sekolah + tabel sarana/prasarana. */
+  private async schoolHead() {
+    const s = await this.prisma.school.findFirst();
+    return { name: (s?.name ?? 'SMP Muhammadiyah 3').toUpperCase(), address: s?.address ?? '' };
+  }
+  async saranaXlsx() {
+    const head = await this.schoolHead();
+    const rows = await this.prisma.saranaItem.findMany({
+      where: { isActive: true }, include: { type: true },
+      orderBy: [{ type: { sortOrder: 'asc' } }, { location: 'asc' }],
+    });
+    const data: (string | number)[][] = [
+      ['Sarana'], [head.name], [head.address], [`Tanggal Unduh: ${new Date().toLocaleString('id-ID')}`], [],
+      ['No', 'Jenis Sarana', 'Letak', 'Kepemilikan', 'Spesifikasi', 'Jumlah', 'Laik', 'Tidak Laik'],
+      ...rows.map((r, i) => [i + 1, r.type.label, r.location ?? '', r.ownership ?? '', r.spec ?? '', r.qty, r.good, r.bad]),
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    ws['!cols'] = [{ wch: 5 }, { wch: 24 }, { wch: 18 }, { wch: 14 }, { wch: 30 }, { wch: 9 }, { wch: 9 }, { wch: 10 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Sarana');
+    return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+  }
+  async prasaranaXlsx() {
+    const head = await this.schoolHead();
+    const rows = await this.prisma.prasarana.findMany({ where: { isActive: true }, orderBy: { name: 'asc' } });
+    const data: (string | number)[][] = [
+      ['Prasarana'], [head.name], [head.address], [`Tanggal Unduh: ${new Date().toLocaleString('id-ID')}`], [],
+      ['No', 'Nama Prasarana', 'Keterangan', 'Panjang', 'Lebar', 'Status Kepemilikan'],
+      ...rows.map((r, i) => [i + 1, r.name, r.note ?? '', r.length ?? '', r.width ?? '', r.ownership ?? '']),
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    ws['!cols'] = [{ wch: 5 }, { wch: 26 }, { wch: 34 }, { wch: 10 }, { wch: 10 }, { wch: 18 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Prasarana');
+    return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+  }
+
   // ================= Import Dapodik =================
-  /** Import siswa — kolom: nama, nis, nisn, kelas, gender, tempat_lahir, tanggal_lahir, alamat, nama_ayah, nama_ibu, hp_ortu, sekolah_asal. */
+  /** Import siswa — kolom: nama, nis, nisn, nik, kelas, gender, tempat_lahir,
+   *  tanggal_lahir, alamat, nama_ayah (atau nama_ortu), nama_ibu, hp_ortu,
+   *  sekolah_asal. HP ortu disimpan canonical (62…) dan bila cocok dengan
+   *  akun ortu yang sudah ada, siswa otomatis tertaut (parentId). */
   async importStudents(buffer: Buffer, academicYearId: string, classMap: Record<string, string>, dry = false) {
     const wb = XLSX.read(buffer, { type: 'buffer' });
     const sheet = wb.Sheets[wb.SheetNames[0]!]!;
@@ -971,6 +1100,7 @@ export class OpsService {
       if (!name) { results.push({ row: rowNo, name: `baris ${rowNo}`, ok: false, msg: 'Nama kosong' }); continue; }
       const nis = String(r['nis'] ?? '').trim() || null;
       const nisn = String(r['nisn'] ?? '').trim() || null;
+      const nik = String(r['nik'] ?? '').trim() || null;
       try {
         if (nis && (await this.prisma.student.findUnique({ where: { nis } }))) {
           results.push({ row: rowNo, name, ok: false, msg: `NIS ${nis} sudah ada` }); continue;
@@ -984,17 +1114,26 @@ export class OpsService {
           results.push({ row: rowNo, name, ok: true, msg: classId ? `Akan masuk ${className}` : 'Akan dibuat (kelas tak dikenal)' });
           continue;
         }
+        const hpRaw = String(r['hp_ortu'] ?? r['no_hp'] ?? r['phone'] ?? '').trim();
+        const hp = hpRaw ? normalizePhone(hpRaw) : '';
+        // Tautkan akun ortu yang sudah ada (mis. dari pendaftaran SPMB) by HP.
+        const parent = hp
+          ? await this.prisma.user.findUnique({ where: { phone: hp }, select: { id: true } })
+          : null;
         const student = await this.prisma.student.create({
           data: {
-            name, nis, nisn,
+            name, nis, nisn, nik,
             gender: String(r['gender'] ?? r['jk'] ?? '').toUpperCase().startsWith('P') ? 'FEMALE' : String(r['gender'] ?? r['jk'] ?? '') ? 'MALE' : null,
             birthPlace: String(r['tempat_lahir'] ?? '').trim() || null,
             birthDate: r['tanggal_lahir'] ? toDateOnly(String(r['tanggal_lahir'])) : null,
             address: String(r['alamat'] ?? '').trim() || null,
             previousSchool: String(r['sekolah_asal'] ?? '').trim() || null,
-            fatherName: String(r['nama_ayah'] ?? '').trim() || null,
+            fatherName:
+              String(r['nama_ayah'] ?? '').trim() ||
+              String(r['nama_ortu'] ?? r['nama_orang_tua'] ?? '').trim() || null,
             motherName: String(r['nama_ibu'] ?? '').trim() || null,
-            parentPhone: String(r['hp_ortu'] ?? '').trim() || null,
+            parentPhone: hp || null,
+            parentId: parent?.id ?? null,
           },
         });
         if (classId) {

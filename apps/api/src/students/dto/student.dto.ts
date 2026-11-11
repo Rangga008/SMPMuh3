@@ -39,6 +39,10 @@ export class CreateStudentDto {
   nisn?: string;
 
   @IsOptional()
+  @Matches(/^\d{16}$/, { message: 'nik harus 16 digit' })
+  nik?: string;
+
+  @IsOptional()
   @IsIn(['MALE', 'FEMALE'])
   gender?: Gender;
 
@@ -59,6 +63,17 @@ export class CreateStudentDto {
   @IsOptional()
   @IsUUID()
   parentId?: string;
+
+  /** Nama orang tua/wali — dibuatkan akun ortu bila diisi bersama parentPhone. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  parentName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  parentPhone?: string;
 
   /** Allow creation despite duplicate-name warnings. */
   @IsOptional()
@@ -81,6 +96,10 @@ export class UpdateStudentDto {
   @IsOptional()
   @Matches(/^\d{10}$/, { message: 'nisn must be 10 digits' })
   nisn?: string;
+
+  @IsOptional()
+  @Matches(/^\d{16}$/, { message: 'nik harus 16 digit' })
+  nik?: string;
 
   @IsOptional()
   @IsIn(['MALE', 'FEMALE'])

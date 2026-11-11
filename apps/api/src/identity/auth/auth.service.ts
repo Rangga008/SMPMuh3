@@ -296,7 +296,7 @@ export class AuthService {
       where: { userId },
       data: {
         ...(dto.email !== undefined ? { email: dto.email || null } : {}),
-        ...(dto.phone !== undefined ? { phone: dto.phone || null } : {}),
+        ...(dto.phone !== undefined ? { phone: dto.phone ? normalizePhone(dto.phone) : null } : {}),
         ...(dto.address !== undefined ? { address: dto.address || null } : {}),
       },
     });

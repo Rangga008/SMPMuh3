@@ -6,7 +6,7 @@ import { Badge } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { DataTable } from '@/components/data-table';
 import { PageTitle, Widget } from '@/components/widgets';
-import { getMyDepartment, type EmployeeDto } from '@/lib/api';
+import { getMyDepartment, phoneLocal, type EmployeeDto } from '@/lib/api';
 
 const DEPT_LABELS: Record<string, string> = {
   KURIKULUM: 'Kurikulum',
@@ -51,7 +51,7 @@ export default function BidangPage() {
                 </td>
                 <td className="px-5 py-2.5">{m.nip ?? '—'}</td>
                 <td className="px-5 py-2.5">{m.staffKind ? m.staffKind : m.type === 'TEACHER' ? 'Guru' : 'Tendik'}</td>
-                <td className="px-5 py-2.5">{m.phone ?? m.email ?? '—'}</td>
+                <td className="px-5 py-2.5">{phoneLocal(m.phone) || m.email || '—'}</td>
                 <td className="px-5 py-2.5">{m.isDeptHead ? <Badge tone="primary">Kepala Bidang</Badge> : '—'}</td>
               </tr>
             ))}

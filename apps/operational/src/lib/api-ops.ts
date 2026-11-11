@@ -240,3 +240,45 @@ export const updateArchive = (id: string, dto: { title?: string; categoryId?: st
   return req<ArchiveItemView>(`/ops/archives/${id}`, { method: 'PATCH', body: fd });
 };
 export const deleteArchive = (id: string) => req(`/ops/archives/${id}`, { method: 'DELETE' });
+
+// ---- Sarpras: jenis sarana, sarana, prasarana ----
+export interface SaranaType {
+  id: string; code: string; label: string;
+  isActive: boolean; sortOrder: number;
+  _count?: { items: number };
+}
+export interface SaranaItem {
+  id: string; typeId: string; location?: string | null;
+  ownership?: string | null; spec?: string | null;
+  qty: number; good: number; bad: number; isActive: boolean;
+  type: SaranaType;
+}
+export interface Prasarana {
+  id: string; name: string; note?: string | null;
+  length?: number | null; width?: number | null;
+  ownership?: string | null; isActive: boolean;
+}
+
+export const listSaranaTypes = () => req<SaranaType[]>('/ops/sarana-types');
+export const createSaranaType = (dto: { code?: string | undefined; label: string; sortOrder?: number | undefined }) =>
+  req<SaranaType>('/ops/sarana-types', { method: 'POST', json: dto });
+export const updateSaranaType = (id: string, dto: { label?: string | undefined; sortOrder?: number | undefined; isActive?: boolean | undefined }) =>
+  req<SaranaType>(`/ops/sarana-types/${id}`, { method: 'PATCH', json: dto });
+export const deleteSaranaType = (id: string) =>
+  req(`/ops/sarana-types/${id}`, { method: 'DELETE' });
+
+export const listSaranas = () => req<SaranaItem[]>('/ops/saranas');
+export const createSarana = (dto: { typeId: string; location?: string | undefined; ownership?: string | undefined; spec?: string | undefined; qty?: number | undefined; good?: number | undefined; bad?: number | undefined }) =>
+  req<SaranaItem>('/ops/saranas', { method: 'POST', json: dto });
+export const updateSarana = (id: string, dto: Partial<{ typeId: string; location: string | null | undefined; ownership: string | null | undefined; spec: string | null | undefined; qty: number; good: number; bad: number; isActive: boolean }>) =>
+  req<SaranaItem>(`/ops/saranas/${id}`, { method: 'PATCH', json: dto });
+export const deleteSarana = (id: string) => req(`/ops/saranas/${id}`, { method: 'DELETE' });
+export const saranaXlsxUrl = '/api/v1/ops/saranas.xlsx';
+
+export const listPrasaranas = () => req<Prasarana[]>('/ops/prasaranas');
+export const createPrasarana = (dto: { name: string; note?: string | undefined; length?: number | undefined; width?: number | undefined; ownership?: string | undefined }) =>
+  req<Prasarana>('/ops/prasaranas', { method: 'POST', json: dto });
+export const updatePrasarana = (id: string, dto: Partial<{ name: string; note: string | null | undefined; length: number | null | undefined; width: number | null | undefined; ownership: string | null | undefined; isActive: boolean }>) =>
+  req<Prasarana>(`/ops/prasaranas/${id}`, { method: 'PATCH', json: dto });
+export const deletePrasarana = (id: string) => req(`/ops/prasaranas/${id}`, { method: 'DELETE' });
+export const prasaranaXlsxUrl = '/api/v1/ops/prasaranas.xlsx';

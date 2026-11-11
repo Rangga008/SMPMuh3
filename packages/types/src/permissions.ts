@@ -35,6 +35,8 @@ export const PERMISSIONS = {
   TATAUSAHA_MANAGE: 'tatausaha.manage',
   PAYROLL_READ: 'payroll.read',
   PAYROLL_MANAGE: 'payroll.manage',
+  SARPRAS_READ: 'sarpras.read',
+  SARPRAS_MANAGE: 'sarpras.manage',
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];

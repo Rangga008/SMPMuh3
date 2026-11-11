@@ -93,13 +93,16 @@ export default function StudentsPage() {
     setBusy(true);
     try {
       await createStudent({
-        name: val('name'),
+        name: String(f.get('name') ?? '').trim(),
         nis: val('nis'),
         nisn: val('nisn'),
+        nik: val('nik'),
         gender: val('gender'),
         birthPlace: val('birthPlace'),
         birthDate: val('birthDate'),
         address: val('address'),
+        parentName: val('parentName'),
+        parentPhone: val('parentPhone'),
       });
       e.currentTarget.reset();
       setShowForm(false);
@@ -155,6 +158,9 @@ export default function StudentsPage() {
             <Field label="NISN">
               <Input name="nisn" />
             </Field>
+            <Field label="NIK" hint="16 digit — boleh diisi nanti.">
+              <Input name="nik" inputMode="numeric" maxLength={16} />
+            </Field>
             <Field label="Jenis Kelamin">
               <Select name="gender" defaultValue="">
                 <option value="">Pilih…</option>
@@ -170,6 +176,12 @@ export default function StudentsPage() {
             </Field>
             <Field label="Alamat">
               <Input name="address" />
+            </Field>
+            <Field label="Nama Orang Tua/Wali" hint="Sama seperti nama ortu di pendaftaran.">
+              <Input name="parentName" />
+            </Field>
+            <Field label="No. HP Orang Tua" hint="Bila cocok dengan akun ortu, siswa otomatis tertaut.">
+              <Input name="parentPhone" inputMode="tel" placeholder="08…" />
             </Field>
             <div className="sm:col-span-2">
               <Button type="submit" disabled={busy}>
@@ -230,9 +242,10 @@ export default function StudentsPage() {
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <p className="font-bold">Sebelum import, pastikan:</p>
           <ul className="mt-1 list-disc pl-5">
-            <li>Kolom file: <b>nama, nis, nisn, jk/gender, tempat_lahir, tanggal_lahir, alamat, sekolah_asal, nama_ayah, nama_ibu, hp_ortu, kelas</b>.</li>
+            <li>Kolom file: <b>nama, nis, nisn, nik, jk/gender, tempat_lahir, tanggal_lahir, alamat, sekolah_asal, nama_ayah (atau nama_ortu), nama_ibu, hp_ortu, kelas</b>.</li>
             <li>NIS/NISN yang sudah terdata <b>dilewati</b> — tidak dibuat dobel.</li>
             <li>Kolom <b>kelas</b> mencocokkan nama rombel tahun ajaran aktif (mis. 7A).</li>
+            <li>No. HP ortu yang cocok dengan akun ortu SPMB otomatis <b>menautkan</b> siswa ke akun itu.</li>
           </ul>
         </div>
         <div className="mt-4">

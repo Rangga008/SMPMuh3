@@ -17,6 +17,7 @@ import {
   type AcademicYear,
   type ParentAccount,
   type ParentAccountDetail,
+  phoneLocal,
 } from '@/lib/api';
 import type { WaveDto } from '@smpmuh3/types';
 
@@ -72,7 +73,7 @@ export default function AkunOrtuPage() {
     setEditing(p);
     setForm({
       name: p.name,
-      phone: p.phone ?? '',
+      phone: phoneLocal(p.phone),
       email: p.email ?? '',
       status: p.status,
     });
@@ -101,7 +102,7 @@ export default function AkunOrtuPage() {
   const remove = async (p: ParentAccount) => {
     if (
       !(await confirm(
-        `Hapus akun ${p.name} (${p.phone ?? p.email ?? '-'})?\nSeluruh calon murid & pendaftarannya ikut terhapus.`,
+        `Hapus akun ${p.name} (${phoneLocal(p.phone) || p.email || '-'})?\nSeluruh calon murid & pendaftarannya ikut terhapus.`,
       ))
     ) {
       return;
@@ -191,7 +192,7 @@ export default function AkunOrtuPage() {
           <tr key={p.id} className="border-t border-sand-200">
             <td className="px-4 py-3 font-semibold text-sand-800">{p.name}</td>
             <td className="px-4 py-3 text-sand-600">
-              <div>{p.phone ?? '—'}</div>
+              <div>{phoneLocal(p.phone) || '—'}</div>
               {p.email ? <div className="text-xs text-sand-400">{p.email}</div> : null}
             </td>
             <td className="px-4 py-3 text-sand-600">
@@ -236,7 +237,7 @@ export default function AkunOrtuPage() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1 text-sm">
               <p className="text-sand-500">Kontak</p>
-              <p className="font-medium text-sand-800">{detail.phone ?? '—'}</p>
+              <p className="font-medium text-sand-800">{phoneLocal(detail.phone) || '—'}</p>
               <p className="text-sand-600">{detail.email ?? 'Tidak ada email'}</p>
               <p className="text-xs text-sand-400">
                 Terdaftar {new Date(detail.createdAt).toLocaleDateString('id-ID')}

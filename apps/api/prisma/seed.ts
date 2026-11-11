@@ -38,6 +38,8 @@ const PERMISSION_DESCRIPTIONS: Record<string, string> = {
   [PERMISSIONS.TATAUSAHA_MANAGE]: 'Manage tata usaha records',
   [PERMISSIONS.PAYROLL_READ]: 'View payroll data',
   [PERMISSIONS.PAYROLL_MANAGE]: 'Manage payroll (runs, components, loans)',
+  [PERMISSIONS.SARPRAS_READ]: 'View sarana & prasarana (facilities)',
+  [PERMISSIONS.SARPRAS_MANAGE]: 'Manage sarana & prasarana (facilities)',
 };
 
 const ROLES: Record<string, { name: string; description: string; permissionKeys: string[] | 'all' }> = {
@@ -86,16 +88,17 @@ const ROLES: Record<string, { name: string; description: string; permissionKeys:
   },
   staff_kurikulum: {
     name: 'Staf Kurikulum / Wakasek',
-    description: 'Curriculum staff — schedules, assessments, teacher docs, collections',
+    description: 'Curriculum staff — schedules, shifts, assessments, employee attendance',
     permissionKeys: [
       PERMISSIONS.STUDENT_READ,
       PERMISSIONS.EMPLOYEE_READ,
-      PERMISSIONS.EMPLOYEE_MANAGE,
       PERMISSIONS.ACADEMIC_READ,
       PERMISSIONS.ACADEMIC_MANAGE,
       PERMISSIONS.ACADEMIC_YEAR_READ,
       PERMISSIONS.ATTENDANCE_READ,
       PERMISSIONS.ATTENDANCE_MANAGE,
+      PERMISSIONS.TATAUSAHA_READ,
+      PERMISSIONS.TATAUSAHA_MANAGE,
       PERMISSIONS.NOTIFICATION_READ,
     ],
   },
@@ -127,6 +130,8 @@ const ROLES: Record<string, { name: string; description: string; permissionKeys:
       PERMISSIONS.EMPLOYEE_MANAGE,
       PERMISSIONS.TATAUSAHA_READ,
       PERMISSIONS.TATAUSAHA_MANAGE,
+      PERMISSIONS.SARPRAS_READ,
+      PERMISSIONS.SARPRAS_MANAGE,
       PERMISSIONS.ACADEMIC_READ,
       PERMISSIONS.ACADEMIC_YEAR_READ,
       PERMISSIONS.ATTENDANCE_READ,
@@ -161,6 +166,8 @@ const ROLES: Record<string, { name: string; description: string; permissionKeys:
       PERMISSIONS.EMPLOYEE_MANAGE,
       PERMISSIONS.TATAUSAHA_READ,
       PERMISSIONS.TATAUSAHA_MANAGE,
+      PERMISSIONS.SARPRAS_READ,
+      PERMISSIONS.SARPRAS_MANAGE,
       PERMISSIONS.ACADEMIC_READ,
       PERMISSIONS.ACADEMIC_YEAR_READ,
       PERMISSIONS.ATTENDANCE_READ,
@@ -168,16 +175,21 @@ const ROLES: Record<string, { name: string; description: string; permissionKeys:
       PERMISSIONS.NOTIFICATION_READ,
     ],
   },
-  staff_laysus: {
-    name: 'Staf Laysus',
-    description: 'Layanan khusus — kebersihan, keamanan/satpam; pantau GTK & absensi pegawai',
+  staff_sarpras: {
+    name: 'Staf Sarpras',
+    description: 'Sarana & prasarana — inventaris fasilitas, ruang, dan aset sekolah',
     permissionKeys: [
-      PERMISSIONS.EMPLOYEE_READ,
+      PERMISSIONS.SARPRAS_READ,
+      PERMISSIONS.SARPRAS_MANAGE,
       PERMISSIONS.ACADEMIC_READ,
       PERMISSIONS.ACADEMIC_YEAR_READ,
-      PERMISSIONS.TATAUSAHA_READ,
       PERMISSIONS.NOTIFICATION_READ,
     ],
+  },
+  staff_laysus: {
+    name: 'Staf Laysus',
+    description: 'Layanan khusus — kebersihan, keamanan/satpam; absen mandiri via Absen Saya',
+    permissionKeys: [PERMISSIONS.NOTIFICATION_READ],
   },
   bendahara: {
     name: 'Bendahara',
@@ -388,6 +400,8 @@ async function main() {
       gtk: { type: 'TENDIK', staffKind: 'TU', additionalDuty: 'KEPALA_TU' } },
     { email: 'laysus@smpmuh3.sch.id', name: 'Kepala Laysus', role: 'staff_laysus', dept: 'LAYSUS', isHead: true,
       gtk: { type: 'TENDIK', staffKind: 'LAYSUS' } },
+    { email: 'sarpras@smpmuh3.sch.id', name: 'Kepala Sarpras', role: 'staff_sarpras', dept: 'SARPRAS', isHead: true,
+      gtk: { type: 'TENDIK', staffKind: 'SARPRAS' } },
     { email: 'bendahara@smpmuh3.sch.id', name: 'Bendahara', role: 'bendahara', dept: 'KEUANGAN', isHead: true,
       gtk: { type: 'TENDIK', staffKind: 'TU', additionalDuty: 'BENDAHARA_BOS' } },
   ];
@@ -422,6 +436,21 @@ async function main() {
     }
     console.log(`Dept account ensured: ${acc.email} (${acc.role})`);
   }
+
+  // Jenis sarana bawaan — dikelola Sarpras via menu Sarpras → Jenis Sarana.
+  const saranaTypes = [
+    'Meja Siswa', 'Kursi Siswa', 'Meja Guru', 'Kursi Guru',
+    'Papan Tulis', 'Lemari', 'Komputer', 'Proyektor', 'Sound System',
+  ];
+  for (const [i, label] of saranaTypes.entries()) {
+    const code = label.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    await prisma.saranaType.upsert({
+      where: { code },
+      update: {},
+      create: { code, label, sortOrder: i + 1 },
+    });
+  }
+  console.log('Sarana types ensured.');
 
   // Profil sekolah — satu baris, dikelola admin via Pengaturan → Profil & Kontak.
   const school = await prisma.school.findFirst();

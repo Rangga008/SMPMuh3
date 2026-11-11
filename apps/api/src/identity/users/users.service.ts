@@ -61,7 +61,7 @@ export class UsersService {
       data: {
         name: input.name,
         email: input.email ?? null,
-        phone: input.phone ?? null,
+        phone: input.phone ? normalizePhone(input.phone) : null,
         passwordHash: input.passwordHash,
         roles: { create: { roleId: role.id } },
       },
@@ -138,7 +138,7 @@ export class UsersService {
       where: { id },
       data: {
         ...(data.name !== undefined ? { name: data.name } : {}),
-        ...(data.phone !== undefined ? { phone: data.phone } : {}),
+        ...(data.phone !== undefined ? { phone: data.phone ? normalizePhone(data.phone) : null } : {}),
         ...(data.email !== undefined ? { email: data.email } : {}),
         ...(data.status !== undefined ? { status: data.status } : {}),
       },
@@ -188,7 +188,7 @@ export class UsersService {
       data: {
         name: input.name,
         email: input.email ?? null,
-        phone: input.phone ?? null,
+        phone: input.phone ? normalizePhone(input.phone) : null,
         passwordHash: input.passwordHash,
         roles: { create: input.roleIds.map((roleId) => ({ roleId })) },
       },

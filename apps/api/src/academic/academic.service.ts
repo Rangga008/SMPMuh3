@@ -492,7 +492,7 @@ export class AcademicService {
         staffKind,
         additionalDuty,
         email: dto.email ?? null,
-        phone: dto.phone ?? null,
+        phone: dto.phone ? normalizePhone(dto.phone) : null,
         department:
           maps.dutyToDept[additionalDuty ?? ''] ??
           dto.department ??
@@ -539,7 +539,7 @@ export class AcademicService {
         name: dto.name.trim(),
         nip: dto.nip ?? null,
         email: dto.email ?? null,
-        phone: dto.phone ?? null,
+        phone: dto.phone ? normalizePhone(dto.phone) : null,
         type,
         staffKind,
         additionalDuty,

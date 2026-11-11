@@ -30,6 +30,7 @@ import {
   viewDocument,
   verifyPayment,
   type AdminRegistrationDetail,
+  phoneLocal,
 } from '@/lib/api';
 import type { FormQuestionDto } from '@smpmuh3/types';
 
@@ -320,7 +321,7 @@ export default function AdminRegistrationPage() {
                   ['Asal Sekolah', reg.candidate.previousSchool ?? '—'],
                   ['Alamat', reg.candidate.address ?? '—'],
                   ['Diskon DSP', reg.discountPercent ? `${reg.discountPercent}%` : '—'],
-                  ['Orang Tua', `${reg.parent.name} (${reg.parent.phone ?? reg.parent.email ?? '—'})`],
+                  ['Orang Tua', `${reg.parent.name} (${phoneLocal(reg.parent.phone) || reg.parent.email || '—'})`],
                   [
                     'Psikotes (per gelombang)',
                     reg.wave?.psikotesAt

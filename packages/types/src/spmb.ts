@@ -275,6 +275,8 @@ export interface CandidateDto {
   birthPlace?: string | undefined;
   birthDate?: string | undefined;
   nisn?: string | undefined;
+  /** NIK calon murid — ikut ke data siswa saat diterima. */
+  nik?: string | undefined;
   previousSchool?: string | undefined;
   address?: string | undefined;
   tkaScore?: number | undefined;

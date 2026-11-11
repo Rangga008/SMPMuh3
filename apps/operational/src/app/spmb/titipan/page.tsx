@@ -27,6 +27,7 @@ import {
   type AcademicYear,
   type TitipanAdmin,
   type TitipanSummary,
+  phoneLocal,
 } from '@/lib/api';
 import type { WaveDto } from '@smpmuh3/types';
 
@@ -160,7 +161,7 @@ export default function TitipanPage() {
   const fmtDate = (iso: string) =>
     new Date(iso).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
 
-  const phones = (e: TitipanAdmin) => e.guardianPhone ?? '—';
+  const phones = (e: TitipanAdmin) => phoneLocal(e.guardianPhone) || '—';
 
   return (
     <Shell>

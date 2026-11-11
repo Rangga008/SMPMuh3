@@ -12,6 +12,7 @@ import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../core/prisma/prisma.service';
 import { StorageService } from '../core/storage/storage.service';
 import { WhatsappService } from '../spmb/whatsapp.service';
+import { normalizePhone } from '../identity/users/users.service';
 import type {
   AchievementDto,
   CreateStudentDto,
@@ -26,6 +27,7 @@ const studentSelect = {
   id: true,
   nis: true,
   nisn: true,
+  nik: true,
   name: true,
   gender: true,
   birthPlace: true,
@@ -59,6 +61,7 @@ export class StudentsService {
         { name: { contains: q.search, mode: 'insensitive' } },
         { nis: { contains: q.search } },
         { nisn: { contains: q.search } },
+        { nik: { contains: q.search } },
       ];
     }
     if (q.classId) {
@@ -156,8 +159,13 @@ export class StudentsService {
         );
       }
     }
+    const data = this.toData(dto);
+    // Nama/HP ortu diisi → buat/tautkan akun ortu (sama seperti update()).
+    if (!dto.parentId && (dto.parentName || dto.parentPhone)) {
+      data.parentId = await this.resolveParentId(dto);
+    }
     const student = await this.prisma.student.create({
-      data: this.toData(dto),
+      data,
       select: studentSelect,
     });
     await this.audit.log({
@@ -499,9 +507,48 @@ export class StudentsService {
    * - HP cocok akun lain → tautkan (ortu punya >1 anak)
    * - belum ada → buat akun ortu minimal (password acak — direset via WA)
    */
-  private async parentData(parentId: string | null, dto: UpdateStudentDto) {
+  /** Cari/buat akun ortu lalu kembalikan id-nya — dipakai saat create(). */
+  private async resolveParentId(
+    dto: Pick<CreateStudentDto, 'parentName' | 'parentPhone'>,
+  ): Promise<string | null> {
     const name = dto.parentName?.trim() || undefined;
-    const phone = dto.parentPhone?.trim() || undefined;
+    const phone = dto.parentPhone?.trim()
+      ? normalizePhone(dto.parentPhone.trim())
+      : undefined;
+    if (!name && !phone) return null;
+    if (phone) {
+      const found = await this.prisma.user.findUnique({ where: { phone } });
+      if (found) {
+        if (name) {
+          await this.prisma.user.update({ where: { id: found.id }, data: { name } });
+        }
+        return found.id;
+      }
+    }
+    const parentRole = await this.prisma.role.findUnique({
+      where: { key: 'spmb_parent' },
+      select: { id: true },
+    });
+    const user = await this.prisma.user.create({
+      data: {
+        name: name ?? 'Orang Tua',
+        ...(phone !== undefined ? { phone } : {}),
+        passwordHash: await argon2.hash(randomBytes(24).toString('hex')),
+        ...(parentRole ? { roles: { create: { roleId: parentRole.id } } } : {}),
+      },
+      select: { id: true },
+    });
+    return user.id;
+  }
+
+  private async parentData(
+    parentId: string | null,
+    dto: Pick<UpdateStudentDto, 'parentName' | 'parentPhone'>,
+  ) {
+    const name = dto.parentName?.trim() || undefined;
+    const phone = dto.parentPhone?.trim()
+      ? normalizePhone(dto.parentPhone.trim())
+      : undefined;
     if (!name && !phone) return undefined;
 
     if (parentId) {
@@ -771,6 +818,7 @@ export class StudentsService {
     if (dto.name !== undefined) data.name = dto.name.trim();
     if (dto.nis !== undefined) data.nis = dto.nis || null;
     if (dto.nisn !== undefined) data.nisn = dto.nisn || null;
+    if (dto.nik !== undefined) data.nik = dto.nik || null;
     if (dto.gender !== undefined) data.gender = dto.gender;
     if (dto.birthPlace !== undefined) data.birthPlace = dto.birthPlace || null;
     if (dto.birthDate !== undefined) {
@@ -778,14 +826,22 @@ export class StudentsService {
     }
     if (dto.address !== undefined) data.address = dto.address || null;
     if (dto.status !== undefined) data.status = dto.status;
+    // Nama/HP ortu juga tersalin ke kolom buku induk siswa — tetap sinkron.
+    if (dto.parentName !== undefined) data.fatherName = dto.parentName || null;
+    if (dto.parentPhone !== undefined) {
+      data.parentPhone = dto.parentPhone ? normalizePhone(dto.parentPhone) : null;
+    }
     return data;
   }
 
-  private toData(dto: CreateStudentDto) {
+  private toData(dto: CreateStudentDto): Prisma.StudentUncheckedCreateInput {
     return {
       name: dto.name.trim(),
       nis: dto.nis ?? null,
       nisn: dto.nisn ?? null,
+      nik: dto.nik ?? null,
+      fatherName: dto.parentName ?? null,
+      parentPhone: dto.parentPhone ? normalizePhone(dto.parentPhone) : null,
       gender: dto.gender ?? null,
       birthPlace: dto.birthPlace ?? null,
       birthDate: dto.birthDate ? new Date(dto.birthDate) : null,

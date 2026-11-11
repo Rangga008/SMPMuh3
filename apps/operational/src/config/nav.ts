@@ -22,11 +22,10 @@ export interface NavItem {
 /** Role pengelola tiap bidang — admin & kepsek melihat semua. */
 const ADM = ['superadmin', 'ops_admin', 'kepala_sekolah'];
 const KESISWAAN_ROLES = [...ADM, 'staff_kesiswaan'];
-const TU_ROLES = [...ADM, 'kepala_tu', 'staff_tu'];
+const TU_ROLES = [...ADM, 'kepala_tu', 'staff_tu', 'staff_sarpras'];
 const KEUANGAN_ROLES = [...ADM, 'bendahara'];
 const KEPEGAWAIAN_ROLES = [...ADM, 'kepala_tu', 'staff_tu'];
 const SPMB_ROLES = [...ADM, 'spmb_admin'];
-const LAYSUS_ROLES = [...ADM, 'staff_laysus'];
 
 export const NAV: NavItem[] = [
   { key: 'dashboard', label: 'Dashboard', icon: '⌂', href: '/', enabled: true },
@@ -42,6 +41,7 @@ export const NAV: NavItem[] = [
     label: 'Absen Kelas',
     icon: '✅',
     href: '/absen-kelas',
+    permission: PERMISSIONS.ATTENDANCE_READ,
     enabled: true,
   },
   {
@@ -152,6 +152,14 @@ export const NAV: NavItem[] = [
         icon: '•',
         href: '/kurikulum/jadwal-kerja',
         permission: PERMISSIONS.ACADEMIC_READ,
+        enabled: true,
+      },
+      {
+        key: 'kurikulum-absensi-pegawai',
+        label: 'Absensi Pegawai',
+        icon: '•',
+        href: '/tata-usaha/absensi',
+        permission: PERMISSIONS.TATAUSAHA_READ,
         enabled: true,
       },
     ],
@@ -270,37 +278,20 @@ export const NAV: NavItem[] = [
         permission: PERMISSIONS.TATAUSAHA_READ,
         enabled: true,
       },
-    ],
-  },
-  {
-    key: 'laysus',
-    label: 'Laysus',
-    icon: '🧹',
-    roles: LAYSUS_ROLES,
-    enabled: true,
-    children: [
       {
-        key: 'laysus-absensi',
-        label: 'Absensi Pegawai',
+        key: 'tu-sarana',
+        label: 'Sarana',
         icon: '•',
-        href: '/tata-usaha/absensi',
-        permission: PERMISSIONS.TATAUSAHA_READ,
+        href: '/sarpras/sarana',
+        permission: PERMISSIONS.SARPRAS_READ,
         enabled: true,
       },
       {
-        key: 'laysus-jadwal',
-        label: 'Jadwal Kerja & Shift',
+        key: 'tu-prasarana',
+        label: 'Prasarana',
         icon: '•',
-        href: '/kurikulum/jadwal-kerja',
-        permission: PERMISSIONS.ACADEMIC_READ,
-        enabled: true,
-      },
-      {
-        key: 'laysus-gtk',
-        label: 'GTK',
-        icon: '•',
-        href: '/kepegawaian/tendik',
-        permission: PERMISSIONS.EMPLOYEE_READ,
+        href: '/sarpras/prasarana',
+        permission: PERMISSIONS.SARPRAS_READ,
         enabled: true,
       },
     ],
@@ -347,7 +338,6 @@ export const NAV: NavItem[] = [
     ],
     enabled: true,
   },
-  { key: 'sarpras', label: 'Sarpras', icon: '🏫', enabled: false },
   { key: 'cbt', label: 'CBT', icon: '🖥', enabled: false },
   {
     key: 'keuangan',
