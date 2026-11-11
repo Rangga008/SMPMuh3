@@ -1,5 +1,5 @@
 // ---- OPS (hasil rapat): jadwal, asesmen, absen siswa, dokumen, koleksi, pengajuan, arsip ----
-import { req, downloadFile, type AcademicYear, type ClassView } from './api';
+import { API, req, downloadFile, type AcademicYear, type ClassView } from './api';
 import type { StudentDto } from '@smpmuh3/types';
 
 const qs = (q: Record<string, string | undefined>) => {
@@ -188,9 +188,17 @@ export const getStudentRecord = (id: string) =>
     enrollments: { class?: { name: string; gradeLevel: number } | null; academicYear: { name: string } }[];
     achievements?: { id: string; title: string; level?: string | null; year?: number | null }[];
     ekskulMemberships?: { id: string; role?: string | null; extracurricular: { name: string; isActive: boolean } }[];
+    photoKey?: string | null;
   }>(`/ops/students/${id}/record`);
 export const updateStudentRecord = (id: string, dto: Record<string, unknown>) =>
   req(`/ops/students/${id}/record`, { method: 'PATCH', json: dto });
+
+export const uploadStudentPhoto = (id: string, file: File) => {
+  const fd = new FormData();
+  fd.set('file', file);
+  return req<{ photoKey: string }>(`/ops/students/${id}/photo`, { method: 'POST', body: fd });
+};
+export const studentPhotoUrl = (id: string) => `${API}/ops/students/${id}/photo`;
 
 export interface ImportResult {
   total: number; ok: number; failed: number;

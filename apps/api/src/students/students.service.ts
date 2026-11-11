@@ -66,7 +66,15 @@ export class StudentsService {
     }
     return this.prisma.student.findMany({
       where,
-      select: studentSelect,
+      select: {
+        ...studentSelect,
+        // Rombel terakhir — dipakai daftar Buku Induk TU & daftar siswa.
+        enrollments: {
+          take: 1,
+          orderBy: { createdAt: 'desc' },
+          select: { class: { select: { name: true } } },
+        },
+      },
       orderBy: { name: 'asc' },
       take: Math.min(q.take ?? 100, 500),
     });

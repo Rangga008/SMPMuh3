@@ -939,6 +939,24 @@ export class OpsService {
     return s;
   }
 
+  /** Pas foto siswa — disimpan di storage, kolom photo_key siswa diperbarui. */
+  async uploadStudentPhoto(id: string, file: Express.Multer.File) {
+    await this.prisma.student.findUniqueOrThrow({ where: { id } });
+    const ext = file.mimetype === 'image/png' ? 'png' : file.mimetype === 'image/webp' ? 'webp' : 'jpg';
+    const key = `students/${id}/photo.${ext}`;
+    await this.storage.putObject(key, file.buffer, file.mimetype);
+    await this.prisma.student.update({ where: { id }, data: { photoKey: key } });
+    return { photoKey: key };
+  }
+
+  async studentPhoto(id: string) {
+    const s = await this.prisma.student.findUniqueOrThrow({ where: { id } });
+    if (!s.photoKey) throw new NotFoundException('Belum ada pas foto.');
+    const buf = await this.storage.getObjectBuffer(s.photoKey);
+    const mime = s.photoKey.endsWith('.png') ? 'image/png' : s.photoKey.endsWith('.webp') ? 'image/webp' : 'image/jpeg';
+    return { buf, mime, name: `pas-foto-${s.nis ?? s.id}.${s.photoKey.split('.').pop()}` };
+  }
+
   // ================= Import Dapodik =================
   /** Import siswa — kolom: nama, nis, nisn, kelas, gender, tempat_lahir, tanggal_lahir, alamat, nama_ayah, nama_ibu, hp_ortu, sekolah_asal. */
   async importStudents(buffer: Buffer, academicYearId: string, classMap: Record<string, string>, dry = false) {

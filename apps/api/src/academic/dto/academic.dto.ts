@@ -86,6 +86,11 @@ export class EmployeeDto {
   @IsString()
   @MaxLength(60)
   roleKey?: string;
+
+  /** Kaitkan pegawai ke akun login yang SUDAH ada (akun yatim) — tanpa membuat akun baru. */
+  @IsOptional()
+  @IsUUID()
+  linkUserId?: string;
 }
 
 export class GtkOptionDto {

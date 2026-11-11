@@ -223,6 +223,14 @@ export const NAV: NavItem[] = [
         enabled: true,
       },
       {
+        key: 'buku-induk',
+        label: 'Buku Induk',
+        icon: '•',
+        href: '/tata-usaha/buku-induk',
+        permission: PERMISSIONS.STUDENT_READ,
+        enabled: true,
+      },
+      {
         key: 'surat',
         label: 'Surat Menyurat',
         icon: '•',

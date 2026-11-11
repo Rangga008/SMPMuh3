@@ -23,6 +23,7 @@ import {
   getEmployee,
   listGtkOptions,
   me,
+  phoneLocal,
   updateEmployee,
   type AttendanceDayRow,
   type EmployeeDetail,
@@ -223,7 +224,7 @@ export default function EmployeeDetailPage({
                 <dt className="text-sand-500">Tugas Tambahan</dt>
                 <dd className="font-medium text-sand-900">{dutyLabel(emp.additionalDuty)}</dd>
                 <dt className="text-sand-500">Telepon</dt>
-                <dd className="font-medium text-sand-900">{emp.phone ?? '—'}</dd>
+                <dd className="font-medium text-sand-900">{emp.phone ? phoneLocal(emp.phone) : '—'}</dd>
                 <dt className="text-sand-500">Email</dt>
                 <dd className="font-medium text-sand-900">{emp.email ?? '—'}</dd>
                 <dt className="text-sand-500">Bidang</dt>
@@ -391,7 +392,7 @@ export default function EmployeeDetailPage({
                 <Input name="email" type="email" defaultValue={emp.email ?? ''} />
               </Field>
               <Field label="Telepon" hint={emp.userId ? 'Tersinkron ke akun login — harus unik' : undefined}>
-                <Input name="phone" defaultValue={emp.phone ?? ''} />
+                <Input name="phone" defaultValue={phoneLocal(emp.phone)} />
               </Field>
               <p className="sm:col-span-2 -my-1 text-xs text-sand-500">
                 Bidang mengikuti tugas tambahan/jabatan otomatis — wakasek Kurikulum → Kurikulum, Bendahara → Keuangan, TU → Tata Usaha.

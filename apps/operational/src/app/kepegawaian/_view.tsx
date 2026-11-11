@@ -30,6 +30,7 @@ import {
   listGtkOptions,
   listOrphanAccounts,
   listRoles,
+  phoneLocal,
   previewEmployeeImport,
   updateGtkOption,
   type EmployeeDto,
@@ -70,6 +71,7 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [withAccount, setWithAccount] = useState(false);
+  const [linkAccount, setLinkAccount] = useState<OrphanAccount | null>(null);
   const [formJenis, setFormJenis] = useState<GtkType>(jenis);
   const [busy, setBusy] = useState(false);
   // Import modal — langkah: instruksi → pilih file → preview → konfirmasi → hasil.
@@ -213,16 +215,20 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
         additionalDuty: val('additionalDuty'),
         email: val('email'),
         phone: val('phone'),
-        ...(wantsAccount
-          ? { password: val('password'), roleKey: val('roleKey') }
-          : {}),
+        ...(linkAccount
+          ? { linkUserId: linkAccount.id }
+          : wantsAccount
+            ? { password: val('password'), roleKey: val('roleKey') }
+            : {}),
       });
       e.currentTarget.reset();
       setWithAccount(false);
+      setLinkAccount(null);
       setFormJenis(jenis);
       setShowForm(false);
-      setNotice('GTK ditambahkan.');
+      setNotice(linkAccount ? `GTK ditambahkan & tertaut ke akun ${linkAccount.name}.` : 'GTK ditambahkan.');
       load(kind, duty, search);
+      listOrphanAccounts().then(setOrphans).catch(() => undefined);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : 'Gagal menambah pegawai.',
@@ -265,8 +271,22 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
           </p>
           <ul className="mt-1 list-disc pl-5 text-xs">
             {orphans.slice(0, 6).map((o) => (
-              <li key={o.id}>
-                {o.name} — {o.email ?? o.phone ?? 'tanpa kontak'} ({o.roles.join(', ')})
+              <li key={o.id} className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                <span>
+                  {o.name} — {(o.email ?? phoneLocal(o.phone)) || 'tanpa kontak'} ({o.roles.join(', ')})
+                </span>
+                <button
+                  type="button"
+                  className="rounded-md bg-amber-600/90 px-2 py-0.5 font-bold text-white hover:bg-amber-700"
+                  onClick={() => {
+                    setLinkAccount(o);
+                    setWithAccount(false);
+                    setFormJenis(jenis);
+                    setShowForm(true);
+                  }}
+                >
+                  Buat GTK →
+                </button>
               </li>
             ))}
             {orphans.length > 6 ? <li>…dan {orphans.length - 6} lainnya</li> : null}
@@ -357,7 +377,7 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
                         <span className="block text-sand-400">{dutyLabel(p.additionalDuty)}</span>
                       ) : null}
                     </td>
-                    <td className="px-3 py-1.5">{p.email ?? p.phone ?? '—'}</td>
+                    <td className="px-3 py-1.5">{(p.email ?? phoneLocal(p.phone)) || '—'}</td>
                     <td className="px-3 py-1.5">{p.department ? (DEPT_LABEL[p.department] ?? p.department) : '—'}</td>
                     <td className="px-3 py-1.5">
                       <Badge tone={p.action === 'BARU' ? 'primary' : p.action === 'UPDATE' ? 'accent' : 'neutral'}>{p.action}</Badge>
@@ -383,14 +403,23 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
       {showForm ? (
         <Modal
           open
-          onClose={() => setShowForm(false)}
-          title="Tambah GTK"
-          description="Guru atau tenaga kependidikan — opsional sekaligus buatkan akun login."
+          onClose={() => { setShowForm(false); setLinkAccount(null); }}
+          title={linkAccount ? 'Buat GTK & Kaitkan Akun' : 'Tambah GTK'}
+          description={
+            linkAccount
+              ? `Data GTK baru akan langsung tertaut ke akun login ${linkAccount.name}.`
+              : 'Guru atau tenaga kependidikan — opsional sekaligus buatkan akun login.'
+          }
           size="xl"
         >
-          <form onSubmit={onCreate} className="grid gap-4 sm:grid-cols-2">
+          {linkAccount ? (
+            <p className="mb-4 rounded-xl border border-primary-200 bg-primary-50 px-4 py-2.5 text-xs font-semibold text-primary-800">
+              Tertaut akun: {linkAccount.name} ({(linkAccount.email ?? phoneLocal(linkAccount.phone)) || 'tanpa kontak'}) — pegawai ini langsung memakai akun tsb, tanpa akun baru.
+            </p>
+          ) : null}
+          <form key={linkAccount?.id ?? 'baru'} onSubmit={onCreate} className="grid gap-4 sm:grid-cols-2">
             <Field label="Nama Lengkap" className="sm:col-span-2">
-              <Input name="name" required />
+              <Input name="name" required defaultValue={linkAccount?.name ?? ''} />
             </Field>
             <Field label="NIP/NUPTK">
               <Input name="nip" />
@@ -428,16 +457,16 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
               />
             </Field>
             <Field label="Email" hint="Diperlukan untuk login akun">
-              <Input name="email" type="email" />
+              <Input name="email" type="email" defaultValue={linkAccount?.email ?? ''} />
             </Field>
             <Field label="Telepon" hint="Bisa dipakai login jika email kosong">
-              <Input name="phone" />
+              <Input name="phone" defaultValue={phoneLocal(linkAccount?.phone)} />
             </Field>
             <p className="sm:col-span-2 -my-1 text-xs text-sand-500">
               Bidang mengikuti tugas tambahan/jabatan otomatis — wakasek Kurikulum → bidang Kurikulum, Bendahara → Keuangan, TU → Tata Usaha.
             </p>
 
-            <div className="sm:col-span-2 rounded-2xl border border-dashed border-sand-300 bg-sand-50/70 p-4">
+            <div className={`sm:col-span-2 rounded-2xl border border-dashed border-sand-300 bg-sand-50/70 p-4 ${linkAccount ? 'hidden' : ''}`}>
               <label className="flex cursor-pointer items-center gap-3 text-sm font-semibold text-sand-800">
                 <input
                   type="checkbox"
@@ -534,7 +563,7 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
             <td className="px-5 py-3.5 text-sand-600">{dutyLabel(e.additionalDuty)}</td>
             <td className="px-5 py-3.5 text-sand-600">
               {e.email ?? '—'}
-              {e.phone ? <span className="block text-xs text-sand-400">{e.phone}</span> : null}
+              {e.phone ? <span className="block text-xs text-sand-400">{phoneLocal(e.phone)}</span> : null}
             </td>
             <td className="px-5 py-3.5 text-right">
               <span className="flex justify-end gap-2">

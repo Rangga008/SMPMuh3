@@ -17,6 +17,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import { PERMISSIONS, type AuthUser } from '@smpmuh3/types';
 import { CurrentUser } from '../identity/decorators/current-user.decorator';
+import { Public } from '../identity/decorators/public.decorator';
 import { RequirePermission } from '../identity/decorators/require-permission.decorator';
 import { OpsService } from './ops.service';
 import {
@@ -381,6 +382,28 @@ export class OpsController {
   @RequirePermission(PERMISSIONS.STUDENT_MANAGE)
   updateStudentRecord(@Param('id') id: string, @Body() body: Record<string, unknown>) {
     return this.ops.updateStudentRecord(id, body);
+  }
+
+  /** Pas foto buku induk — sinkron dengan kolom photo_key siswa. */
+  @Post('students/:id/photo')
+  @RequirePermission(PERMISSIONS.STUDENT_MANAGE)
+  @UseInterceptors(FileInterceptor('file'))
+  uploadStudentPhoto(@Param('id') id: string, @UploadedFile() file?: Express.Multer.File) {
+    if (!file) throw new BadRequestException('File foto wajib.');
+    if (!/^image\/(jpeg|png|webp)$/.test(file.mimetype)) {
+      throw new BadRequestException('Foto harus JPG, PNG, atau WebP.');
+    }
+    return this.ops.uploadStudentPhoto(id, file);
+  }
+
+  /** Pas foto siswa — publik agar <img> langsung menampilkannya di buku induk. */
+  @Get('students/:id/photo')
+  @Public()
+  async studentPhoto(@Param('id') id: string, @Res() res: Response) {
+    const f = await this.ops.studentPhoto(id);
+    res.setHeader('Content-Type', f.mime);
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.send(f.buf);
   }
 
   // ---- Import Dapodik ----

@@ -12,6 +12,11 @@ export const API =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
 const TOKEN_KEY = 'ops.tokens';
 
+/** No HP disimpan dinormalisasi internasional (62…) untuk WhatsApp & login —
+    tampilkan kembali format lokal 08… agar sama dengan yang diinput pengguna. */
+export const phoneLocal = (p?: string | null): string =>
+  p ? p.replace(/^62(?=\d)/, '0') : '';
+
 export const getTokens = (): AuthTokens | null => {
   try {
     const raw = localStorage.getItem(TOKEN_KEY);

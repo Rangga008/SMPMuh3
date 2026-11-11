@@ -435,9 +435,19 @@ export class AcademicService {
       if (clash) throw new ConflictException(`NIP ${dto.nip} sudah terdaftar`);
     }
 
-    // Opsional: buat akun login sekaligus (butuh email/telepon + password + role).
+    // Kaitkan ke akun login yang sudah ada (akun yatim) — tanpa membuat akun baru.
     let userId: string | null = null;
-    if (dto.password || dto.roleKey) {
+    if (dto.linkUserId) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: dto.linkUserId },
+        select: { id: true, name: true, employee: { select: { id: true } } },
+      });
+      if (!user) throw new BadRequestException('Akun yang dikaitkan tidak ditemukan.');
+      if (user.employee) {
+        throw new ConflictException(`Akun ${user.name} sudah tertaut ke pegawai lain.`);
+      }
+      userId = user.id;
+    } else if (dto.password || dto.roleKey) {
       if (!dto.password || !dto.roleKey) {
         throw new BadRequestException(
           'Password dan role wajib diisi untuk membuat akun pegawai.',
