@@ -555,6 +555,65 @@ export async function openStudentDocument(docId: string) {
   return URL.createObjectURL(blob);
 }
 
+// ---- prestasi & ekstrakurikuler (kesiswaan) ----
+export interface AchievementRow {
+  id: string;
+  title: string;
+  level?: string | null;
+  year?: number | null;
+  description?: string | null;
+  createdAt: string;
+  student: {
+    id: string; name: string; nis?: string | null;
+    enrollments: { class: { name: string } }[];
+  };
+  evidenceDocument?: { id: string; fileName: string } | null;
+}
+export const listAchievements = (q: { search?: string | undefined; year?: number | undefined } = {}) => {
+  const p = new URLSearchParams();
+  if (q.search) p.set('search', q.search);
+  if (q.year) p.set('year', String(q.year));
+  const s = p.toString();
+  return req<AchievementRow[]>(`/achievements${s ? `?${s}` : ''}`);
+};
+export const updateAchievement = (id: string, dto: Record<string, unknown>) =>
+  req(`/achievements/${id}`, { method: 'PATCH', json: dto });
+export const deleteAchievement = (id: string) =>
+  req(`/achievements/${id}`, { method: 'DELETE' });
+
+export interface EkskulDto {
+  id: string;
+  name: string;
+  description?: string | null;
+  schedule?: string | null;
+  isActive: boolean;
+  coach?: { id: string; name: string } | null;
+  _count: { members: number };
+}
+export interface EkskulMember {
+  id: string;
+  role?: string | null;
+  joinedAt: string;
+  student: {
+    id: string; name: string; nis?: string | null;
+    enrollments: { class: { name: string } }[];
+  };
+}
+export const listEkskul = (search?: string) =>
+  req<EkskulDto[]>(`/extracurriculars${search ? `?search=${encodeURIComponent(search)}` : ''}`);
+export const createEkskul = (dto: Record<string, unknown>) =>
+  req<EkskulDto>('/extracurriculars', { method: 'POST', json: dto });
+export const updateEkskul = (id: string, dto: Record<string, unknown>) =>
+  req<EkskulDto>(`/extracurriculars/${id}`, { method: 'PATCH', json: dto });
+export const deleteEkskul = (id: string) =>
+  req(`/extracurriculars/${id}`, { method: 'DELETE' });
+export const listEkskulMembers = (id: string) =>
+  req<EkskulMember[]>(`/extracurriculars/${id}/members`);
+export const addEkskulMember = (id: string, studentId: string, role?: string) =>
+  req(`/extracurriculars/${id}/members`, { method: 'POST', json: { studentId, role } });
+export const removeEkskulMember = (memberId: string) =>
+  req(`/extracurriculars/members/${memberId}`, { method: 'DELETE' });
+
 // ---- kepegawaian ----
 export interface EmployeeDto {
   id: string;

@@ -188,6 +188,22 @@ export const NAV: NavItem[] = [
         permission: PERMISSIONS.ATTENDANCE_READ,
         enabled: true,
       },
+      {
+        key: 'prestasi',
+        label: 'Prestasi',
+        icon: '•',
+        href: '/kesiswaan/prestasi',
+        permission: PERMISSIONS.STUDENT_READ,
+        enabled: true,
+      },
+      {
+        key: 'ekskul',
+        label: 'Ekstrakurikuler',
+        icon: '•',
+        href: '/kesiswaan/ekskul',
+        permission: PERMISSIONS.STUDENT_READ,
+        enabled: true,
+      },
     ],
   },
   {

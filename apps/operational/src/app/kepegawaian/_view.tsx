@@ -61,6 +61,7 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [withAccount, setWithAccount] = useState(false);
@@ -77,8 +78,11 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
   const load = useCallback((k: string, d: string, q: string) => {
     setLoading(true);
     listEmployees(jenis, q || undefined, d || undefined, k || undefined)
-      .then(setRows)
-      .catch(() => setError('Gagal memuat data GTK.'))
+      .then((r) => {
+        setRows(r);
+        setLoadError(null);
+      })
+      .catch(() => setLoadError('Gagal memuat data GTK.'))
       .finally(() => setLoading(false));
   }, [jenis]);
 
@@ -430,7 +434,7 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
       <DataTable
         head={['Nama', 'NIP/NUPTK', 'Jabatan', 'Tugas Tambahan', 'Bidang', 'Kontak', '']}
         loading={loading}
-        error={error}
+        error={loadError}
         empty={rows.length === 0 ? `Belum ada ${jenis === 'TEACHER' ? 'guru' : 'tendik'}.` : undefined}
       >
         {rows.map((e) => (

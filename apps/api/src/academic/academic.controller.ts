@@ -102,7 +102,7 @@ export class AcademicController {
       ['TEMPLATE IMPORT GTK — isi data mulai BARIS 8 (baris keterangan & contoh abaikan, jangan diubah/dihapus)'],
       ['Jenis          : GURU / TENDIK (kosong = GURU)'],
       ['Jabatan        : khusus TENDIK — TU / LAYSUS / SATPAM / KEPALA_SEKOLAH (kosongkan untuk GURU)'],
-      ['Tugas Tambahan : WAKASEK_KURIKULUM / WAKASEK_KESISWAAN / WAKASEK_SARPRAS / KEPALA_TU / BENDAHARA_BOS / BENDAHARA_RMP / OPERATOR_DAPODIK / KONTEN_KREATOR (kosongkan bila tidak ada)'],
+      ['Tugas Tambahan : WAKASEK_KURIKULUM / WAKASEK_KESISWAAN / WAKASEK_SARPRAS / KEPALA_TU / BENDAHARA_SEKOLAH / BENDAHARA_BOS / BENDAHARA_RMP / OPERATOR_DAPODIK / KONTEN_KREATOR / KEPALA_PERPUSTAKAAN / STAF_PERPUSTAKAAN / PETUGAS_KEBERSIHAN_L1-L4 / SATPAM (kosongkan bila tidak ada)'],
       ['Bidang & akses : OTOMATIS dari tugas tambahan/jabatan — wakasek Kurikulum→bidang Kurikulum, Bendahara→Keuangan, dst'],
       [],
       ['Nama Lengkap', 'NIP/NUPTK', 'Jenis', 'Jabatan', 'Tugas Tambahan', 'Telepon/HP', 'Email', 'Password'],
@@ -116,7 +116,7 @@ export class AcademicController {
       { kolom: 'NIP/NUPTK', wajib: 'tidak', keterangan: 'NIP atau NUPTK — dipakai untuk dedup; jangan dobel — contoh: 19750101001' },
       { kolom: 'Jenis', wajib: 'tidak', keterangan: 'GURU atau TENDIK (Tenaga Kependidikan) — kosong = GURU' },
       { kolom: 'Jabatan', wajib: 'khusus TENDIK', keterangan: 'TU / LAYSUS / SATPAM / KEPALA_SEKOLAH — kosongkan untuk GURU' },
-      { kolom: 'Tugas Tambahan', wajib: 'tidak', keterangan: 'Guru menjabat wakasek → WAKASEK_KURIKULUM / WAKASEK_KESISWAAN / WAKASEK_SARPRAS; tendik → KEPALA_TU / BENDAHARA_BOS / BENDAHARA_RMP / OPERATOR_DAPODIK / KONTEN_KREATOR' },
+      { kolom: 'Tugas Tambahan', wajib: 'tidak', keterangan: 'Guru → WAKASEK_KURIKULUM/WAKASEK_KESISWAAN/WAKASEK_SARPRAS; tendik → KEPALA_TU / BENDAHARA_SEKOLAH / BENDAHARA_BOS / BENDAHARA_RMP / OPERATOR_DAPODIK / KONTEN_KREATOR / KEPALA_PERPUSTAKAAN / STAF_PERPUSTAKAAN; laysus → PETUGAS_KEBERSIHAN_L1-L4 / SATPAM' },
       { kolom: 'Telepon/HP', wajib: 'tidak*', keterangan: 'No. HP — dipakai login akun; harus unik — contoh: 081234567890' },
       { kolom: 'Email', wajib: 'tidak*', keterangan: 'Email — dipakai login akun; harus unik — contoh: ahmad@smpmuh3.sch.id' },
       { kolom: 'Password', wajib: 'tidak', keterangan: 'Password akun — diisi = dipakai; KOSONG = digenerate acak & tampil di hasil import — contoh: guru123' },
@@ -209,12 +209,27 @@ export class AcademicController {
       if (/^WAKASEK_?KESISWAAN|^WAKA_?KES/.test(d)) return 'WAKASEK_KESISWAAN';
       if (/^WAKASEK_?SARPRAS|^WAKA_?SAR/.test(d)) return 'WAKASEK_SARPRAS';
       if (/^KEPALA_?(TU|TATA_?USAHA)|^KATU\b/.test(d)) return 'KEPALA_TU';
+      if (/^BENDAHARA_?SEKOLAH/.test(d)) return 'BENDAHARA_SEKOLAH';
       if (/^BENDAHARA_?BOS/.test(d)) return 'BENDAHARA_BOS';
       if (/^BENDAHARA_?RMP/.test(d)) return 'BENDAHARA_RMP';
-      if (/^BENDAHARA/.test(d)) return 'BENDAHARA_BOS';
+      if (/^BENDAHARA/.test(d)) return 'BENDAHARA_SEKOLAH';
       if (/^OPERATOR_?DAPODIK|^OPERATOR/.test(d)) return 'OPERATOR_DAPODIK';
       if (/^KONTEN_?KREATOR|^KONTEN|^ADMIN_?(MEDSOS|SOSMED)/.test(d))
         return 'KONTEN_KREATOR';
+      if (/^KEPALA_?PERPUS(TAKAAN)?|^KEPALA_?PERPUSTAKAAN/.test(d))
+        return 'KEPALA_PERPUSTAKAAN';
+      if (/^(STAF|STAFF|PETUGAS|PENJAGA)_?PERPUS(TAKAAN)?|^PERPUS(TAKAAN)?/.test(d))
+        return 'STAF_PERPUSTAKAAN';
+      if (/^(PETUGAS_?)?KEBERSIHAN_?(LANTAI_?|LT_?\.?|LT)?_?1\b|KEBERSIHAN_?1/.test(d))
+        return 'PETUGAS_KEBERSIHAN_L1';
+      if (/^(PETUGAS_?)?KEBERSIHAN_?(LANTAI_?|LT_?\.?|LT)?_?2\b|KEBERSIHAN_?2/.test(d))
+        return 'PETUGAS_KEBERSIHAN_L2';
+      if (/^(PETUGAS_?)?KEBERSIHAN_?(LANTAI_?|LT_?\.?|LT)?_?3\b|KEBERSIHAN_?3/.test(d))
+        return 'PETUGAS_KEBERSIHAN_L3';
+      if (/^(PETUGAS_?)?KEBERSIHAN_?(LANTAI_?|LT_?\.?|LT)?_?4\b|KEBERSIHAN_?4/.test(d))
+        return 'PETUGAS_KEBERSIHAN_L4';
+      if (/^SATPAM|^KEAMANAN|^SECURITY|^PENJAGA_?(SEKOLAH|MALAM)?/.test(d))
+        return 'SATPAM';
       return undefined;
     };
     const normDept = (v: string) => {

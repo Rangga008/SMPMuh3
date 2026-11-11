@@ -149,6 +149,43 @@ export class AchievementDto {
   evidenceDocumentId?: string;
 }
 
+export class EkskulDto {
+  @IsString()
+  @MinLength(2)
+  @MaxLength(80)
+  name!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  description?: string;
+
+  /** Pembina — id pegawai. */
+  @IsOptional()
+  @IsUUID()
+  coachId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  schedule?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}
+
+export class EkskulMemberDto {
+  @IsUUID()
+  studentId!: string;
+
+  /** Peran pengurus — ketua/sekretaris/dst (kosong = anggota). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  role?: string;
+}
+
 export class ViolationDto {
   @IsString()
   @MinLength(3)

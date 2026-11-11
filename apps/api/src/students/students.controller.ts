@@ -22,6 +22,8 @@ import { StudentsService } from './students.service';
 import {
   AchievementDto,
   CreateStudentDto,
+  EkskulDto,
+  EkskulMemberDto,
   MarkAttendanceDto,
   UpdateStudentDto,
   ViolationDto,
@@ -97,6 +99,96 @@ export class StudentsController {
     @Body() dto: AchievementDto,
   ) {
     return this.students.addAchievement(id, dto, user.id);
+  }
+
+  /** Daftar prestasi seluruh siswa — Data Prestasi kesiswaan. */
+  @Get('achievements')
+  @RequirePermission(PERMISSIONS.STUDENT_READ)
+  listAchievements(
+    @Query('search') search?: string,
+    @Query('year') year?: string,
+  ) {
+    return this.students.listAchievements({
+      search,
+      year: year ? Number(year) : undefined,
+    });
+  }
+
+  @Patch('achievements/:id')
+  @RequirePermission(PERMISSIONS.STUDENT_MANAGE)
+  updateAchievement(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AchievementDto,
+  ) {
+    return this.students.updateAchievement(id, dto, user.id);
+  }
+
+  @Delete('achievements/:id')
+  @RequirePermission(PERMISSIONS.STUDENT_MANAGE)
+  deleteAchievement(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.students.deleteAchievement(id, user.id);
+  }
+
+  // ---------- Ekstrakurikuler ----------
+
+  @Get('extracurriculars')
+  @RequirePermission(PERMISSIONS.STUDENT_READ)
+  listEkskul(@Query('search') search?: string) {
+    return this.students.listEkskul({ search });
+  }
+
+  @Post('extracurriculars')
+  @RequirePermission(PERMISSIONS.STUDENT_MANAGE)
+  createEkskul(@CurrentUser() user: AuthUser, @Body() dto: EkskulDto) {
+    return this.students.createEkskul(dto, user.id);
+  }
+
+  @Get('extracurriculars/:id/members')
+  @RequirePermission(PERMISSIONS.STUDENT_READ)
+  listEkskulMembers(@Param('id', ParseUUIDPipe) id: string) {
+    return this.students.listEkskulMembers(id);
+  }
+
+  @Post('extracurriculars/:id/members')
+  @RequirePermission(PERMISSIONS.STUDENT_MANAGE)
+  addEkskulMember(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: EkskulMemberDto,
+  ) {
+    return this.students.addEkskulMember(id, dto, user.id);
+  }
+
+  @Delete('extracurriculars/members/:memberId')
+  @RequirePermission(PERMISSIONS.STUDENT_MANAGE)
+  removeEkskulMember(
+    @CurrentUser() user: AuthUser,
+    @Param('memberId', ParseUUIDPipe) memberId: string,
+  ) {
+    return this.students.removeEkskulMember(memberId, user.id);
+  }
+
+  @Patch('extracurriculars/:id')
+  @RequirePermission(PERMISSIONS.STUDENT_MANAGE)
+  updateEkskul(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: EkskulDto,
+  ) {
+    return this.students.updateEkskul(id, dto, user.id);
+  }
+
+  @Delete('extracurriculars/:id')
+  @RequirePermission(PERMISSIONS.STUDENT_MANAGE)
+  deleteEkskul(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.students.deleteEkskul(id, user.id);
   }
 
   @Post('students/:id/violations')

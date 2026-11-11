@@ -15,6 +15,8 @@ import { WhatsappService } from '../spmb/whatsapp.service';
 import type {
   AchievementDto,
   CreateStudentDto,
+  EkskulDto,
+  EkskulMemberDto,
   MarkAttendanceDto,
   UpdateStudentDto,
   ViolationDto,
@@ -220,6 +222,158 @@ export class StudentsService {
         evidenceDocumentId: dto.evidenceDocumentId ?? null,
       },
     });
+  }
+
+  /** Daftar prestasi seluruh siswa — halaman Data Prestasi kesiswaan. */
+  listAchievements(q: { search?: string | undefined; year?: number | undefined }) {
+    const where: Prisma.AchievementWhereInput = {};
+    if (q.year) where.year = q.year;
+    if (q.search) {
+      where.OR = [
+        { title: { contains: q.search, mode: 'insensitive' } },
+        { student: { name: { contains: q.search, mode: 'insensitive' } } },
+      ];
+    }
+    return this.prisma.achievement.findMany({
+      where,
+      orderBy: [{ year: 'desc' }, { createdAt: 'desc' }],
+      include: {
+        student: {
+          select: {
+            id: true, name: true, nis: true,
+            enrollments: {
+              orderBy: { createdAt: 'desc' }, take: 1,
+              include: { class: { select: { name: true } } },
+            },
+          },
+        },
+        evidenceDocument: { select: { id: true, fileName: true } },
+      },
+    });
+  }
+
+  async updateAchievement(id: string, dto: AchievementDto, actorId: string) {
+    await this.prisma.achievement.findUniqueOrThrow({ where: { id } });
+    const row = await this.prisma.achievement.update({
+      where: { id },
+      data: {
+        title: dto.title,
+        level: dto.level ?? null,
+        year: dto.year ?? null,
+        description: dto.description ?? null,
+        evidenceDocumentId: dto.evidenceDocumentId ?? null,
+      },
+    });
+    await this.audit.log({ actorId, action: 'achievement.update', entity: 'achievement', entityId: id });
+    return row;
+  }
+
+  async deleteAchievement(id: string, actorId: string) {
+    await this.prisma.achievement.findUniqueOrThrow({ where: { id } });
+    await this.prisma.achievement.delete({ where: { id } });
+    await this.audit.log({ actorId, action: 'achievement.delete', entity: 'achievement', entityId: id });
+    return { deleted: true };
+  }
+
+  // ---- ekstrakurikuler ----
+
+  listEkskul(q: { search?: string | undefined }) {
+    return this.prisma.extracurricular.findMany({
+      where: q.search
+        ? { name: { contains: q.search, mode: 'insensitive' } }
+        : {},
+      orderBy: { name: 'asc' },
+      include: {
+        coach: { select: { id: true, name: true } },
+        _count: { select: { members: true } },
+      },
+    });
+  }
+
+  async createEkskul(dto: EkskulDto, actorId: string) {
+    const row = await this.prisma.extracurricular.create({
+      data: {
+        name: dto.name.trim(),
+        description: dto.description ?? null,
+        coachId: dto.coachId ?? null,
+        schedule: dto.schedule ?? null,
+      },
+    });
+    await this.audit.log({ actorId, action: 'ekskul.create', entity: 'extracurricular', entityId: row.id });
+    return row;
+  }
+
+  async updateEkskul(id: string, dto: EkskulDto, actorId: string) {
+    await this.prisma.extracurricular.findUniqueOrThrow({ where: { id } });
+    const row = await this.prisma.extracurricular.update({
+      where: { id },
+      data: {
+        name: dto.name.trim(),
+        description: dto.description ?? null,
+        coachId: dto.coachId ?? null,
+        schedule: dto.schedule ?? null,
+        ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+      },
+    });
+    await this.audit.log({ actorId, action: 'ekskul.update', entity: 'extracurricular', entityId: id });
+    return row;
+  }
+
+  async deleteEkskul(id: string, actorId: string) {
+    await this.prisma.extracurricular.findUniqueOrThrow({ where: { id } });
+    await this.prisma.extracurricular.delete({ where: { id } });
+    await this.audit.log({ actorId, action: 'ekskul.delete', entity: 'extracurricular', entityId: id });
+    return { deleted: true };
+  }
+
+  listEkskulMembers(ekskulId: string) {
+    return this.prisma.extracurricularMember.findMany({
+      where: { extracurricularId: ekskulId },
+      orderBy: { joinedAt: 'asc' },
+      include: {
+        student: {
+          select: {
+            id: true, name: true, nis: true,
+            enrollments: {
+              orderBy: { createdAt: 'desc' }, take: 1,
+              include: { class: { select: { name: true } } },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  async addEkskulMember(ekskulId: string, dto: EkskulMemberDto, actorId: string) {
+    await this.prisma.extracurricular.findUniqueOrThrow({ where: { id: ekskulId } });
+    await this.prisma.student.findUniqueOrThrow({ where: { id: dto.studentId } });
+    const dup = await this.prisma.extracurricularMember.findUnique({
+      where: {
+        extracurricularId_studentId: {
+          extracurricularId: ekskulId,
+          studentId: dto.studentId,
+        },
+      },
+    });
+    if (dup) throw new ConflictException('Siswa sudah menjadi anggota ekskul ini.');
+    const row = await this.prisma.extracurricularMember.create({
+      data: {
+        extracurricularId: ekskulId,
+        studentId: dto.studentId,
+        role: dto.role ?? null,
+      },
+    });
+    await this.audit.log({ actorId, action: 'ekskul.member_add', entity: 'extracurricular', entityId: ekskulId });
+    return row;
+  }
+
+  async removeEkskulMember(memberId: string, actorId: string) {
+    const m = await this.prisma.extracurricularMember.findUniqueOrThrow({
+      where: { id: memberId },
+    });
+    await this.prisma.extracurricularMember.delete({ where: { id: memberId } });
+    await this.audit.log({ actorId, action: 'ekskul.member_remove', entity: 'extracurricular', entityId: m.extracurricularId });
+    return { deleted: true };
   }
 
   // ---- dokumen siswa (bukti prestasi/pelanggaran, berkas umum) ----

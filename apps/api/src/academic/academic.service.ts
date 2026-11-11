@@ -56,10 +56,18 @@ export class AcademicService {
     WAKASEK_KESISWAAN: 'KESISWAAN',
     WAKASEK_SARPRAS: 'SARPRAS',
     KEPALA_TU: 'TATA_USAHA',
+    BENDAHARA_SEKOLAH: 'KEUANGAN',
     BENDAHARA_BOS: 'KEUANGAN',
     BENDAHARA_RMP: 'KEUANGAN',
     OPERATOR_DAPODIK: 'TATA_USAHA',
     KONTEN_KREATOR: 'TATA_USAHA',
+    KEPALA_PERPUSTAKAAN: 'TATA_USAHA',
+    STAF_PERPUSTAKAAN: 'TATA_USAHA',
+    PETUGAS_KEBERSIHAN_L1: 'LAYSUS',
+    PETUGAS_KEBERSIHAN_L2: 'LAYSUS',
+    PETUGAS_KEBERSIHAN_L3: 'LAYSUS',
+    PETUGAS_KEBERSIHAN_L4: 'LAYSUS',
+    SATPAM: 'LAYSUS',
   };
 
   /** Tugas tambahan yang menjadikan pemegangnya kepala bidang. */
@@ -77,6 +85,21 @@ export class AcademicService {
     SATPAM: 'LAYSUS',
     KEPALA_SEKOLAH: null,
   };
+
+  /** Jabatan efektif untuk baris type lama (tanpa staffKind tersimpan). */
+  private static readonly KIND_OF_LEGACY: Record<string, string | null> = {
+    TU: 'TU',
+    STAFF: 'TU',
+    KEUANGAN: 'TU',
+    SARPRAS: 'LAYSUS',
+    LAYSUS: 'LAYSUS',
+    PRINCIPAL: 'KEPALA_SEKOLAH',
+  };
+
+  /** Jabatan tendik efektif — tersimpan dulu, lalu turunan dari type lama. */
+  static effectiveKind(e: { type: string; staffKind?: string | null }) {
+    return e.staffKind ?? AcademicService.KIND_OF_LEGACY[e.type] ?? null;
+  }
 
   private static readonly VALID_DEPTS = new Set([
     'TATA_USAHA',
@@ -144,12 +167,21 @@ export class AcademicService {
         return 'staff_tu';
       case 'KEPALA_TU':
         return 'kepala_tu';
+      case 'BENDAHARA_SEKOLAH':
       case 'BENDAHARA_BOS':
       case 'BENDAHARA_RMP':
         return 'bendahara';
       case 'OPERATOR_DAPODIK':
       case 'KONTEN_KREATOR':
+      case 'KEPALA_PERPUSTAKAAN':
+      case 'STAF_PERPUSTAKAAN':
+      case 'SATPAM':
         return 'staff_tu';
+      case 'PETUGAS_KEBERSIHAN_L1':
+      case 'PETUGAS_KEBERSIHAN_L2':
+      case 'PETUGAS_KEBERSIHAN_L3':
+      case 'PETUGAS_KEBERSIHAN_L4':
+        return 'staff_kesiswaan';
     }
     switch (e.staffKind) {
       case 'KEPALA_SEKOLAH':
@@ -203,6 +235,7 @@ export class AcademicService {
     return rows
       .map((e) => ({
         ...e,
+        staffKind: AcademicService.effectiveKind(e),
         department: AcademicService.effectiveDept(e),
         isDeptHead: AcademicService.effectiveHead(e),
       }))
@@ -367,18 +400,19 @@ export class AcademicService {
     phone: string | undefined | null,
     excludeUserId?: string,
   ) {
-    const or: Prisma.UserWhereInput[] = [];
-    if (email) or.push({ email: email.toLowerCase() });
-    if (phone) or.push({ phone: normalizePhone(phone) });
-    if (!or.length) return;
-    const clash = await this.prisma.user.findFirst({
-      where: { OR: or, ...(excludeUserId ? { id: { not: excludeUserId } } : {}) },
-      select: { name: true, email: true, phone: true },
-    });
-    if (clash) {
-      throw new ConflictException(
-        `Email/HP sudah dipakai akun "${clash.name}" — satu identitas tidak boleh dobel akun. Kosongkan atau pakai kontak lain.`,
-      );
+    const checks: { field: string; value: string; where: Prisma.UserWhereInput }[] = [];
+    if (email) checks.push({ field: 'Email', value: email, where: { email: email.toLowerCase() } });
+    if (phone) checks.push({ field: 'No HP', value: phone, where: { phone: normalizePhone(phone) } });
+    for (const c of checks) {
+      const clash = await this.prisma.user.findFirst({
+        where: { ...c.where, ...(excludeUserId ? { id: { not: excludeUserId } } : {}) },
+        select: { name: true },
+      });
+      if (clash) {
+        throw new ConflictException(
+          `${c.field} ${c.value} sudah dipakai akun "${clash.name}" — satu identitas tidak boleh dobel akun. Kosongkan atau pakai kontak lain.`,
+        );
+      }
     }
   }
 
@@ -603,7 +637,12 @@ export class AcademicService {
       },
     });
     if (!emp) throw new NotFoundException('Pegawai tidak ditemukan.');
-    return emp;
+    return {
+      ...emp,
+      staffKind: AcademicService.effectiveKind(emp),
+      department: AcademicService.effectiveDept(emp),
+      isDeptHead: AcademicService.effectiveHead(emp),
+    };
   }
 
   // ---------- Kalender akademik ----------

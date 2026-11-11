@@ -73,10 +73,18 @@ export const ADDITIONAL_DUTIES = [
   'WAKASEK_KESISWAAN',
   'WAKASEK_SARPRAS',
   'KEPALA_TU',
+  'BENDAHARA_SEKOLAH',
   'BENDAHARA_BOS',
   'BENDAHARA_RMP',
   'OPERATOR_DAPODIK',
   'KONTEN_KREATOR',
+  'KEPALA_PERPUSTAKAAN',
+  'STAF_PERPUSTAKAAN',
+  'PETUGAS_KEBERSIHAN_L1',
+  'PETUGAS_KEBERSIHAN_L2',
+  'PETUGAS_KEBERSIHAN_L3',
+  'PETUGAS_KEBERSIHAN_L4',
+  'SATPAM',
 ] as const;
 export type AdditionalDuty = (typeof ADDITIONAL_DUTIES)[number];
 export const ADDITIONAL_DUTY_LABELS: Record<AdditionalDuty, string> = {
@@ -84,10 +92,18 @@ export const ADDITIONAL_DUTY_LABELS: Record<AdditionalDuty, string> = {
   WAKASEK_KESISWAAN: 'Wakasek Kesiswaan',
   WAKASEK_SARPRAS: 'Wakasek Sarpras',
   KEPALA_TU: 'Kepala Tata Usaha',
+  BENDAHARA_SEKOLAH: 'Bendahara Sekolah',
   BENDAHARA_BOS: 'Bendahara BOS',
   BENDAHARA_RMP: 'Bendahara RMP',
   OPERATOR_DAPODIK: 'Operator Dapodik',
   KONTEN_KREATOR: 'Konten Kreator',
+  KEPALA_PERPUSTAKAAN: 'Kepala Perpustakaan',
+  STAF_PERPUSTAKAAN: 'Staf Perpustakaan',
+  PETUGAS_KEBERSIHAN_L1: 'Petugas Kebersihan Lantai 1',
+  PETUGAS_KEBERSIHAN_L2: 'Petugas Kebersihan Lantai 2',
+  PETUGAS_KEBERSIHAN_L3: 'Petugas Kebersihan Lantai 3',
+  PETUGAS_KEBERSIHAN_L4: 'Petugas Kebersihan Lantai 4',
+  SATPAM: 'Satpam',
 };
 
 /** Kelompok GTK — nilai type lama dipetakan ke Guru/Tendik untuk tampilan. */
