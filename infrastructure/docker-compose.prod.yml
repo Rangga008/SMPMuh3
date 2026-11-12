@@ -52,7 +52,7 @@ services:
       resources:
         limits:
           cpus: "0.75"
-          memory: 512M
+          memory: 448M
     logging: *default-logging
 
   redis:
@@ -72,7 +72,7 @@ services:
       resources:
         limits:
           cpus: "0.25"
-          memory: 128M
+          memory: 96M
     logging: *default-logging
 
   s3:
@@ -101,7 +101,7 @@ services:
       resources:
         limits:
           cpus: "0.5"
-          memory: 384M
+          memory: 320M
     logging: *default-logging
 
   api:
@@ -139,7 +139,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "1.25"
+          cpus: "1.5"
           memory: 768M
     logging: *default-logging
 
@@ -154,7 +154,7 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      NODE_OPTIONS: --max-old-space-size=256
+      NODE_OPTIONS: --max-old-space-size=384
       # Fetch server-side (ISR profil sekolah) lewat jaringan internal.
       API_INTERNAL_URL: http://api:4000/api/v1
     networks: [internal, web]
@@ -170,8 +170,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.5"
-          memory: 384M
+          cpus: "0.75"
+          memory: 512M
     logging: *default-logging
 
   operational:
@@ -201,7 +201,7 @@ services:
       resources:
         limits:
           cpus: "0.5"
-          memory: 384M
+          memory: 320M
     logging: *default-logging
 
   cbt:
@@ -215,7 +215,7 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      NODE_OPTIONS: --max-old-space-size=256
+      NODE_OPTIONS: --max-old-space-size=384
       API_INTERNAL_URL: http://api:4000/api/v1
     networks: [internal, web]
     depends_on:
@@ -230,8 +230,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.5"
-          memory: 384M
+          cpus: "0.75"
+          memory: 512M
     logging: *default-logging
 
   # ---------- WordPress — situs utama di apex/www ----------
@@ -265,8 +265,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.5"
-          memory: 320M
+          cpus: "0.4"
+          memory: 256M
     logging: *default-logging
 
   wordpress:
@@ -298,7 +298,7 @@ services:
       resources:
         limits:
           cpus: "0.5"
-          memory: 384M
+          memory: 320M
     logging: *default-logging
 
   # ---------- e-Rapor SMP 2025.2 (CodeIgniter 4 + Postgres + ionCube) ----------
@@ -324,7 +324,7 @@ services:
       resources:
         limits:
           cpus: "0.75"
-          memory: 640M
+          memory: 512M
     logging: *default-logging
 
   caddy:
