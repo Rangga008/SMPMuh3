@@ -38,6 +38,11 @@ op.smpm3bdg.sch.id {
 	reverse_proxy operational:3002
 }
 
+cbt.smpm3bdg.sch.id {
+	import common
+	reverse_proxy cbt:3005
+}
+
 api.smpm3bdg.sch.id {
 	import common
 	# Upload dokumen/selfie lewat API — izinkan body s/d 25 MB.

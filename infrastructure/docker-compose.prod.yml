@@ -120,7 +120,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:?}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:-smpmuh3}?connection_limit=15&pool_timeout=20
       REDIS_URL: redis://redis:6379
       S3_ENDPOINT: http://s3:9000
-      CORS_ORIGINS: https://spmb.smpm3bdg.sch.id,https://op.smpm3bdg.sch.id,https://www.smpm3bdg.sch.id,https://smpm3bdg.sch.id
+      CORS_ORIGINS: https://spmb.smpm3bdg.sch.id,https://op.smpm3bdg.sch.id,https://cbt.smpm3bdg.sch.id,https://www.smpm3bdg.sch.id,https://smpm3bdg.sch.id
       SPMB_URL: https://spmb.smpm3bdg.sch.id
     networks: [internal, web]
     depends_on:
@@ -193,6 +193,36 @@ services:
         condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3002/ >/dev/null 2>&1 || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 384M
+    logging: *default-logging
+
+  cbt:
+    build:
+      context: ..
+      dockerfile: apps/cbt/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: https://api.smpm3bdg.sch.id/api/v1
+    image: smpmuh3-cbt:prod
+    container_name: smpmuh3-cbt
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=256
+      API_INTERNAL_URL: http://api:4000/api/v1
+    networks: [internal, web]
+    depends_on:
+      api:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3005/ >/dev/null 2>&1 || exit 1"]
       interval: 20s
       timeout: 5s
       retries: 5
