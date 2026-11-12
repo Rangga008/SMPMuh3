@@ -73,14 +73,6 @@ export async function SiteFooter() {
                 Cek Status
               </Link>
             </li>
-            <li>
-              <Link
-                href="/cbt"
-                className="text-primary-200 transition-colors hover:text-white focus-visible:focus-ring"
-              >
-                Ujian CBT (Siswa)
-              </Link>
-            </li>
           </ul>
         </nav>
 

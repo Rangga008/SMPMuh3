@@ -6,7 +6,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@smpmuh3/ui';
 import { ApiError } from '@/lib/api';
 import { getSession, type CbtSession } from '@/lib/cbt';
-import { AuthShell } from '@/components/auth-shell';
+import { ExamShell } from '@/components/exam-shell';
 
 const fmt = (sec: number) =>
   `${Math.floor(sec / 3600) > 0 ? `${Math.floor(sec / 3600)}:` : ''}${String(Math.floor((sec % 3600) / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`;
@@ -21,7 +21,7 @@ export default function CbtPrepPage() {
     getSession(token)
       .then((d) => {
         setS(d);
-        if (d.attempt.status === 'SUBMITTED') router.replace(`/cbt/${token}/hasil`);
+        if (d.attempt.status === 'SUBMITTED') router.replace(`/${token}/hasil`);
       })
       .catch((e) => setError(e instanceof ApiError ? e.message : 'Sesi tidak valid.'));
   }, [token, router]);
@@ -43,11 +43,11 @@ export default function CbtPrepPage() {
   }, []);
 
   return (
-    <AuthShell title="Persiapan Ujian" subtitle={s ? s.exam.title : 'Memeriksa sesi…'}>
+    <ExamShell title="Persiapan Ujian" subtitle={s ? s.exam.title : 'Memeriksa sesi…'}>
       {error ? (
         <div className="space-y-4">
           <p role="alert" className="rounded-xl bg-red-50 px-4 py-2.5 text-sm font-medium text-red-700">{error}</p>
-          <Link href="/cbt" className="block text-center text-sm font-semibold text-primary-700 hover:underline">
+          <Link href="/" className="block text-center text-sm font-semibold text-primary-700 hover:underline">
             ← Masuk ulang
           </Link>
         </div>
@@ -75,11 +75,11 @@ export default function CbtPrepPage() {
             </p>
             <p className="mt-1 text-[11px] text-sand-400">Waktu berjalan sejak kamu masuk — jangan tutup halaman.</p>
           </div>
-          <Button className="w-full" onClick={() => router.push(`/cbt/${token}/mulai`)}>
+          <Button className="w-full" onClick={() => router.push(`/${token}/mulai`)}>
             Mulai Kerjakan →
           </Button>
         </div>
       )}
-    </AuthShell>
+    </ExamShell>
   );
 }

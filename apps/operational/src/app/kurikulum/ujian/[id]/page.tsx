@@ -141,7 +141,7 @@ export default function UjianDetailPage() {
       {!exam ? null : (
         <div className="grid gap-4 lg:grid-cols-3">
           {/* ---------- Kode & pengaturan ---------- */}
-          <Widget title="Kode Akses" subtitle="Bagikan ke siswa — masuk lewat halaman CBT dengan NIS.">
+          <Widget title="Kode Akses" subtitle="Bagikan ke siswa — mereka masuk situs CBT dengan NIS + kode ini.">
             <div className="space-y-3 p-5">
               <button
                 type="button"

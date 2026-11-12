@@ -147,7 +147,7 @@ export default function UjianPage() {
 
       <Widget
         title="Daftar Ujian"
-        subtitle="Buka sesi saat jadwal tiba; kode dibagikan pengawas ke siswa."
+        subtitle="Buka sesi saat jadwal tiba; siswa mengerjakan di situs CBT (NIS + kode dari pengawas)."
         action={
           <Select value={yearId} onChange={(e) => switchYear(e.target.value)} className="w-44">
             {years.map((y) => <option key={y.id} value={y.id}>{y.name}</option>)}

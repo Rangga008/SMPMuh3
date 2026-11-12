@@ -43,7 +43,7 @@ export default function CbtRunnerPage() {
       } catch {
         /* sesi mungkin sudah dinilai server — lanjut ke hasil */
       }
-      router.replace(`/cbt/${token}/hasil${auto ? '?auto=1' : ''}`);
+      router.replace(`/${token}/hasil${auto ? '?auto=1' : ''}`);
     },
     [token, router],
   );
@@ -52,7 +52,7 @@ export default function CbtRunnerPage() {
     Promise.all([getSession(token), getPaper(token)])
       .then(([s, p]) => {
         if (s.attempt.status === 'SUBMITTED') {
-          router.replace(`/cbt/${token}/hasil`);
+          router.replace(`/${token}/hasil`);
           return;
         }
         setSession(s);
@@ -63,7 +63,7 @@ export default function CbtRunnerPage() {
       })
       .catch((e) => {
         if (e instanceof ApiError && e.status === 409) {
-          router.replace(`/cbt/${token}/hasil?auto=1`);
+          router.replace(`/${token}/hasil?auto=1`);
           return;
         }
         setError(e instanceof ApiError ? e.message : 'Gagal memuat soal.');
@@ -229,7 +229,7 @@ export default function CbtRunnerPage() {
       <main className="flex min-h-dvh items-center justify-center bg-sand-50 px-4">
         <div className="max-w-sm rounded-3xl bg-white p-8 text-center shadow-card">
           <p className="mb-4 text-sm text-red-600">{error}</p>
-          <Button variant="outline" onClick={() => router.push('/cbt')}>← Kembali</Button>
+          <Button variant="outline" onClick={() => router.push('/')}>← Kembali</Button>
         </div>
       </main>
     );

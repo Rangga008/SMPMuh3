@@ -150,6 +150,22 @@ services:
       api:
         condition: service_started
 
+  cbt:
+    build:
+      context: ..
+      dockerfile: apps/cbt/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:4000/api/v1
+    container_name: smpmuh3-cbt
+    restart: unless-stopped
+    environment:
+      API_INTERNAL_URL: http://api:4000/api/v1
+    ports:
+      - "${CBT_PORT:-3005}:3005"
+    depends_on:
+      api:
+        condition: service_started
+
 volumes:
   postgres-data:
   redis-data:

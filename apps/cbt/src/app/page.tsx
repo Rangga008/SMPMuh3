@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Button, Field, Input } from '@smpmuh3/ui';
 import { ApiError } from '@/lib/api';
 import { enterExam } from '@/lib/cbt';
-import { AuthShell } from '@/components/auth-shell';
+import { ExamShell } from '@/components/exam-shell';
 
 export default function CbtEntryPage() {
   const router = useRouter();
@@ -20,7 +20,7 @@ export default function CbtEntryPage() {
     try {
       const s = await enterExam(String(f.get('nis')).trim(), String(f.get('code')).trim());
       sessionStorage.setItem('cbt.token', s.token);
-      router.push(`/cbt/${s.token}`);
+      router.push(`/${s.token}`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Gagal masuk — periksa NIS & kode.');
     } finally {
@@ -29,7 +29,7 @@ export default function CbtEntryPage() {
   }
 
   return (
-    <AuthShell
+    <ExamShell
       title="Ujian CBT"
       subtitle="Masuk dengan NIS dan kode ujian dari pengawas"
     >
@@ -49,6 +49,6 @@ export default function CbtEntryPage() {
           {busy ? 'Memeriksa…' : 'Masuk Ujian'}
         </Button>
       </form>
-    </AuthShell>
+    </ExamShell>
   );
 }

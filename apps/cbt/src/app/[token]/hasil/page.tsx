@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { ApiError } from '@/lib/api';
 import { getResult, type CbtResult } from '@/lib/cbt';
-import { AuthShell } from '@/components/auth-shell';
+import { ExamShell } from '@/components/exam-shell';
 
 export default function CbtResultPage() {
   const { token } = useParams<{ token: string }>();
@@ -21,11 +21,11 @@ export default function CbtResultPage() {
   }, [token]);
 
   return (
-    <AuthShell title="Ujian Selesai" {...(r?.examTitle ? { subtitle: r.examTitle } : {})}>
+    <ExamShell title="Ujian Selesai" {...(r?.examTitle ? { subtitle: r.examTitle } : {})}>
       {error ? (
         <div className="space-y-4">
           <p role="alert" className="rounded-xl bg-red-50 px-4 py-2.5 text-sm font-medium text-red-700">{error}</p>
-          <Link href="/cbt" className="block text-center text-sm font-semibold text-primary-700 hover:underline">
+          <Link href="/" className="block text-center text-sm font-semibold text-primary-700 hover:underline">
             ← Masuk ulang
           </Link>
         </div>
@@ -52,11 +52,11 @@ export default function CbtResultPage() {
               Nilai akan diumumkan guru melalui kanal resmi.
             </p>
           )}
-          <Link href="/cbt" className="block text-sm font-semibold text-primary-700 hover:underline">
+          <Link href="/" className="block text-sm font-semibold text-primary-700 hover:underline">
             ← Selesai
           </Link>
         </div>
       )}
-    </AuthShell>
+    </ExamShell>
   );
 }
