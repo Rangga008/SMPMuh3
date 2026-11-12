@@ -171,84 +171,145 @@ export class OpsService {
     return { classes, teachers, days };
   }
 
-  /** Export jadwal ke Excel — format matriks: per hari, semua kelas berdampingan,
-   *  sel berisi nomor guru; legenda Daftar Guru di kanan (jam per hari). */
+  /**
+   * Export jadwal ke Excel — format matriks dua kolom (seperti cetak resmi):
+   * kolom kiri SENIN–KAMIS, kolom kanan JUMAT–SABTU lalu DAFTAR GURU.
+   * Semua kelas jadi kolom; sel berisi nomor guru; blok non-mapel
+   * (Ishoma/Istirahat/dst) tampil sebagai baris tergabung.
+   */
   async timetableXlsx(classId: string | undefined, academicYearId: string) {
     const mx = await this.timetableMatrix(academicYearId);
+    const [school, semester, year] = await Promise.all([
+      this.prisma.school.findFirst({ select: { name: true, npsn: true } }),
+      this.prisma.semester.findFirst({
+        where: { academicYearId, isActive: true },
+        select: { name: true },
+      }),
+      this.prisma.academicYear.findUnique({
+        where: { id: academicYearId },
+        select: { name: true },
+      }),
+    ]);
     const classIds = classId ? mx.classes.filter((c) => c.id === classId).map((c) => c.id) : mx.classes.map((c) => c.id);
-    const clsIdx = mx.classes.map((c) => classIds.includes(c.id));
-    const nCls = classIds.length;
+    const classes = mx.classes.filter((c) => classIds.includes(c.id));
+    const classIdx = classes.map((c) => mx.classes.findIndex((x) => x.id === c.id));
+    const nCls = classes.length;
     const DAY_NAMES = ['', 'SENIN', 'SELASA', 'RABU', 'KAMIS', 'JUMAT', 'SABTU', 'MINGGU'];
     const mm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}.${String(m % 60).padStart(2, '0')}`;
+    const W = 3 + nCls; // lebar satu blok hari
+    const gcol = W + 1; // kolom awal blok kanan (1 kolom spasi)
+
     const rows: (string | number)[][] = [];
     const merges: XLSX.Range[] = [];
-    const W = 3 + nCls; // lebar tabel kiri
-    const gcol = W + 1; // kolom awal tabel Daftar Guru
-    const R = () => rows.length - 1;
+    const cell = (r: number, c: number, v: string | number) => {
+      while (rows.length <= r) rows.push([]);
+      const row = rows[r]!;
+      while (row.length <= c) row.push('');
+      row[c] = v;
+    };
+    const merge = (r: number, c1: number, c2: number) =>
+      merges.push({ s: { r, c: c1 }, e: { r, c: c2 } });
 
-    // ---- Daftar Guru di sisi kanan (mulai baris 0) ----
-    const guruHeader = ['NO', 'NAMA', 'MATA PELAJARAN', 'SEN', 'SEL', 'RAB', 'KAM', 'JUM', 'SAB', 'JML'];
-    const guruRows: (string | number)[][] = [
-      ['DAFTAR GURU'],
-      guruHeader,
-      ...mx.teachers.map((t) => [
+    // ---- Kop ----
+    const totalW = gcol + W;
+    cell(0, 0, (school?.name ?? 'SMP MUHAMMADIYAH 3 KOTA BANDUNG').toUpperCase());
+    merge(0, 0, totalW - 1);
+    cell(1, 0, 'JADWAL PELAJARAN');
+    merge(1, 0, totalW - 1);
+    cell(
+      2,
+      0,
+      `${semester ? `SEMESTER ${semester.name.toUpperCase()}` : 'SEMESTER'} - TAHUN AJARAN ${year?.name ?? ''}`,
+    );
+    merge(2, 0, totalW - 1);
+    cell(4, 0, '1. JADWAL');
+
+    // ---- Tulis blok hari mulai dari baris & kolom tertentu → tinggi blok ----
+    const writeDay = (day: (typeof mx.days)[number], r0: number, c0: number): number => {
+      let r = r0;
+      cell(r, c0, DAY_NAMES[day.day] ?? `HARI ${day.day}`);
+      merge(r, c0, c0 + W - 1);
+      r += 1;
+      // Header kolom: NO | WAKTU | JAM | KELAS (merged) lalu nama kelas.
+      cell(r, c0, 'NO');
+      cell(r, c0 + 1, 'WAKTU');
+      cell(r, c0 + 2, 'JAM');
+      cell(r, c0 + 3, 'KELAS');
+      merge(r, c0 + 3, c0 + W - 1);
+      r += 1;
+      classes.forEach((c, i) => cell(r, c0 + 3 + i, c.name));
+      r += 1;
+      let period = 0;
+      for (const row of day.rows) {
+        if (row.block) {
+          cell(r, c0 + 1, `${mm(row.start)}-${mm(row.end)}`);
+          cell(r, c0 + 3, row.block.label);
+          merge(r, c0 + 3, c0 + W - 1);
+        } else {
+          period += 1;
+          cell(r, c0, period);
+          cell(r, c0 + 1, `${mm(row.start)}-${mm(row.end)}`);
+          cell(r, c0 + 2, period);
+          classIdx.forEach((ci, i) => {
+            const cellData = ci >= 0 ? row.cells[ci] : null;
+            if (cellData) cell(r, c0 + 3 + i, cellData.teacherNo);
+          });
+        }
+        r += 1;
+      }
+      return r; // baris bebas setelah blok
+    };
+
+    // ---- Kolom kiri: SENIN–KAMIS · kolom kanan: JUMAT–SABTU + DAFTAR GURU ----
+    const leftDays = mx.days.filter((d) => d.day <= 4 && d.rows.length);
+    const rightDays = mx.days.filter((d) => d.day >= 5 && d.rows.length);
+    let rl = 6;
+    for (const d of leftDays) {
+      rl = writeDay(d, rl, 0) + 1;
+    }
+    let rr = 6;
+    for (const d of rightDays) {
+      rr = writeDay(d, rr, gcol) + 1;
+    }
+
+    // ---- Daftar Guru di kolom kanan ----
+    rr += 1;
+    cell(rr, gcol, '2. DAFTAR GURU');
+    rr += 2;
+    const gh = ['NO', 'NAMA', 'MATA PELAJARAN', 'SEN', 'SEL', 'RAB', 'KAM', 'JUM', 'SAB', 'JML'];
+    // Header 'JUMLAH JAM PERHARI' digabung di atas kolom hari.
+    cell(rr, gcol + 3, 'JUMLAH JAM PERHARI');
+    merge(rr, gcol + 3, gcol + 9);
+    rr += 1;
+    gh.forEach((h, i) => cell(rr, gcol + i, h));
+    rr += 1;
+    for (const t of mx.teachers) {
+      const vals: (string | number)[] = [
         t.no, t.name, t.subject,
         t.dayCounts[1] ?? 0, t.dayCounts[2] ?? 0, t.dayCounts[3] ?? 0,
         t.dayCounts[4] ?? 0, t.dayCounts[5] ?? 0, t.dayCounts[6] ?? 0, t.total,
-      ]),
-    ];
-
-    for (const d of mx.days) {
-      if (!d.rows.length) continue;
-      // Bar judul hari
-      const dayRow = new Array(W).fill('');
-      dayRow[0] = DAY_NAMES[d.day] ?? `HARI ${d.day}`;
-      rows.push(dayRow);
-      merges.push({ s: { r: R(), c: 0 }, e: { r: R(), c: W - 1 } });
-      // Header kolom
-      rows.push(['NO', 'WAKTU', 'JAM', 'KELAS', ...new Array(nCls - 1).fill('')]);
-      merges.push({ s: { r: R(), c: 3 }, e: { r: R(), c: W - 1 } });
-      rows.push(['', '', '', ...mx.classes.filter((_, i) => clsIdx[i]).map((c) => c.name)]);
-      // Segmen waktu
-      let period = 0;
-      const classCols = mx.classes.map((_, i) => i).filter((i) => clsIdx[i]);
-      d.rows.forEach((row) => {
-        const r = new Array<string | number>(W).fill('');
-        r[1] = `${mm(row.start)}-${mm(row.end)}`;
-        if (row.block) {
-          r[3] = row.block.label;
-          rows.push(r);
-          merges.push({ s: { r: R(), c: 3 }, e: { r: R(), c: W - 1 } });
-        } else {
-          period += 1;
-          r[0] = period; r[2] = period;
-          classCols.forEach((ci, out) => {
-            const cell = row.cells[ci];
-            r[3 + out] = cell ? cell.teacherNo : '';
-          });
-          rows.push(r);
-        }
-      });
-      rows.push([]);
+      ];
+      vals.forEach((v, i) => cell(rr, gcol + i, v));
+      rr += 1;
     }
 
-    // Tempelkan tabel Daftar Guru mulai baris 1 di kolom kanan.
-    const maxR = Math.max(rows.length, guruRows.length);
-    while (rows.length < maxR) rows.push([]);
-    guruRows.forEach((gr, i) => {
-      const target = rows[i]!;
-      while (target.length < gcol) target.push('');
-      gr.forEach((v, j) => { target[gcol + j] = v; });
-    });
-    if (guruRows.length > 1) merges.push({ s: { r: 0, c: gcol }, e: { r: 0, c: gcol + guruHeader.length - 1 } });
-
-    // Merge vertikal sel guru yang sama (entryId sama di segmen berurutan).
-    // Direkonstruksi: lacak posisi baris tiap sel saat menulis — hitung ulang.
     const ws = XLSX.utils.aoa_to_sheet(rows);
     ws['!merges'] = merges;
-    ws['!cols'] = [{ wch: 4 }, { wch: 13 }, { wch: 4 }, ...new Array(nCls).fill({ wch: 5 }) as { wch: number }[]]
-      .concat([{ wch: 2 }])
-      .concat([{ wch: 4 }, { wch: 26 }, { wch: 20 }, { wch: 4 }, { wch: 4 }, { wch: 4 }, { wch: 4 }, { wch: 4 }, { wch: 4 }, { wch: 5 }]);
+    ws['!cols'] = [
+      // blok kiri
+      { wch: 4 }, { wch: 13 }, { wch: 4 }, ...new Array(nCls).fill({ wch: 5 }) as { wch: number }[],
+      // spasi
+      { wch: 2 },
+      // blok kanan
+      { wch: 4 }, { wch: 13 }, { wch: 4 }, ...new Array(nCls).fill({ wch: 5 }) as { wch: number }[],
+      // ekstra kolom legenda guru (NAMA/MAPEL lebih lebar — timpa kolom kelas kanan)
+    ];
+    // Kolom blok kanan: NO/WAKTU/JAM sempit, kolom kelas jadi lebar tetap;
+    // NAMA & MATA PELAJARAN legenda menempati kolom kelas kanan pertama —
+    // lebarkan supaya nama guru muat.
+    const cols = ws['!cols'] as { wch: number }[];
+    cols[gcol + 1] = { wch: 26 }; // NAMA guru menimpa kolom WAKTU kanan
+    cols[gcol + 2] = { wch: 18 }; // MAPEL menimpa kolom JAM kanan
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Jadwal');
     return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;

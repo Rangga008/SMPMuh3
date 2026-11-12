@@ -1319,6 +1319,28 @@ export class AcademicService {
     return c;
   }
 
+  /** Hapus rombel — ditolak bila masih berisi siswa atau dipakai penugasan. */
+  async deleteClass(id: string, actorId: string) {
+    const c = await this.prisma.class.findUnique({
+      where: { id },
+      include: { _count: { select: { enrollments: true, assignments: true } } },
+    });
+    if (!c) throw new NotFoundException('Rombel tidak ditemukan.');
+    if (c._count.enrollments > 0) {
+      throw new ConflictException(
+        `Rombel ${c.name} masih berisi ${c._count.enrollments} siswa — pindahkan dulu.`,
+      );
+    }
+    if (c._count.assignments > 0) {
+      throw new ConflictException(
+        `Rombel ${c.name} masih dipakai ${c._count.assignments} penugasan — hapus penugasan dulu.`,
+      );
+    }
+    await this.prisma.class.delete({ where: { id } });
+    await this.audit.log({ actorId, action: 'class.delete', entity: 'class', entityId: id });
+    return { ok: true };
+  }
+
   async enroll(dto: EnrollmentDto, actorId: string) {
     const clash = await this.prisma.enrollment.findUnique({
       where: {
@@ -1370,7 +1392,7 @@ export class AcademicService {
       where: academicYearId ? { academicYearId } : {},
       include: {
         employee: { select: { id: true, name: true } },
-        subject: { select: { code: true, name: true } },
+        subject: { select: { id: true, code: true, name: true } },
         class: { select: { id: true, name: true } },
         schedules: true,
       },
@@ -1378,11 +1400,89 @@ export class AcademicService {
     });
   }
 
+  /** Ubah guru/mapel penugasan — salah input bisa diperbaiki tanpa hapus. */
+  async updateAssignment(
+    id: string,
+    dto: { employeeId?: string; subjectId?: string },
+    actorId: string,
+  ) {
+    const existing = await this.prisma.teachingAssignment.findUnique({
+      where: { id },
+    });
+    if (!existing) throw new NotFoundException('Penugasan tidak ditemukan.');
+    const a = await this.prisma.teachingAssignment
+      .update({
+        where: { id },
+        data: {
+          ...(dto.employeeId !== undefined ? { employeeId: dto.employeeId } : {}),
+          ...(dto.subjectId !== undefined ? { subjectId: dto.subjectId } : {}),
+        },
+      })
+      .catch((e: { code?: string }) => {
+        if (e.code === 'P2002') {
+          throw new ConflictException('Penugasan serupa sudah ada');
+        }
+        throw e;
+      });
+    await this.audit.log({ actorId, action: 'assignment.update', entity: 'teaching_assignment', entityId: id });
+    return a;
+  }
+
+  /**
+   * Hapus penugasan — entri jadwalnya ikut terhapus (tak bermakna tanpa
+   * penugasan). Atomik supaya tak tersisa separuh.
+   */
+  async deleteAssignment(id: string, actorId: string) {
+    const existing = await this.prisma.teachingAssignment.findUnique({
+      where: { id },
+      include: { _count: { select: { schedules: true } } },
+    });
+    if (!existing) throw new NotFoundException('Penugasan tidak ditemukan.');
+    await this.prisma.$transaction([
+      this.prisma.scheduleEntry.deleteMany({ where: { assignmentId: id } }),
+      this.prisma.teachingAssignment.delete({ where: { id } }),
+    ]);
+    await this.audit.log({
+      actorId,
+      action: 'assignment.delete',
+      entity: 'teaching_assignment',
+      entityId: id,
+      metadata: { removedEntries: existing._count.schedules },
+    });
+    return { removedEntries: existing._count.schedules };
+  }
+
   createScheduleEntry(dto: ScheduleEntryDto, _actorId: string) {
     if (dto.endMinute <= dto.startMinute) {
       throw new ConflictException('Jam selesai harus setelah jam mulai');
     }
     return this.prisma.scheduleEntry.create({ data: { ...dto, room: dto.room ?? null } });
+  }
+
+  /** Ubah entri jadwal — hari/jam/ruangan; assignment tak bisa pindah kelas. */
+  async updateScheduleEntry(
+    id: string,
+    dto: { day?: number; startMinute?: number; endMinute?: number; room?: string },
+    actorId: string,
+  ) {
+    const existing = await this.prisma.scheduleEntry.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Entri jadwal tidak ditemukan.');
+    const start = dto.startMinute ?? existing.startMinute;
+    const end = dto.endMinute ?? existing.endMinute;
+    if (end <= start) {
+      throw new ConflictException('Jam selesai harus setelah jam mulai');
+    }
+    const s = await this.prisma.scheduleEntry.update({
+      where: { id },
+      data: {
+        ...(dto.day !== undefined ? { day: dto.day } : {}),
+        ...(dto.startMinute !== undefined ? { startMinute: dto.startMinute } : {}),
+        ...(dto.endMinute !== undefined ? { endMinute: dto.endMinute } : {}),
+        ...(dto.room !== undefined ? { room: dto.room || null } : {}),
+      },
+    });
+    await this.audit.log({ actorId, action: 'schedule.update', entity: 'schedule_entry', entityId: id });
+    return s;
   }
 
   /** Jadwal per rombel (via penugasan) — untuk tampilan grid mingguan. */

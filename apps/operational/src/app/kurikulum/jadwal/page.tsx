@@ -5,11 +5,13 @@ import { Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { PageTitle, Widget } from '@/components/widgets';
 import { SearchSelect } from '@/components/search-select';
+import { useConfirm } from '@/components/confirm-dialog';
 import { PERMISSIONS } from '@smpmuh3/types';
 import { usePermission } from '@/lib/use-permission';
 import {
   createAssignment,
   createSchedule,
+  deleteAssignment,
   deleteSchedule,
   listAcademicYears,
   listAssignments,
@@ -17,6 +19,8 @@ import {
   listEmployees,
   listSchedules,
   listSubjects,
+  updateAssignment,
+  updateSchedule,
   type AcademicYear,
   type AssignmentView,
   type ClassView,
@@ -47,7 +51,11 @@ export default function JadwalPage() {
   const [busy, setBusy] = useState(false);
   const [showAssign, setShowAssign] = useState(false);
   const [showEntry, setShowEntry] = useState(false);
+  const [editAssign, setEditAssign] = useState<AssignmentView | null>(null);
+  const [editEmployee, setEditEmployee] = useState<EmployeeDto | null>(null);
+  const [editEntry, setEditEntry] = useState<ScheduleView | null>(null);
   const canManage = usePermission(PERMISSIONS.ACADEMIC_MANAGE);
+  const { confirm, dialog } = useConfirm();
 
   useEffect(() => {
     Promise.all([listAcademicYears(), listEmployees('TEACHER'), listSubjects()])
@@ -93,6 +101,8 @@ export default function JadwalPage() {
       setNotice(ok);
       setShowAssign(false);
       setShowEntry(false);
+      setEditAssign(null);
+      setEditEntry(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Aksi gagal.');
     } finally {
@@ -158,8 +168,48 @@ export default function JadwalPage() {
           <ul className="space-y-2">
             {classAssignments.map((a) => (
               <li key={a.id} className="rounded-xl border border-sand-200 bg-sand-50 px-3.5 py-2.5">
-                <p className="text-sm font-bold text-sand-900">{a.subject.name}</p>
-                <p className="text-xs text-sand-500">{a.employee.name} · {a.subject.code}</p>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-sand-900">{a.subject.name}</p>
+                    <p className="text-xs text-sand-500">{a.employee.name} · {a.subject.code}</p>
+                  </div>
+                  {canManage ? (
+                    <span className="flex shrink-0 gap-1 pt-0.5">
+                      <button
+                        type="button"
+                        title="Ubah guru/mapel"
+                        className="rounded-lg px-1.5 py-0.5 text-xs text-primary-700 hover:bg-primary-50"
+                        onClick={() => {
+                          setEditAssign(a);
+                          setEditEmployee(
+                            employees.find((e) => e.id === a.employee.id) ??
+                              ({ id: a.employee.id, name: a.employee.name } as EmployeeDto),
+                          );
+                        }}
+                      >
+                        ✎
+                      </button>
+                      <button
+                        type="button"
+                        title="Hapus penugasan"
+                        className="rounded-lg px-1.5 py-0.5 text-xs text-red-600 hover:bg-red-50"
+                        onClick={() =>
+                          void (async () => {
+                            const n = a.schedules?.length ?? 0;
+                            const ok = await confirm({
+                              title: `Hapus penugasan ${a.subject.name}?`,
+                              body: `${a.employee.name} · ${n} entri jadwal ikut terhapus.`,
+                              confirmLabel: 'Ya, hapus',
+                            });
+                            if (ok) void run(() => deleteAssignment(a.id), 'Penugasan dihapus.');
+                          })()
+                        }
+                      >
+                        🗑
+                      </button>
+                    </span>
+                  ) : null}
+                </div>
               </li>
             ))}
             {classAssignments.length === 0 ? (
@@ -190,14 +240,35 @@ export default function JadwalPage() {
                           <p className="mt-1 flex items-center justify-between text-[11px] font-semibold text-sand-600">
                             <span>{toHHMM(s.startMinute)}–{toHHMM(s.endMinute)}{s.room ? ` · ${s.room}` : ''}</span>
                             {canManage ? (
-                              <button
-                                type="button"
-                                aria-label="Hapus entri"
-                                className="text-red-500 opacity-0 transition-opacity group-hover:opacity-100"
-                                onClick={() => void run(() => deleteSchedule(s.id), 'Entri dihapus.')}
-                              >
-                                ✕
-                              </button>
+                              <span className="flex gap-0.5">
+                                <button
+                                  type="button"
+                                  aria-label="Ubah entri"
+                                  title="Ubah hari/jam"
+                                  className="text-primary-600 hover:underline"
+                                  onClick={() => setEditEntry(s)}
+                                >
+                                  ✎
+                                </button>
+                                <button
+                                  type="button"
+                                  aria-label="Hapus entri"
+                                  title="Hapus entri"
+                                  className="text-red-500 hover:underline"
+                                  onClick={() =>
+                                    void (async () => {
+                                      const ok = await confirm({
+                                        title: 'Hapus entri jadwal?',
+                                        body: `${s.assignment.subject.name} — ${DAYS[s.day]} ${toHHMM(s.startMinute)}–${toHHMM(s.endMinute)}`,
+                                        confirmLabel: 'Ya, hapus',
+                                      });
+                                      if (ok) void run(() => deleteSchedule(s.id), 'Entri dihapus.');
+                                    })()
+                                  }
+                                >
+                                  ✕
+                                </button>
+                              </span>
                             ) : null}
                           </p>
                         </li>
@@ -309,6 +380,129 @@ export default function JadwalPage() {
           </div>
         </form>
       </Modal>
+
+      {/* ---------- Modal ubah penugasan ---------- */}
+      <Modal
+        open={editAssign !== null}
+        onClose={() => setEditAssign(null)}
+        title={`Ubah Penugasan — ${editAssign?.subject.name ?? ''}`}
+      >
+        {editAssign ? (
+          <form
+            key={editAssign.id}
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const f = new FormData(e.currentTarget);
+              const emp = String(f.get('employeeId') ?? '');
+              const sub = String(f.get('subjectId') ?? '');
+              void run(
+                () =>
+                  updateAssignment(editAssign.id, {
+                    ...(emp ? { employeeId: emp } : {}),
+                    ...(sub ? { subjectId: sub } : {}),
+                  }),
+                'Penugasan diperbarui.',
+              );
+            }}
+          >
+            <p className="rounded-xl bg-sand-50 px-3 py-2 text-xs text-sand-500">
+              Kelas {editAssign.class.name} — salah input guru atau mapel bisa diperbaiki di sini.
+            </p>
+            <Field label="Guru">
+              <SearchSelect
+                name="employeeId"
+                required
+                placeholder="Ketik nama guru…"
+                value={editEmployee}
+                onPick={setEditEmployee}
+                load={(q) =>
+                  Promise.resolve(
+                    employees.filter((e) => e.name.toLowerCase().includes(q.trim().toLowerCase())),
+                  )
+                }
+                label={(e) => e.name}
+                sub={(e) => e.nip}
+              />
+            </Field>
+            <Field label="Mata Pelajaran">
+              <Select name="subjectId" required defaultValue={editAssign.subject.id}>
+                {subjects.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
+                ))}
+              </Select>
+            </Field>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={() => setEditAssign(null)}>Batal</Button>
+              <Button type="submit" disabled={busy}>Simpan</Button>
+            </div>
+          </form>
+        ) : null}
+      </Modal>
+
+      {/* ---------- Modal ubah entri jadwal ---------- */}
+      <Modal
+        open={editEntry !== null}
+        onClose={() => setEditEntry(null)}
+        title="Ubah Entri Jadwal"
+      >
+        {editEntry ? (
+          <form
+            key={editEntry.id}
+            className="grid gap-4 sm:grid-cols-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const f = new FormData(e.currentTarget);
+              void run(
+                () =>
+                  updateSchedule(editEntry.id, {
+                    day: Number(f.get('day')),
+                    startMinute: toMin(String(f.get('start'))),
+                    endMinute: toMin(String(f.get('end'))),
+                    room: String(f.get('room') ?? ''),
+                  }),
+                'Entri jadwal diperbarui.',
+              );
+            }}
+          >
+            <p className="rounded-xl bg-sand-50 px-3 py-2 text-xs text-sand-500 sm:col-span-2">
+              {editEntry.assignment.subject.name} — {editEntry.assignment.employee.name} ·{' '}
+              {editEntry.assignment.class.name}
+            </p>
+            <Field label="Hari">
+              <Select name="day" required defaultValue={String(editEntry.day)}>
+                {DAYS.slice(1).map((d, i) => (
+                  <option key={i + 1} value={i + 1}>{d}</option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Ruangan">
+              <Input name="room" defaultValue={editEntry.room ?? ''} placeholder="R.7A / Lab" />
+            </Field>
+            <Field label="Mulai">
+              <Input
+                name="start"
+                type="time"
+                required
+                defaultValue={`${String(Math.floor(editEntry.startMinute / 60)).padStart(2, '0')}:${String(editEntry.startMinute % 60).padStart(2, '0')}`}
+              />
+            </Field>
+            <Field label="Selesai">
+              <Input
+                name="end"
+                type="time"
+                required
+                defaultValue={`${String(Math.floor(editEntry.endMinute / 60)).padStart(2, '0')}:${String(editEntry.endMinute % 60).padStart(2, '0')}`}
+              />
+            </Field>
+            <div className="flex justify-end gap-2 sm:col-span-2">
+              <Button type="button" variant="ghost" onClick={() => setEditEntry(null)}>Batal</Button>
+              <Button type="submit" disabled={busy}>Simpan</Button>
+            </div>
+          </form>
+        ) : null}
+      </Modal>
+      {dialog}
     </Shell>
   );
 }

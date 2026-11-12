@@ -552,6 +552,9 @@ export const createStudent = (dto: Record<string, unknown>) =>
   req<StudentDto>('/students', { method: 'POST', json: dto });
 export const updateStudent = (id: string, dto: Record<string, unknown>) =>
   req<StudentDto>(`/students/${id}`, { method: 'PATCH', json: dto });
+/** Arsipkan siswa (soft delete — status jadi Keluar, tak tampil di daftar). */
+export const deleteStudent = (id: string) =>
+  req(`/students/${id}`, { method: 'DELETE' });
 export const addAchievement = (id: string, dto: Record<string, unknown>) =>
   req(`/students/${id}/achievements`, { method: 'POST', json: dto });
 export const addViolation = (id: string, dto: Record<string, unknown>) =>
@@ -1511,6 +1514,8 @@ export const uploadSchoolSignature = (file: File) =>
 // ---------- Akademik lanjutan (fase 6) ----------
 export const updateClass = (id: string, dto: Record<string, unknown>) =>
   req<ClassView>(`/classes/${id}`, { method: 'PATCH', json: dto });
+export const deleteClass = (id: string) =>
+  req(`/classes/${id}`, { method: 'DELETE' });
 export const createAcademicYear = (dto: {
   name: string; startDate: string; endDate: string; isActive?: boolean;
 }) => req<AcademicYear>('/academic-years', { method: 'POST', json: dto });
@@ -1688,7 +1693,7 @@ export const cancelWaMessage = (id: string) =>
 export interface AssignmentView {
   id: string;
   employee: { id: string; name: string };
-  subject: { code: string; name: string };
+  subject: { id: string; code: string; name: string };
   class: { id: string; name: string };
   schedules?: ScheduleView[];
 }
@@ -1696,6 +1701,10 @@ export const listAssignments = (academicYearId?: string) =>
   req<AssignmentView[]>(`/assignments${academicYearId ? `?academicYearId=${academicYearId}` : ''}`);
 export const createAssignment = (dto: Record<string, unknown>) =>
   req<AssignmentView>('/assignments', { method: 'POST', json: dto });
+export const updateAssignment = (id: string, dto: { employeeId?: string; subjectId?: string }) =>
+  req<AssignmentView>(`/assignments/${id}`, { method: 'PATCH', json: dto });
+export const deleteAssignment = (id: string) =>
+  req<{ removedEntries: number }>(`/assignments/${id}`, { method: 'DELETE' });
 
 export interface ScheduleView {
   id: string;
@@ -1719,6 +1728,10 @@ export const listSchedules = (classId?: string, academicYearId?: string) => {
 };
 export const createSchedule = (dto: Record<string, unknown>) =>
   req<ScheduleView>('/schedules', { method: 'POST', json: dto });
+export const updateSchedule = (
+  id: string,
+  dto: { day?: number; startMinute?: number; endMinute?: number; room?: string },
+) => req<ScheduleView>(`/schedules/${id}`, { method: 'PATCH', json: dto });
 export const deleteSchedule = (id: string) =>
   req(`/schedules/${id}`, { method: 'DELETE' });
 

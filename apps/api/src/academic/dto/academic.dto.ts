@@ -376,6 +376,17 @@ export class TeachingAssignmentDto {
   academicYearId!: string;
 }
 
+/** Ubah penugasan — minimal satu field diisi. */
+export class UpdateAssignmentDto {
+  @IsOptional()
+  @IsUUID()
+  employeeId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  subjectId?: string;
+}
+
 export class ScheduleEntryDto {
   @IsUUID()
   assignmentId!: string;
@@ -394,6 +405,32 @@ export class ScheduleEntryDto {
   @Min(1)
   @Max(1440)
   endMinute!: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  room?: string;
+}
+
+/** Ubah entri jadwal — semua opsional, yang diisi yang diubah. */
+export class UpdateScheduleEntryDto {
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(6)
+  day?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(1439)
+  startMinute?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(1440)
+  endMinute?: number;
 
   @IsOptional()
   @IsString()

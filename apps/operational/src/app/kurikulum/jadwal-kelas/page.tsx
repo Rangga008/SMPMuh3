@@ -92,8 +92,12 @@ export default function JadwalKelasPage() {
         subtitle="Jadwal mingguan per kelas (berlaku satu semester) + blok non-mapel: Ishoma, Pembiasaan, Istirahat, Upacara."
         actions={
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => yearId && downloadTimetableXlsx(yearId, classId || undefined)}>
-              Export Excel
+            <Button
+              variant="outline" size="sm"
+              title="Semua kelas dalam satu file — format cetak: Senin–Kamis kiri, Jumat–Sabtu kanan + daftar guru"
+              onClick={() => yearId && downloadTimetableXlsx(yearId)}
+            >
+              Export Excel (Semua Kelas)
             </Button>
             <Button variant="outline" size="sm" onClick={() => yearId && window.open(`/kurikulum/jadwal-kelas/cetak?year=${yearId}`, '_blank')}>
               Cetak PDF

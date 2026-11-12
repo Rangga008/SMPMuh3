@@ -72,7 +72,7 @@ services:
       MINIO_BROWSER_REDIRECT_URL: http://localhost:${S3_CONSOLE_PORT:-9001}
     command: server /bitnami/minio/data --console-address ":9001"
     ports:
-      - "9000:9000"                                 # S3 API
+      - "${S3_API_PORT:-9000}:9000"                 # S3 API
       - "${S3_CONSOLE_PORT:-9001}:9001"             # MinIO console
     volumes:
       - s3-data:/bitnami/minio/data

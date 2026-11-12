@@ -37,7 +37,9 @@ import {
   SemesterDto,
   SubjectDto,
   TeachingAssignmentDto,
+  UpdateAssignmentDto,
   UpdateClassDto,
+  UpdateScheduleEntryDto,
   UpdateCurriculumDto,
   UpdateSemesterDto,
   UpdateSubjectDto,
@@ -556,6 +558,12 @@ export class AcademicController {
     return this.academic.updateClass(id, dto, u.id);
   }
 
+  @Delete('classes/:id')
+  @RequirePermission(M)
+  deleteClass(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.academic.deleteClass(id, u.id);
+  }
+
   @Get('classes/:id/students')
   @RequirePermission(R)
   classStudents(@Param('id', ParseUUIDPipe) id: string) {
@@ -584,10 +592,36 @@ export class AcademicController {
     return this.academic.createAssignment(dto, u.id);
   }
 
+  @Patch('assignments/:id')
+  @RequirePermission(M)
+  updateAssignment(
+    @CurrentUser() u: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateAssignmentDto,
+  ) {
+    return this.academic.updateAssignment(id, dto, u.id);
+  }
+
+  @Delete('assignments/:id')
+  @RequirePermission(M)
+  deleteAssignment(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.academic.deleteAssignment(id, u.id);
+  }
+
   @Post('schedules')
   @RequirePermission(M)
   createSchedule(@CurrentUser() u: AuthUser, @Body() dto: ScheduleEntryDto) {
     return this.academic.createScheduleEntry(dto, u.id);
+  }
+
+  @Patch('schedules/:id')
+  @RequirePermission(M)
+  updateSchedule(
+    @CurrentUser() u: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateScheduleEntryDto,
+  ) {
+    return this.academic.updateScheduleEntry(id, dto, u.id);
   }
 
   @Get('schedules')

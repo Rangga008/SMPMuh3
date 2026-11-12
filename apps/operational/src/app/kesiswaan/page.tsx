@@ -11,7 +11,10 @@ import { Shell } from '@/components/shell';
 import { DataTable } from '@/components/data-table';
 import { PageTitle } from '@/components/widgets';
 import { rowActionClasses } from '@/components/row-btn';
-import { createStudent, listStudents, listAcademicYears, listClasses } from '@/lib/api';
+import { useConfirm } from '@/components/confirm-dialog';
+import { usePermission } from '@/lib/use-permission';
+import { PERMISSIONS } from '@smpmuh3/types';
+import { createStudent, deleteStudent, listStudents, listAcademicYears, listClasses } from '@/lib/api';
 import { downloadStudentTemplate, importStudentsDapodik } from '@/lib/api-ops';
 
 const tone = (s: string) => (s === 'ACTIVE' ? 'primary' : 'neutral');
@@ -92,6 +95,8 @@ export default function StudentsPage() {
   }
   const [showForm, setShowForm] = useState(false);
   const [busy, setBusy] = useState(false);
+  const canManage = usePermission(PERMISSIONS.STUDENT_MANAGE);
+  const { confirm, dialog } = useConfirm();
 
   const load = useCallback((q: { search?: string; status?: string }) => {
     setLoading(true);
@@ -167,6 +172,7 @@ export default function StudentsPage() {
       {notice ? (
         <p role="status" className="mb-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">{notice}</p>
       ) : null}
+      {dialog}
 
       {showForm ? (
         <Modal
@@ -260,9 +266,38 @@ export default function StudentsPage() {
               <Badge tone={tone(s.status)}>{STUDENT_STATUS_LABELS[s.status]}</Badge>
             </td>
             <td className="px-5 py-3.5 text-right">
-              <Link href={`/kesiswaan/${s.id}`} className={rowActionClasses('neutral')}>
-                Detail
-              </Link>
+              <span className="flex justify-end gap-1.5">
+                <Link href={`/kesiswaan/${s.id}`} className={rowActionClasses('neutral')}>
+                  Detail
+                </Link>
+                {canManage ? (
+                  <button
+                    type="button"
+                    title="Arsipkan siswa"
+                    className={rowActionClasses('danger')}
+                    onClick={() =>
+                      void (async () => {
+                        const ok = await confirm({
+                          title: `Arsipkan ${s.name}?`,
+                          body: 'Status siswa jadi Keluar dan hilang dari daftar aktif. Data tidak terhapus permanen.',
+                          confirmLabel: 'Ya, arsipkan',
+                        });
+                        if (!ok) return;
+                        setError(null);
+                        try {
+                          await deleteStudent(s.id);
+                          setNotice(`${s.name} diarsipkan.`);
+                          load({ search, status });
+                        } catch (e) {
+                          setError(e instanceof Error ? e.message : 'Gagal mengarsipkan.');
+                        }
+                      })()
+                    }
+                  >
+                    Hapus
+                  </button>
+                ) : null}
+              </span>
             </td>
           </tr>
         ))}
