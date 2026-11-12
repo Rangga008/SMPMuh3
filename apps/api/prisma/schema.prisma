@@ -1312,6 +1312,7 @@ model Student {
   documents    Document[]
   answers      StudentAnswer[]
   examSeats    ExamSeat[]
+  examAttempts ExamAttempt[]
   ekskulMemberships ExtracurricularMember[]
 
   @@index([status, name])
@@ -1596,6 +1597,7 @@ model Assessment {
   academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
   grades       Grade[]
   questions    AssessmentQuestion[]
+  exams        Exam[]
 
   @@map("assessments")
 }
@@ -1872,9 +1874,11 @@ model AssessmentQuestion {
   weight       Int          @default(1) // bobot nilai
   key          Json? // kunci jawaban (index benar / pasangan menjodohkan)
   prompt       String? // teks soal singkat opsional
+  options      Json? // teks pilihan — {choices:[..]} utk PG/PGK, {pairs:[{left,right}]} utk menjodohkan
 
-  assessment Assessment     @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
-  answers    StudentAnswer[]
+  assessment  Assessment      @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  answers     StudentAnswer[]
+  examAnswers ExamAnswer[]
 
   @@unique([assessmentId, number])
   @@map("assessment_questions")
@@ -1897,6 +1901,87 @@ model StudentAnswer {
   @@unique([questionId, studentId])
   @@index([studentId])
   @@map("student_answers")
+}
+
+// ---------- CBT: ujian daring untuk siswa ----------
+
+enum ExamStatus {
+  DRAFT // disusun — belum bisa dimasuki
+  OPEN // kode aktif, siswa bisa masuk dalam jendela waktu
+  CLOSED // ditutup — tak ada pengerjaan baru
+}
+
+enum ExamAttemptStatus {
+  STARTED
+  SUBMITTED
+}
+
+/** Sesi ujian CBT — siswa masuk pakai NIS + kode ujian. */
+model Exam {
+  id             String         @id @default(uuid()) @db.Uuid
+  code           String         @unique // kode masuk — dibagikan pengawas, mis. "X4K2-Q7MP"
+  title          String // judul tampil ke siswa
+  assessmentId   String         @map("assessment_id") @db.Uuid
+  academicYearId String         @map("academic_year_id") @db.Uuid
+  classIds       Json // array uuid kelas yang boleh ikut
+  instructions   String? // instruksi di halaman persiapan
+  startAt        DateTime       @map("start_at")
+  endAt          DateTime       @map("end_at")
+  durationMin    Int            @map("duration_min")
+  shuffle        Boolean        @default(false)
+  showScore      Boolean        @default(true) @map("show_score")
+  status         ExamStatus     @default(DRAFT)
+  createdBy      String?        @map("created_by") @db.Uuid
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  assessment Assessment   @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  attempts   ExamAttempt[]
+
+  @@index([academicYearId, status])
+  @@map("exams")
+}
+
+/** Satu kali pengerjaan ujian oleh satu siswa — token acak = "kunci" sesi CBT. */
+model ExamAttempt {
+  id           String            @id @default(uuid()) @db.Uuid
+  examId       String            @map("exam_id") @db.Uuid
+  studentId    String            @map("student_id") @db.Uuid
+  token        String            @unique @default(cuid()) // bearer token sesi siswa
+  status       ExamAttemptStatus @default(STARTED)
+  startedAt    DateTime          @default(now()) @map("started_at")
+  deadline     DateTime // startAt + durationMin (maksimal endAt)
+  submittedAt  DateTime?         @map("submitted_at")
+  score        Int?
+  maxScore     Int?              @map("max_score")
+  createdAt    DateTime          @default(now()) @map("created_at")
+  updatedAt    DateTime          @updatedAt @map("updated_at")
+
+  exam    Exam         @relation(fields: [examId], references: [id], onDelete: Cascade)
+  student Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  answers ExamAnswer[]
+
+  @@unique([examId, studentId])
+  @@index([studentId])
+  @@map("exam_attempts")
+}
+
+/** Jawaban siswa per butir di sesi CBT — terpisah dari StudentAnswer manual. */
+model ExamAnswer {
+  id         String   @id @default(uuid()) @db.Uuid
+  attemptId  String   @map("attempt_id") @db.Uuid
+  questionId String   @map("question_id") @db.Uuid
+  answer     Json?
+  isCorrect  Boolean? @map("is_correct")
+  score      Int      @default(0)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  attempt  ExamAttempt        @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question AssessmentQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([attemptId, questionId])
+  @@map("exam_answers")
 }
 
 // ---------- Dokumen staf: administrasi guru, SK, koleksi kisi-kisi ----------

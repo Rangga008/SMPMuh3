@@ -163,6 +163,14 @@ export const NAV: NavItem[] = [
         enabled: true,
       },
       {
+        key: 'ujian-cbt',
+        label: 'Ujian CBT',
+        icon: '•',
+        href: '/kurikulum/ujian',
+        permission: PERMISSIONS.ACADEMIC_READ,
+        enabled: true,
+      },
+      {
         key: 'ledger',
         label: 'Ledger & Rekap',
         icon: '•',

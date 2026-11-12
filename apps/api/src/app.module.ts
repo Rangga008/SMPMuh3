@@ -19,6 +19,7 @@ import { PayrollModule } from './payroll/payroll.module';
 import { TatausahaModule } from './tatausaha/tatausaha.module';
 import { AttendanceModule } from './attendance/attendance.module';
 import { OpsModule } from './ops/ops.module';
+import { CbtModule } from './cbt/cbt.module';
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { OpsModule } from './ops/ops.module';
     TatausahaModule,
     AttendanceModule,
     OpsModule,
+    CbtModule,
     NotificationsModule,
     AuditModule,
   ],

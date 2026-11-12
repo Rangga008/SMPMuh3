@@ -31,11 +31,18 @@ export const downloadTimetableXlsx = (academicYearId: string, classId?: string) 
 
 export interface AssessmentQuestion {
   id: string; number: number; type: 'MCQ' | 'MCQ_COMPLEX' | 'TRUE_FALSE' | 'MATCHING';
-  weight: number; key?: unknown; prompt?: string | null;
+  weight: number; key?: unknown; prompt?: string | null; options?: unknown;
 }
 export const getAssessmentQuestions = (id: string) => req<AssessmentQuestion[]>(`/ops/assessments/${id}/questions`);
 export const setAssessmentQuestions = (id: string, questions: Partial<AssessmentQuestion>[]) =>
   req(`/ops/assessments/${id}/questions`, { method: 'PUT', json: { questions } });
+export const downloadQuestionTemplate = (id: string) =>
+  downloadFile(`/ops/assessments/${id}/questions/template`, 'template-soal.xlsx');
+export const importQuestions = (id: string, file: File) => {
+  const fd = new FormData();
+  fd.append('file', file);
+  return req<{ count: number }>(`/ops/assessments/${id}/questions/import`, { method: 'POST', body: fd });
+};
 export const saveQuestionAnswers = (questionId: string, rows: { studentId: string; score: number; isCorrect?: boolean | null; answer?: unknown }[]) =>
   req(`/ops/questions/${questionId}/answers`, { method: 'POST', json: { rows } });
 export const getQuestionAnalysis = (id: string) =>
@@ -286,3 +293,41 @@ export const updatePrasarana = (id: string, dto: Partial<{ name: string; note: s
   req<Prasarana>(`/ops/prasaranas/${id}`, { method: 'PATCH', json: dto });
 export const deletePrasarana = (id: string) => req(`/ops/prasaranas/${id}`, { method: 'DELETE' });
 export const prasaranaXlsxUrl = '/api/v1/ops/prasaranas.xlsx';
+
+// ---- CBT: ujian online siswa ----
+export interface ExamView {
+  id: string; code: string; title: string; instructions?: string | null;
+  academicYearId: string;
+  status: 'DRAFT' | 'OPEN' | 'CLOSED';
+  classIds: string[]; classNames?: string[];
+  startAt: string; endAt: string; durationMin: number;
+  shuffle: boolean; showScore: boolean; createdAt: string;
+  assessment: {
+    id: string; name: string; type: string;
+    subject: { name: string; code: string };
+    _count?: { questions: number };
+    questions?: AssessmentQuestion[];
+  };
+  _count?: { attempts: number };
+  attempts?: {
+    id: string; status: string; startedAt: string; submittedAt?: string | null;
+    deadline: string; score?: number | null; maxScore?: number | null;
+    student: { id: string; name: string; nis?: string | null; className?: string };
+  }[];
+}
+export const listExams = (academicYearId?: string) =>
+  req<ExamView[]>(`/cbt/exams${academicYearId ? `?academicYearId=${academicYearId}` : ''}`);
+export const createExam = (dto: {
+  assessmentId: string; classIds: string[]; startAt: string; endAt: string;
+  durationMin: number; title?: string | undefined; instructions?: string | undefined;
+  shuffle?: boolean | undefined; showScore?: boolean | undefined;
+}) => req<ExamView>('/cbt/exams', { method: 'POST', json: dto });
+export const getExam = (id: string) => req<ExamView>(`/cbt/exams/${id}`);
+export const updateExam = (id: string, dto: Partial<{
+  title: string; instructions: string | null; startAt: string; endAt: string;
+  durationMin: number; classIds: string[]; shuffle: boolean; showScore: boolean;
+  status: 'DRAFT' | 'OPEN' | 'CLOSED';
+}>) => req<ExamView>(`/cbt/exams/${id}`, { method: 'PATCH', json: dto });
+export const regenerateExamCode = (id: string) =>
+  req<{ id: string; code: string }>(`/cbt/exams/${id}/regenerate-code`, { method: 'POST' });
+export const deleteExam = (id: string) => req(`/cbt/exams/${id}`, { method: 'DELETE' });

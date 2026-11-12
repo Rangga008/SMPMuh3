@@ -326,6 +326,7 @@ export class OpsService {
           weight: q.weight ?? 1,
           key: q.key === undefined ? Prisma.JsonNull : (q.key as Prisma.InputJsonValue),
           prompt: q.prompt ?? null,
+          options: q.options === undefined ? Prisma.JsonNull : (q.options as Prisma.InputJsonValue),
         })),
       });
       return { count: created.count };

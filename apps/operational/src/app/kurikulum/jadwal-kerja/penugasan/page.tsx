@@ -6,6 +6,7 @@ import { Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { DataTable } from '@/components/data-table';
 import { RowBtn } from '@/components/row-btn';
+import { SearchSelect } from '@/components/search-select';
 import { PageTitle, Widget } from '@/components/widgets';
 import { PERMISSIONS } from '@smpmuh3/types';
 import { usePermission } from '@/lib/use-permission';
@@ -143,12 +144,22 @@ export default function PenugasanShiftPage() {
       <Modal open={assignModal} onClose={() => setAssignModal(false)} title="Pasang Shift ke Pegawai">
         <form onSubmit={onAssign} className="grid gap-3">
           <Field label="Pegawai">
-            <Select name="employeeId" required defaultValue="">
-              <option value="" disabled>Pilih pegawai…</option>
-              {employees.filter((e) => e.isActive).map((e) => (
-                <option key={e.id} value={e.id}>{e.name}{e.nip ? ` — ${e.nip}` : ''}</option>
-              ))}
-            </Select>
+            <SearchSelect
+              name="employeeId"
+              required
+              placeholder="Ketik nama/NIP pegawai…"
+              load={(q) =>
+                Promise.resolve(
+                  employees.filter(
+                    (e) =>
+                      e.isActive &&
+                      `${e.name} ${e.nip ?? ''}`.toLowerCase().includes(q.trim().toLowerCase()),
+                  ),
+                )
+              }
+              label={(e) => e.name}
+              sub={(e) => e.nip}
+            />
           </Field>
           <Field label="Shift">
             <Select name="shiftId" required defaultValue="">

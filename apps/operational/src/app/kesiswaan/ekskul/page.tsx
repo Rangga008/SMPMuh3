@@ -9,6 +9,7 @@ import { DataTable } from '@/components/data-table';
 import { PageTitle } from '@/components/widgets';
 import { RowBtn } from '@/components/row-btn';
 import { useConfirm } from '@/components/confirm-dialog';
+import { SearchSelect } from '@/components/search-select';
 import { StudentPicker } from '@/components/student-picker';
 import {
   addEkskulMember,
@@ -38,6 +39,7 @@ export default function EkskulPage() {
   const [busy, setBusy] = useState(false);
   const [modal, setModal] = useState<'tambah' | 'edit' | null>(null);
   const [editing, setEditing] = useState<EkskulDto | null>(null);
+  const [coach, setCoach] = useState<EmployeeDto | null>(null);
   // Modal anggota — ekskul yang sedang dibuka + daftar anggotanya.
   const [memberOf, setMemberOf] = useState<EkskulDto | null>(null);
   const [members, setMembers] = useState<EkskulMember[]>([]);
@@ -84,7 +86,7 @@ export default function EkskulPage() {
     const dto = {
       name: val('name'),
       description: val('description'),
-      coachId: val('coachId'),
+      coachId: coach?.id ?? undefined,
       schedule: val('schedule'),
       isActive: f.get('isActive') === 'on',
     };
@@ -100,6 +102,7 @@ export default function EkskulPage() {
       }
       setModal(null);
       setEditing(null);
+      setCoach(null);
       load(search);
       if (memberOf && editing && memberOf.id === editing.id) {
         setMemberOf({ ...memberOf, name: dto.name ?? memberOf.name });
@@ -141,6 +144,7 @@ export default function EkskulPage() {
               size="sm"
               onClick={() => {
                 setEditing(null);
+                setCoach(null);
                 setModal('tambah');
               }}
             >
@@ -208,6 +212,12 @@ export default function EkskulPage() {
                       tone="neutral"
                       onClick={() => {
                         setEditing(x);
+                        setCoach(
+                          x.coach
+                            ? employees.find((e) => e.id === x.coach?.id) ??
+                                ({ id: x.coach.id, name: x.coach.name } as EmployeeDto)
+                            : null,
+                        );
                         setModal('edit');
                       }}
                     >
@@ -243,6 +253,7 @@ export default function EkskulPage() {
         onClose={() => {
           setModal(null);
           setEditing(null);
+          setCoach(null);
         }}
         title={modal === 'edit' ? 'Ubah Ekskul' : 'Tambah Ekskul'}
         size="xl"
@@ -251,13 +262,20 @@ export default function EkskulPage() {
           <Field label="Nama Ekskul" className="sm:col-span-2" hint="Mis. Pramuka, PMR, Futsal, Hadroh">
             <Input name="name" required minLength={2} defaultValue={editing?.name ?? ''} />
           </Field>
-          <Field label="Pembina" hint="Pegawai pembina ekskul — opsional">
-            <Select name="coachId" defaultValue={editing?.coach?.id ?? ''}>
-              <option value="">— Belum ditentukan —</option>
-              {employees.map((e) => (
-                <option key={e.id} value={e.id}>{e.name}</option>
-              ))}
-            </Select>
+          <Field label="Pembina" hint="Pegawai pembina ekskul — opsional; kosongkan bila belum ditentukan">
+            <SearchSelect
+              name="coachId"
+              placeholder="Ketik nama pembina…"
+              value={coach}
+              onPick={setCoach}
+              load={(q) =>
+                Promise.resolve(
+                  employees.filter((e) => e.name.toLowerCase().includes(q.trim().toLowerCase())),
+                )
+              }
+              label={(e) => e.name}
+              sub={(e) => e.nip}
+            />
           </Field>
           <Field label="Jadwal" hint="Mis. Jumat 15.30–17.00">
             <Input name="schedule" defaultValue={editing?.schedule ?? ''} />

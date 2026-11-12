@@ -15,6 +15,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
+import * as XLSX from 'xlsx';
 import { PERMISSIONS, type AuthUser } from '@smpmuh3/types';
 import { CurrentUser } from '../identity/decorators/current-user.decorator';
 import { Public } from '../identity/decorators/public.decorator';
@@ -124,6 +125,135 @@ export class OpsController {
   saveAnswers(@Param('id') id: string, @Body() dto: SaveAnswersDto) {
     return this.ops.saveAnswers(id, dto);
   }
+  /** Template Excel import soal — kolom sesuai parser di questions/import. */
+  @Get('assessments/:id/questions/template')
+  @RequirePermission(PERMISSIONS.ACADEMIC_READ)
+  questionsTemplate(@Res() res: Response) {
+    const ws = XLSX.utils.aoa_to_sheet([
+      ['TEMPLATE IMPORT SOAL — isi mulai BARIS 5 (baris keterangan & contoh jangan diubah)'],
+      ['Tipe : PG = pilihan ganda · PGK = pilihan ganda kompleks (centang ≥1) · BS = benar/salah · JODOH = menjodohkan'],
+      ['Kunci: PG → satu huruf (A) · PGK → huruf dipisah koma (A,C) · BS → B atau S · JODOH → nomor pasangan dipisah koma (2,1,3)'],
+      [],
+      ['No', 'Tipe', 'Soal', 'A', 'B', 'C', 'D', 'E', 'Pasangan (JODOH — pisahkan ;)', 'Kunci', 'Bobot'],
+      ['CONTOH 1 (hapus)', 'PG', 'Ibu kota Indonesia adalah…', 'Surabaya', 'Bandung', 'Jakarta', 'Medan', '', '', 'C', '1'],
+      ['CONTOH 2 (hapus)', 'PGK', 'Pilih semua bilangan prima:', '2', '4', '5', '9', '', '', 'A,C', '2'],
+      ['CONTOH 3 (hapus)', 'BS', 'Indonesia merdeka tahun 1945.', '', '', '', '', '', '', 'B', '1'],
+      ['CONTOH 4 (hapus)', 'JODOH', 'Jodohkan negara dengan ibu kotanya:', 'Indonesia', 'Jepang', 'Mesir', '', '', 'Tokyo;Kairo;Jakarta', '3,1,2', '3'],
+    ]);
+    ws['!cols'] = [
+      { wch: 4 }, { wch: 7 }, { wch: 44 }, { wch: 14 }, { wch: 14 },
+      { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 26 }, { wch: 8 }, { wch: 6 },
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Soal');
+    const guide = XLSX.utils.json_to_sheet([
+      { kolom: 'No', wajib: 'YA', keterangan: 'Nomor urut soal — mulai 1, jangan dobel' },
+      { kolom: 'Tipe', wajib: 'YA', keterangan: 'PG / PGK / BS / JODOH — juga menerima MCQ / MCQ_COMPLEX / TRUE_FALSE / MATCHING' },
+      { kolom: 'Soal', wajib: 'YA', keterangan: 'Teks pertanyaan' },
+      { kolom: 'A–E', wajib: 'PG & PGK', keterangan: 'Pilihan jawaban (min. 2, maks. 5) — untuk JODOH diisi pernyataan sisi kiri' },
+      { kolom: 'Pasangan', wajib: 'JODOH', keterangan: 'Pilihan sisi kanan dipisah titik-koma — contoh: Tokyo;Kairo;Jakarta' },
+      { kolom: 'Kunci', wajib: 'YA', keterangan: 'PG: satu huruf · PGK: huruf-koma (A,C) · BS: B/S · JODOH: nomor pasangan-koma (2,1,3)' },
+      { kolom: 'Bobot', wajib: 'tidak', keterangan: 'Bobot nilai soal — kosong = 1' },
+    ]);
+    guide['!cols'] = [{ wch: 12 }, { wch: 12 }, { wch: 90 }];
+    XLSX.utils.book_append_sheet(wb, guide, 'Petunjuk');
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="template-soal.xlsx"');
+    res.send(buf);
+  }
+
+  /** Import soal dari Excel/CSV — mengganti seluruh butir asesmen. */
+  @Post('assessments/:id/questions/import')
+  @RequirePermission(PERMISSIONS.ACADEMIC_MANAGE)
+  @UseInterceptors(FileInterceptor('file'))
+  async importQuestions(@Param('id') id: string, @UploadedFile() file: Express.Multer.File) {
+    if (!file) throw new BadRequestException('File wajib diunggah.');
+    const name = file.originalname.toLowerCase();
+    if (!name.endsWith('.xlsx') && !name.endsWith('.xls') && !name.endsWith('.csv')) {
+      throw new BadRequestException('Hanya file Excel (.xlsx/.xls) atau CSV.');
+    }
+    let wb: XLSX.WorkBook;
+    try {
+      wb = XLSX.read(file.buffer, { type: 'buffer' });
+    } catch {
+      throw new BadRequestException('File tidak dapat dibaca.');
+    }
+    const ws = wb.Sheets[wb.SheetNames[0] ?? ''];
+    if (!ws) throw new BadRequestException('File tidak punya sheet.');
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: '' });
+    // Cari baris header (kolom pertama = "No").
+    const hi = rows.findIndex((r) => String(r[0] ?? '').trim().toLowerCase() === 'no');
+    if (hi < 0) throw new BadRequestException('Kolom header tidak ditemukan — pakai template yang disediakan.');
+    const typeOf = (v: string) => {
+      const t = v.toUpperCase().replace(/[\s-]+/g, '_');
+      if (/^(PG|MCQ|PILIHAN_GANDA)$/.test(t)) return 'MCQ';
+      if (/^(PGK|MCQ_COMPLEX|PILIHAN_GANDA_KOMPLEKS)/.test(t)) return 'MCQ_COMPLEX';
+      if (/^(BS|B_S|TRUE_FALSE|BENAR_SALAH)/.test(t)) return 'TRUE_FALSE';
+      if (/^(JODOH|MATCHING|MENJODOHKAN)/.test(t)) return 'MATCHING';
+      return '';
+    };
+    const letterIdx = (s: string) => 'ABCDE'.indexOf(s.trim().toUpperCase());
+    const questions: QuestionDto[] = [];
+    const errors: string[] = [];
+    rows.slice(hi + 1).forEach((r, i) => {
+      const line = hi + 2 + i;
+      const no = Number(String(r[0] ?? '').trim());
+      const cells = (j: number) => String(r[j] ?? '').trim();
+      if (!cells(0) && !cells(1) && !cells(2)) return; // baris kosong
+      if (/^contoh/i.test(cells(0))) return; // baris contoh template
+      const type = typeOf(cells(1));
+      const prompt = cells(2);
+      if (!Number.isInteger(no) || no < 1) { errors.push(`Baris ${line}: nomor soal tidak valid.`); return; }
+      if (!type) { errors.push(`Baris ${line}: tipe "${cells(1)}" tidak dikenal (PG/PGK/BS/JODOH).`); return; }
+      if (!prompt) { errors.push(`Baris ${line}: teks soal kosong.`); return; }
+      const weight = Math.max(1, Math.round(Number(cells(10)) || 1));
+      const choices = [3, 4, 5, 6, 7].map((j) => cells(j)).filter(Boolean);
+      let options: unknown;
+      let key: unknown;
+      if (type === 'MCQ' || type === 'MCQ_COMPLEX') {
+        if (choices.length < 2) { errors.push(`Baris ${line}: pilihan jawaban minimal 2.`); return; }
+        options = { choices };
+        const letters = cells(9).split(/[,;\s]+/).filter(Boolean);
+        const idx = letters.map(letterIdx).filter((x) => x >= 0 && x < choices.length);
+        if (type === 'MCQ') {
+          if (idx.length !== 1) { errors.push(`Baris ${line}: kunci PG harus tepat satu huruf A–E.`); return; }
+          key = idx[0];
+        } else {
+          if (idx.length < 1) { errors.push(`Baris ${line}: kunci PGK minimal satu huruf.`); return; }
+          key = [...new Set(idx)];
+        }
+      } else if (type === 'TRUE_FALSE') {
+        const k = cells(9).toUpperCase();
+        if (!/^(B|BENAR|S|SALAH|TRUE|FALSE)$/.test(k)) {
+          errors.push(`Baris ${line}: kunci BS harus B/Benar atau S/Salah.`); return;
+        }
+        key = /^(B|BENAR|TRUE)$/.test(k);
+      } else {
+        // MATCHING — A–E = sisi kiri, Pasangan = sisi kanan (;), kunci = nomor pasangan.
+        const rights = cells(8).split(';').map((s) => s.trim()).filter(Boolean);
+        if (choices.length < 1 || rights.length < 1) {
+          errors.push(`Baris ${line}: JODOH butuh kolom A–E (kiri) dan Pasangan (kanan).`); return;
+        }
+        const nums = cells(9).split(/[,;\s]+/).filter(Boolean).map(Number);
+        if (nums.length !== choices.length || nums.some((n) => !Number.isInteger(n) || n < 1 || n > rights.length)) {
+          errors.push(`Baris ${line}: kunci JODOH = nomor pasangan per item kiri (1..${rights.length}), dipisah koma.`); return;
+        }
+        options = { pairs: choices.map((left, j) => ({ left, right: rights[nums[j]! - 1]! })) , rights };
+        key = nums.map((n) => n - 1);
+      }
+      questions.push({ number: no, type: type as QuestionDto['type'], weight, prompt, options, key });
+    });
+    if (errors.length) throw new BadRequestException(errors.slice(0, 8).join(' '));
+    if (!questions.length) throw new BadRequestException('Tidak ada baris soal yang valid.');
+    const dup = new Set<number>();
+    for (const q of questions) {
+      if (dup.has(q.number)) throw new BadRequestException(`Nomor soal ${q.number} ganda.`);
+      dup.add(q.number);
+    }
+    return this.ops.setQuestions(id, questions);
+  }
+
   @Get('assessments/:id/analysis')
   @RequirePermission(PERMISSIONS.ACADEMIC_READ)
   analysis(@Param('id') id: string) {

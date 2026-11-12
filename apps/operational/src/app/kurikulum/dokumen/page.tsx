@@ -7,6 +7,7 @@ import { PageTitle, Widget } from '@/components/widgets';
 import { DataTable } from '@/components/data-table';
 import { RowBtn } from '@/components/row-btn';
 import { FilePick } from '@/components/file-pick';
+import { SearchSelect } from '@/components/search-select';
 import { useConfirm } from '@/components/confirm-dialog';
 import {
   collectionItemUrl, createCollection, deleteStaffDoc, listCollections,
@@ -204,10 +205,18 @@ export default function DokumenPage() {
           setUpModal(false);
         }}>
           <Field label="Guru">
-            <Select name="employeeId" required>
-              <option value="">— pilih —</option>
-              {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
-            </Select>
+            <SearchSelect
+              name="employeeId"
+              required
+              placeholder="Ketik nama guru…"
+              load={(q) =>
+                Promise.resolve(
+                  employees.filter((e) => e.name.toLowerCase().includes(q.trim().toLowerCase())),
+                )
+              }
+              label={(e) => e.name}
+              sub={(e) => e.department ?? e.type ?? null}
+            />
           </Field>
           <Field label="Kategori">
             <Select name="category">{CATS.map((c) => <option key={c} value={c}>{c}</option>)}</Select>

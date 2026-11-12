@@ -29,6 +29,8 @@ export class QuestionDto {
   @IsOptional() @IsInt() @Min(1) weight?: number;
   @IsOptional() key?: unknown;
   @IsOptional() @IsString() prompt?: string;
+  /** Teks pilihan — {choices:[..]} utk PG/PGK, {pairs:[{left,right}]} utk menjodohkan. */
+  @IsOptional() options?: unknown;
 }
 
 export class AnswerRowDto {
