@@ -41,6 +41,10 @@ export default function AbsensiPage() {
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [daySearch, setDaySearch] = useState('');
+  // Baris yang diedit manual — hanya ini (+yang sudah tercatat) yang disimpan,
+  // supaya klik Simpan tidak menandai HADIR semua pegawai.
+  const [dirty, setDirty] = useState<Set<string>>(new Set());
+  const mark = (id: string) => setDirty((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
 
   const loadMonth = useCallback(() => {
     listEmpAttendance(month).then(setMonthly).catch(() => setMonthly([]));
@@ -82,14 +86,21 @@ export default function AbsensiPage() {
     setBusy(true);
     setError(null);
     try {
-      const entries = Object.entries(rows).map(([employeeId, r]) => ({
-        employeeId,
-        status: r.status,
-        teachingMinutes: Number(r.minutes) || 0,
-        ...(r.note ? { note: r.note } : {}),
-      }));
+      const entries = Object.entries(rows)
+        .filter(([employeeId]) =>
+          dirty.has(employeeId) ||
+          monthly.some((a) => a.employeeId === employeeId && a.date.slice(0, 10) === date),
+        )
+        .map(([employeeId, r]) => ({
+          employeeId,
+          status: r.status,
+          teachingMinutes: Number(r.minutes) || 0,
+          ...(r.note ? { note: r.note } : {}),
+        }));
+      if (entries.length === 0) { setNotice('Tidak ada perubahan untuk disimpan.'); return; }
       await saveEmpAttendance({ date, entries });
       setNotice(`Absensi ${date} tersimpan (${entries.length} pegawai).`);
+      setDirty(new Set());
       loadMonth();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Gagal menyimpan.');
@@ -154,7 +165,7 @@ export default function AbsensiPage() {
                 <button
                   key={iso}
                   type="button"
-                  onClick={() => { setDate(iso); setDaySearch(''); }}
+                  onClick={() => { setDate(iso); setDaySearch(''); setDirty(new Set()); }}
                   className={`relative flex h-14 flex-col items-center justify-center rounded-xl font-semibold transition ${
                     selected
                       ? 'bg-primary-600 text-white shadow'
@@ -224,13 +235,14 @@ export default function AbsensiPage() {
                   <Select
                     aria-label={`Status ${e.name}`}
                     value={r.status}
-                    disabled={true}
-                    onChange={(ev) =>
+                    disabled={!canManage}
+                    onChange={(ev) => {
+                      mark(e.id);
                       setRows((prev) => ({
                         ...prev,
                         [e.id]: { ...r, status: ev.target.value as Row['status'] },
-                      }))
-                    }
+                      }));
+                    }}
                   >
                     {STATUSES.map((s) => (
                       <option key={s} value={s}>{s}</option>
@@ -245,13 +257,14 @@ export default function AbsensiPage() {
                     placeholder="0"
                     className="w-24"
                     value={r.minutes}
-                    disabled={true}
-                    onChange={(ev) =>
+                    disabled={!canManage}
+                    onChange={(ev) => {
+                      mark(e.id);
                       setRows((prev) => ({
                         ...prev,
                         [e.id]: { ...r, minutes: ev.target.value },
-                      }))
-                    }
+                      }));
+                    }}
                   />
                 </td>
                 <td className="px-5 py-2.5">
@@ -259,19 +272,30 @@ export default function AbsensiPage() {
                     aria-label={`Catatan ${e.name}`}
                     placeholder="opsional"
                     value={r.note}
-                    disabled={true}
-                    onChange={(ev) =>
+                    disabled={!canManage}
+                    onChange={(ev) => {
+                      mark(e.id);
                       setRows((prev) => ({
                         ...prev,
                         [e.id]: { ...r, note: ev.target.value },
-                      }))
-                    }
+                      }));
+                    }}
                   />
                 </td>
               </tr>
             );
           })}
         </DataTable>
+        {canManage ? (
+          <>
+            <p className="mt-3 text-[11px] text-sand-400">
+              Menit ngajar terisi otomatis dari jadwal hari itu saat disimpan — isi manual hanya untuk koreksi (mis. guru pengganti).
+            </p>
+            <div className="mt-2 flex justify-end">
+              <Button size="sm" onClick={save} disabled={busy}>{busy ? 'Menyimpan…' : 'Simpan Perubahan'}</Button>
+            </div>
+          </>
+        ) : null}
       </Modal>
 
       <div className="mt-5">

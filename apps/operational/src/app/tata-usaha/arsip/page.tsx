@@ -9,7 +9,7 @@ import { RowBtn } from '@/components/row-btn';
 import { FilePick } from '@/components/file-pick';
 import { useConfirm } from '@/components/confirm-dialog';
 import {
-  archiveFileUrl, createArchiveCategory, deleteArchive, listArchiveCategories, listArchives, updateArchive, uploadArchive,
+  downloadArchive, previewArchive, createArchiveCategory, deleteArchive, listArchiveCategories, listArchives, updateArchive, uploadArchive,
   type ArchiveItemView,
 } from '@/lib/api-ops';
 
@@ -88,7 +88,8 @@ export default function ArsipPage() {
               <td className="max-w-44 truncate px-5 py-2.5 text-xs text-sand-600" title={a.fileName}>{a.fileName}</td>
               <td className="px-5 py-2.5 text-right">
                 <span className="flex justify-end gap-2">
-                  <RowBtn type="button" onClick={() => window.open(archiveFileUrl(a.id), '_blank')}>Detail</RowBtn>
+                  <RowBtn type="button" onClick={async () => previewArchive(a.id).catch(() => setError('Gagal membuka file.'))}>Lihat</RowBtn>
+                  <RowBtn type="button" onClick={async () => downloadArchive(a.id, a.fileName).catch(() => setError('Gagal mengunduh file.'))}>Unduh</RowBtn>
                   <RowBtn type="button" onClick={() => { setModalFile(null); setModal(a); }}>Ubah</RowBtn>
                   <RowBtn tone="danger" type="button" onClick={async () => {
                     if (!(await confirm(`Hapus arsip "${a.title}"?`))) return;

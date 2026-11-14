@@ -26,6 +26,7 @@ import {
   PayScaleDto,
   PayrollSettingsDto,
   UpdateLoanDto,
+  UpdatePayrollItemDto,
   UpdatePayScaleDto,
 } from './dto/payroll.dto';
 import { PayrollService } from './payroll.service';
@@ -305,6 +306,17 @@ export class PayrollController {
   @RequirePermission(PERMISSIONS.PAYROLL_MANAGE)
   recompute(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
     return this.payroll.recomputeRun(id, user.id);
+  }
+
+  /** Koreksi manual satu item (jam wajib / tambahan menit transport) — run harus DRAFT. */
+  @Patch('items/:id')
+  @RequirePermission(PERMISSIONS.PAYROLL_MANAGE)
+  updateItem(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdatePayrollItemDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.payroll.updatePayrollItem(id, dto, user.id);
   }
 
   @Post('runs/:id/finalize')

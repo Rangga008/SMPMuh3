@@ -402,6 +402,15 @@ export class AttendanceService {
       existing && ['IZIN', 'SAKIT', 'ALPHA'].includes(existing.status)
         ? existing.status
         : status;
+    // Menit efektif hari itu — otomatis: jadwal mengajar (guru) bila ada, selain itu
+    // durasi kehadiran masuk→pulang (staf). Dipakai payroll untuk jam hadir & transport.
+    const teaching =
+      finalStatus === 'HADIR' || finalStatus === 'TELAT'
+        ? (await this.scheduledMinutes(employeeId, day)) ||
+          (checkIn && checkOut
+            ? Math.max(0, Math.round((checkOut.getTime() - checkIn.getTime()) / 60000))
+            : 0)
+        : 0;
     await this.prisma.employeeAttendance.upsert({
       where: { employeeId_date: { employeeId, date: day } },
       update: {
@@ -409,6 +418,7 @@ export class AttendanceService {
         checkInAt: checkIn,
         checkOutAt: checkOut,
         lateMinutes,
+        teachingMinutes: teaching,
         source: 'DEVICE',
       },
       create: {
@@ -418,9 +428,29 @@ export class AttendanceService {
         checkInAt: checkIn,
         checkOutAt: checkOut,
         lateMinutes,
+        teachingMinutes: teaching,
         source: 'DEVICE',
       },
     });
+  }
+
+  /** Menit mengajar terjadwal seorang pegawai pada tanggal — dari jadwal pelajaran
+      tahun ajaran yang memuat tanggal itu (fallback: tahun aktif). */
+  private async scheduledMinutes(employeeId: string, day: Date) {
+    const dow = day.getUTCDay(); // 0=Minggu … 6=Sabtu — day adalah tengah malam UTC dari tanggal WIB
+    if (dow === 0) return 0;
+    const year =
+      (await this.prisma.academicYear.findFirst({
+        where: { startDate: { lte: day }, endDate: { gte: day } },
+        select: { id: true },
+      })) ??
+      (await this.prisma.academicYear.findFirst({ where: { isActive: true }, select: { id: true } }));
+    if (!year) return 0;
+    const entries = await this.prisma.scheduleEntry.findMany({
+      where: { day: dow, assignment: { employeeId, academicYearId: year.id } },
+      select: { startMinute: true, endMinute: true },
+    });
+    return entries.reduce((s, e) => s + Math.max(0, e.endMinute - e.startMinute), 0);
   }
 
   /** Derivasi ulang seluruh hari yang punya log — dipanggil tombol "Hitung Ulang". */

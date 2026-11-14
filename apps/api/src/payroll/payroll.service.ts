@@ -19,6 +19,7 @@ import type {
   HonorTypeDto,
   PayScaleDto,
   UpdateLoanDto,
+  UpdatePayrollItemDto,
   UpdatePayScaleDto,
 } from './dto/payroll.dto';
 
@@ -179,13 +180,25 @@ export class PayrollService {
     const d = new Date(date);
     if (Number.isNaN(d.getTime())) throw new BadRequestException('Tanggal tidak valid');
     const day = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    // Menit efektif: pakai isian manual bila >0, selain itu otomatis dari jadwal mengajar.
+    const resolved = await Promise.all(
+      entries.map(async (e) => ({
+        ...e,
+        teachingMinutes:
+          e.teachingMinutes && e.teachingMinutes > 0
+            ? e.teachingMinutes
+            : e.status === 'HADIR' || e.status === 'TELAT'
+              ? await this.scheduledMinutes(e.employeeId, day)
+              : 0,
+      })),
+    );
     await this.prisma.$transaction(
-      entries.map((e) =>
+      resolved.map((e) =>
         this.prisma.employeeAttendance.upsert({
           where: { employeeId_date: { employeeId: e.employeeId, date: day } },
           update: {
             status: e.status,
-            teachingMinutes: e.teachingMinutes ?? 0,
+            teachingMinutes: e.teachingMinutes,
             note: e.note ?? null,
             recordedBy: actorId,
           },
@@ -193,7 +206,7 @@ export class PayrollService {
             employeeId: e.employeeId,
             date: day,
             status: e.status,
-            teachingMinutes: e.teachingMinutes ?? 0,
+            teachingMinutes: e.teachingMinutes,
             note: e.note ?? null,
             recordedBy: actorId,
           },
@@ -202,6 +215,25 @@ export class PayrollService {
     );
     await this.audit.log({ actorId, action: 'payroll.attendance.upsert', entity: 'employee_attendance', entityId: date, metadata: { count: entries.length } });
     return { saved: entries.length };
+  }
+
+  /** Menit mengajar terjadwal seorang pegawai pada tanggal — dari jadwal pelajaran
+      tahun ajaran yang memuat tanggal itu (fallback: tahun aktif). */
+  private async scheduledMinutes(employeeId: string, day: Date) {
+    const dow = day.getUTCDay();
+    if (dow === 0) return 0;
+    const year =
+      (await this.prisma.academicYear.findFirst({
+        where: { startDate: { lte: day }, endDate: { gte: day } },
+        select: { id: true },
+      })) ??
+      (await this.prisma.academicYear.findFirst({ where: { isActive: true }, select: { id: true } }));
+    if (!year) return 0;
+    const entries = await this.prisma.scheduleEntry.findMany({
+      where: { day: dow, assignment: { employeeId, academicYearId: year.id } },
+      select: { startMinute: true, endMinute: true },
+    });
+    return entries.reduce((s, e) => s + Math.max(0, e.endMinute - e.startMinute), 0);
   }
 
   listAttendance(month: string, employeeId?: string) {
@@ -663,12 +695,21 @@ export class PayrollService {
     const bos = await tx.bosHonor.findMany({ where: { month } });
     const now = new Date();
 
+    // Koreksi manual yang sudah diinput keuangan dipertahankan saat hitung ulang.
+    const prevItems = await tx.payrollItem.findMany({
+      where: { runId },
+      select: { employeeId: true, manualMinutes: true, manualNote: true },
+    });
+    const prevManual = new Map(prevItems.map((i) => [i.employeeId, i]));
+
     // hapus item lama (recompute)
     await tx.payrollItem.deleteMany({ where: { runId } });
 
     const items: {
       employeeId: string;
       workedMinutes: number;
+      manualMinutes: number;
+      manualNote: string | null;
       requiredMinutes: number;
       basePay: number;
       transportPay: number;
@@ -680,13 +721,28 @@ export class PayrollService {
 
     for (const emp of employees) {
       const att = attendance.filter((a) => a.employeeId === emp.id);
-      const worked = att
-        .filter((a) => a.status === 'HADIR' || a.status === 'TELAT')
-        .reduce((s, a) => s + a.teachingMinutes, 0);
+      const present = att.filter((a) => a.status === 'HADIR' || a.status === 'TELAT');
+      // Jam hadir: menit ngajar (dari jadwal/isian manual) — bila nol, pakai durasi tap masuk→pulang.
+      const worked = present.reduce(
+        (s, a) =>
+          s +
+          (a.teachingMinutes > 0
+            ? a.teachingMinutes
+            : a.checkInAt && a.checkOutAt
+              ? Math.max(0, Math.round((a.checkOutAt.getTime() - a.checkInAt.getTime()) / 60000))
+              : 0),
+        0,
+      );
 
       const required = emp.weeklyRequiredMinutes * run.weeks;
-      // transport: menit hadir aktual bila ada catatan, else jam wajib
-      const transportMinutes = att.length > 0 ? worked : required;
+      // transport: menit hadir aktual; tanpa data absen sama sekali → dianggap penuh (jam wajib);
+      // hadir tapi tanpa jejak jam → dihitung per hari hadir × rata-rata jam wajib harian (6 hari kerja).
+      // Koreksi manual (manualMinutes) DITAMBAH ke hasil otomatis — bisa negatif.
+      const manual = prevManual.get(emp.id)?.manualMinutes ?? 0;
+      const dailyRequired = Math.round(emp.weeklyRequiredMinutes / 6);
+      const autoTransport =
+        att.length === 0 ? required : worked > 0 ? worked : present.length * dailyRequired;
+      const transportMinutes = Math.max(0, autoTransport + manual);
 
       const years = emp.workStartDate
         ? Math.max(0, Math.floor((now.getTime() - emp.workStartDate.getTime()) / (365.25 * 864e5)))
@@ -713,13 +769,19 @@ export class PayrollService {
       if (basePay > 0)
         lines.push({
           kind: 'BASE',
-          label: `Gaji wajib ${Math.round(required / 60)} jam × ${run.weeks} minggu`,
+          label: `Gaji wajib ${Math.round(emp.weeklyRequiredMinutes / 60)} jam/minggu × ${run.weeks} minggu`,
           amount: basePay,
         });
       if (transportPay > 0)
         lines.push({
           kind: 'TRANSPORT',
-          label: `Transport ${Math.round(transportMinutes / 60)} jam`,
+          label: `Transport ${Math.round(transportMinutes / 60)} jam${
+            manual !== 0
+              ? ` (absen ${Math.round(autoTransport / 60)} j ${manual > 0 ? '+' : '−'} manual ${Math.abs(Math.round(manual / 60))} j)`
+              : att.length === 0
+                ? ' (penuh — tanpa data absen)'
+                : ' hadir'
+          }`,
           amount: transportPay,
         });
 
@@ -789,6 +851,8 @@ export class PayrollService {
       items.push({
         employeeId: emp.id,
         workedMinutes: worked,
+        manualMinutes: manual,
+        manualNote: prevManual.get(emp.id)?.manualNote ?? null,
         requiredMinutes: required,
         basePay,
         transportPay,
@@ -805,6 +869,8 @@ export class PayrollService {
           runId,
           employeeId: it.employeeId,
           workedMinutes: it.workedMinutes,
+          manualMinutes: it.manualMinutes,
+          manualNote: it.manualNote,
           requiredMinutes: it.requiredMinutes,
           basePay: it.basePay,
           transportPay: it.transportPay,
@@ -848,6 +914,115 @@ export class PayrollService {
     await this.prisma.$transaction((tx) => this.computeItems(tx, id));
     await this.audit.log({ actorId, action: 'payroll.run.recompute', entity: 'payroll_run', entityId: id });
     return this.getRun(id);
+  }
+
+  /** Koreksi manual satu item (run DRAFT): jam wajib boleh dioverride;
+      manualMinutes DITAMBAH ke menit hadir otomatis dari absensi. */
+  async updatePayrollItem(itemId: string, dto: UpdatePayrollItemDto, actorId: string) {
+    const item = await this.prisma.payrollItem.findUniqueOrThrow({
+      where: { id: itemId },
+      include: {
+        run: true,
+        employee: { include: { payScale: true } },
+        lines: true,
+      },
+    });
+    if (item.run.status !== 'DRAFT') {
+      throw new ConflictException('Run sudah difinalkan — void/draft-kan dulu bila perlu koreksi.');
+    }
+    const emp = item.employee;
+    const required = dto.requiredMinutes ?? item.requiredMinutes;
+    const manual = dto.manualMinutes ?? item.manualMinutes;
+    const manualNote = dto.manualNote !== undefined ? dto.manualNote || null : item.manualNote;
+
+    // Hitung ulang transport dengan formula yang sama seperti computeItems.
+    const range = monthRange(item.run.month);
+    const att = await this.prisma.employeeAttendance.findMany({
+      where: { employeeId: emp.id, date: { gte: range.gte, lt: range.lt } },
+    });
+    const present = att.filter((a) => a.status === 'HADIR' || a.status === 'TELAT');
+    const worked = present.reduce(
+      (s, a) =>
+        s +
+        (a.teachingMinutes > 0
+          ? a.teachingMinutes
+          : a.checkInAt && a.checkOutAt
+            ? Math.max(0, Math.round((a.checkOutAt.getTime() - a.checkInAt.getTime()) / 60000))
+            : 0),
+      0,
+    );
+    const dailyRequired = Math.round(emp.weeklyRequiredMinutes / 6);
+    const autoTransport =
+      att.length === 0
+        ? required
+        : worked > 0
+          ? worked
+          : present.length * dailyRequired;
+    const transportMinutes = Math.max(0, autoTransport + manual);
+
+    const hourly = emp.hourlyRate ?? emp.payScale?.hourlyRate ?? 0;
+    const transportRate = emp.transportRate ?? emp.payScale?.transportRate ?? 0;
+    const basePay = Math.round((required / 60) * hourly);
+    const transportPay = Math.round((transportMinutes / 60) * transportRate);
+
+    const transportLabel = `Transport ${Math.round(transportMinutes / 60)} jam${
+      manual !== 0
+        ? ` (absen ${Math.round(autoTransport / 60)} j ${manual > 0 ? '+' : '−'} manual ${Math.abs(Math.round(manual / 60))} j)`
+        : att.length === 0
+          ? ' (penuh — tanpa data absen)'
+          : ' hadir'
+    }`;
+    const baseLabel = `Gaji wajib ${Math.round(emp.weeklyRequiredMinutes / 60)} jam/minggu × ${item.run.weeks} minggu`;
+
+    await this.prisma.$transaction(async (tx) => {
+      // Patch baris BASE & TRANSPORT — baris honor/potongan/pinjaman tidak disentuh.
+      const baseLine = item.lines.find((l) => l.kind === 'BASE');
+      const transportLine = item.lines.find((l) => l.kind === 'TRANSPORT');
+      if (baseLine) {
+        if (basePay > 0) {
+          await tx.payrollItemLine.update({ where: { id: baseLine.id }, data: { label: baseLabel, amount: basePay } });
+        } else {
+          await tx.payrollItemLine.delete({ where: { id: baseLine.id } });
+        }
+      } else if (basePay > 0) {
+        await tx.payrollItemLine.create({ data: { itemId: item.id, kind: 'BASE', label: baseLabel, amount: basePay } });
+      }
+      if (transportLine) {
+        if (transportPay > 0) {
+          await tx.payrollItemLine.update({ where: { id: transportLine.id }, data: { label: transportLabel, amount: transportPay } });
+        } else {
+          await tx.payrollItemLine.delete({ where: { id: transportLine.id } });
+        }
+      } else if (transportPay > 0) {
+        await tx.payrollItemLine.create({ data: { itemId: item.id, kind: 'TRANSPORT', label: transportLabel, amount: transportPay } });
+      }
+
+      const lines = await tx.payrollItemLine.findMany({ where: { itemId: item.id } });
+      const gross = lines.filter((l) => l.amount > 0).reduce((s, l) => s + l.amount, 0);
+      const ded = -lines.filter((l) => l.amount < 0).reduce((s, l) => s + l.amount, 0);
+      await tx.payrollItem.update({
+        where: { id: item.id },
+        data: {
+          requiredMinutes: required,
+          workedMinutes: worked,
+          manualMinutes: manual,
+          manualNote,
+          basePay,
+          transportPay,
+          grossAmount: gross,
+          deductionAmount: ded,
+          netAmount: gross - ded,
+        },
+      });
+    });
+    await this.audit.log({
+      actorId,
+      action: 'payroll.item.update',
+      entity: 'payroll_item',
+      entityId: item.id,
+      metadata: { requiredMinutes: required, manualMinutes: manual, manualNote },
+    });
+    return this.getRun(item.runId);
   }
 
   async finalizeRun(id: string, actorId: string) {

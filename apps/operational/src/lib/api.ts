@@ -2000,6 +2000,8 @@ export interface PayrollItemView {
   id: string;
   employeeId: string;
   workedMinutes: number;
+  manualMinutes: number;
+  manualNote?: string | null;
   requiredMinutes: number;
   basePay: number;
   transportPay: number;
@@ -2052,6 +2054,9 @@ export const listEmpAttendance = (month: string, employeeId?: string) => {
 };
 export const saveEmpAttendance = (dto: { date: string; entries: Record<string, unknown>[] }) =>
   req<{ saved: number }>(`${py}/attendance`, { method: 'POST', json: dto });
+/** Koreksi manual item payroll: jam wajib override + menit tambahan transport (boleh negatif). */
+export const updatePayrollItem = (id: string, dto: { requiredMinutes?: number; manualMinutes?: number; manualNote?: string }) =>
+  req<PayrollRunView>(`${py}/items/${id}`, { method: 'PATCH', json: dto });
 export const listHonorTypes = () => req<HonorTypeView[]>(`${py}/honor-types`);
 export const createHonorType = (dto: Record<string, unknown>) =>
   req<HonorTypeView>(`${py}/honor-types`, { method: 'POST', json: dto });

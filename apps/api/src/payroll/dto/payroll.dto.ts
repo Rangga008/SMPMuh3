@@ -404,6 +404,30 @@ export class PayRunDto {
   cashAccountId!: string;
 }
 
+/** Koreksi manual satu item payroll — jam wajib boleh dioverride,
+    manualMinutes DITAMBAH ke menit hadir otomatis (boleh negatif untuk mengurangi). */
+export class UpdatePayrollItemDto {
+  @emptyToUndefined()
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(100_000)
+  requiredMinutes?: number;
+
+  @emptyToUndefined()
+  @IsOptional()
+  @IsInt()
+  @Min(-100_000)
+  @Max(100_000)
+  manualMinutes?: number;
+
+  @emptyToUndefined()
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  manualNote?: string;
+}
+
 export class PayrollSettingsDto {
   /** Potongan tetap per hari telat (Rp) — 0 = nonaktif. */
   @IsOptional()

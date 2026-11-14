@@ -17,6 +17,7 @@ import {
   me,
   payPayrollRun,
   recomputePayrollRun,
+  updatePayrollItem,
   voidPayrollRun,
   type CashAccountView,
   type PayrollItemView,
@@ -41,6 +42,7 @@ export default function PayrollRunPage() {
   const [busy, setBusy] = useState(false);
   const [payModal, setPayModal] = useState(false);
   const [slip, setSlip] = useState<PayrollItemView | null>(null);
+  const [editItem, setEditItem] = useState<PayrollItemView | null>(null);
   const [principal, setPrincipal] = useState('');
   const [treasurer, setTreasurer] = useState('');
   const printRef = useRef<HTMLDivElement>(null);
@@ -160,7 +162,7 @@ export default function PayrollRunPage() {
               </p>
             ) : null}
             <DataTable
-              head={['Pegawai', 'Jam wajib/hadir', 'Gaji wajib', 'Transport', 'Bruto', 'Potongan', 'Netto', '']}
+              head={['Pegawai', 'Jam wajib', 'Jam hadir', 'Gaji wajib', 'Transport', 'Bruto', 'Potongan', 'Netto', '']}
               loading={loading}
               error={null}
               empty={(run.items?.length ?? 0) === 0 ? 'Tidak ada pegawai aktif.' : undefined}
@@ -171,18 +173,35 @@ export default function PayrollRunPage() {
                     <p className="font-medium text-sand-900">{it.employee?.name}</p>
                     <p className="text-[10px] text-sand-400">{it.employee?.nip ?? ''}{it.employee?.payScale?.name ? ` · ${it.employee.payScale.name}` : ''}</p>
                   </td>
-                  <td className="whitespace-nowrap px-5 py-3 text-xs text-sand-600">{jam(it.requiredMinutes)} / {jam(it.workedMinutes)}</td>
+                  <td className="whitespace-nowrap px-5 py-3 text-xs font-semibold text-sand-700">{jam(it.requiredMinutes)}</td>
+                  <td className="whitespace-nowrap px-5 py-3 text-xs">
+                    <span className={it.workedMinutes + (it.manualMinutes ?? 0) > 0 ? 'font-semibold text-emerald-700' : 'text-sand-400'}>
+                      {jam(it.workedMinutes + (it.manualMinutes ?? 0))}
+                    </span>
+                    <span className="block text-[10px] font-normal text-sand-400">
+                      absen {jam(it.workedMinutes)}
+                      {(it.manualMinutes ?? 0) !== 0 ? ` ${it.manualMinutes > 0 ? '+' : '−'}manual ${jam(Math.abs(it.manualMinutes))}` : ''}
+                    </span>
+                  </td>
                   <td className="whitespace-nowrap px-5 py-3 text-right">{rupiah(it.basePay)}</td>
                   <td className="whitespace-nowrap px-5 py-3 text-right">{rupiah(it.transportPay)}</td>
                   <td className="whitespace-nowrap px-5 py-3 text-right font-semibold text-sand-900">{rupiah(it.grossAmount)}</td>
                   <td className="whitespace-nowrap px-5 py-3 text-right text-red-600">{it.deductionAmount > 0 ? `-${rupiah(it.deductionAmount)}` : '—'}</td>
                   <td className="whitespace-nowrap px-5 py-3 text-right font-bold text-sand-900">{rupiah(it.netAmount)}</td>
                   <td className="whitespace-nowrap px-5 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                    <RowBtn type="button" onClick={async () => setSlip(it)}>Slip</RowBtn>
+                    <span className="flex justify-end gap-2">
+                      <RowBtn type="button" onClick={async () => setSlip(it)}>Slip</RowBtn>
+                      {canManage && run.status === 'DRAFT' ? (
+                        <RowBtn type="button" onClick={async () => setEditItem(it)}>Koreksi</RowBtn>
+                      ) : null}
+                    </span>
                   </td>
                 </tr>
               ))}
             </DataTable>
+            <p className="mt-3 rounded-xl bg-sand-50 px-4 py-2.5 text-xs text-sand-500">
+              <b>Jam wajib</b> = jam/minggu × {run?.weeks ?? 0} minggu (dari Pengaturan payroll). <b>Jam hadir</b> dihitung otomatis dari absensi — menit mengajar sesuai jadwal untuk guru, durasi masuk–pulang untuk staf. Transport dibayar per jam hadir.
+            </p>
             {(run.items?.length ?? 0) > 0 ? (
               <p className="mt-3 text-right text-sm font-bold text-sand-900">
                 Total netto: {rupiah(totalNet)}
@@ -253,6 +272,48 @@ export default function PayrollRunPage() {
               <Button type="button" onClick={async () => printEl(printRef.current)}>Print Slip</Button>
             </div>
           </div>
+        ) : null}
+      </Modal>
+      {/* Modal koreksi item */}
+      <Modal open={!!editItem} onClose={() => setEditItem(null)} title={`Koreksi — ${editItem?.employee?.name ?? ''}`}>
+        {editItem ? (
+          <form
+            className="grid gap-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const f = new FormData(e.currentTarget);
+              const reqJam = Number(f.get('requiredJam')) || 0;
+              const manualJam = Number(f.get('manualJam')) || 0;
+              void run_(
+                () =>
+                  updatePayrollItem(editItem.id, {
+                    requiredMinutes: Math.round(reqJam * 60),
+                    manualMinutes: Math.round(manualJam * 60),
+                    ...(String(f.get('manualNote') ?? '').trim() ? { manualNote: String(f.get('manualNote')).trim() } : { manualNote: '' }),
+                  }),
+                'Koreksi tersimpan.',
+              ).then((ok) => { if (ok) setEditItem(null); });
+            }}
+          >
+            <p className="rounded-xl bg-sand-50 px-3 py-2 text-xs text-sand-600">
+              Jam hadir dari absen: <b>{jam(editItem.workedMinutes)}</b>. Koreksi manual <b>ditambahkan</b> ke hasil absen — isi negatif untuk mengurangi. Nilai bertahan saat Hitung Ulang.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Jam wajib total (jam)" hint={`${run?.weeks ?? 0} minggu × jam/minggu — override bila perlu`}>
+                <Input name="requiredJam" type="number" step="0.5" min={0} defaultValue={(editItem.requiredMinutes / 60).toString()} required />
+              </Field>
+              <Field label="Koreksi jam transport (±jam)" hint="mis. +2 atau -1.5">
+                <Input name="manualJam" type="number" step="0.5" defaultValue={((editItem.manualMinutes ?? 0) / 60).toString()} />
+              </Field>
+            </div>
+            <Field label="Alasan koreksi" hint="Dicatat di audit — mis. 'mengajar pengganti 2 jam'">
+              <Input name="manualNote" defaultValue={editItem.manualNote ?? ''} placeholder="opsional tapi disarankan" />
+            </Field>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button type="button" variant="ghost" onClick={async () => setEditItem(null)}>Batal</Button>
+              <Button type="submit" disabled={busy}>Simpan</Button>
+            </div>
+          </form>
         ) : null}
       </Modal>
           {dialog}

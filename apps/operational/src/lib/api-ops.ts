@@ -1,5 +1,5 @@
 // ---- OPS (hasil rapat): jadwal, asesmen, absen siswa, dokumen, koleksi, pengajuan, arsip ----
-import { API, req, downloadFile, type AcademicYear, type ClassView } from './api';
+import { API, req, downloadFile, getTokens, type AcademicYear, type ClassView } from './api';
 import type { StudentDto } from '@smpmuh3/types';
 
 const qs = (q: Record<string, string | undefined>) => {
@@ -147,6 +147,20 @@ export const uploadArchive = (dto: { title: string; categoryId?: string | undefi
   return req('/ops/archives', { method: 'POST', body: fd });
 };
 export const archiveFileUrl = (id: string) => `/api/v1/ops/archives/${id}/file`;
+export const downloadArchive = (id: string, fileName: string) =>
+  downloadFile(`/ops/archives/${id}/file`, fileName);
+/** Buka file arsip di tab baru (preview) — fetch dulu dengan token lalu object URL,
+    karena window.open biasa tidak membawa header Authorization. */
+export async function previewArchive(id: string) {
+  const t = getTokens();
+  const res = await fetch(`${API}/ops/archives/${id}/file`, {
+    headers: t?.accessToken ? { Authorization: `Bearer ${t.accessToken}` } : {},
+  });
+  if (!res.ok) throw new Error('Gagal membuka file arsip.');
+  const url = URL.createObjectURL(await res.blob());
+  window.open(url, '_blank');
+  setTimeout(() => URL.revokeObjectURL(url), 120_000);
+}
 
 export interface PolicyDoc {
   id: string; kind: string; title: string; fileName: string; createdAt: string;
