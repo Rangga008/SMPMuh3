@@ -52,7 +52,7 @@ services:
       resources:
         limits:
           cpus: "0.75"
-          memory: 512M
+          memory: 448M
     logging: *default-logging
 
   redis:
@@ -72,7 +72,7 @@ services:
       resources:
         limits:
           cpus: "0.25"
-          memory: 128M
+          memory: 96M
     logging: *default-logging
 
   s3:
@@ -101,7 +101,7 @@ services:
       resources:
         limits:
           cpus: "0.5"
-          memory: 384M
+          memory: 320M
     logging: *default-logging
 
   api:
@@ -120,7 +120,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:?}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:-smpmuh3}?connection_limit=15&pool_timeout=20
       REDIS_URL: redis://redis:6379
       S3_ENDPOINT: http://s3:9000
-      CORS_ORIGINS: https://spmb.smpm3bdg.sch.id,https://op.smpm3bdg.sch.id,https://www.smpm3bdg.sch.id,https://smpm3bdg.sch.id
+      CORS_ORIGINS: https://spmb.smpm3bdg.sch.id,https://op.smpm3bdg.sch.id,https://cbt.smpm3bdg.sch.id,https://www.smpm3bdg.sch.id,https://smpm3bdg.sch.id
       SPMB_URL: https://spmb.smpm3bdg.sch.id
     networks: [internal, web]
     depends_on:
@@ -139,7 +139,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "1.25"
+          cpus: "1.5"
           memory: 768M
     logging: *default-logging
 
@@ -154,7 +154,7 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      NODE_OPTIONS: --max-old-space-size=256
+      NODE_OPTIONS: --max-old-space-size=384
       # Fetch server-side (ISR profil sekolah) lewat jaringan internal.
       API_INTERNAL_URL: http://api:4000/api/v1
     networks: [internal, web]
@@ -170,8 +170,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.5"
-          memory: 384M
+          cpus: "0.75"
+          memory: 512M
     logging: *default-logging
 
   operational:
@@ -201,7 +201,37 @@ services:
       resources:
         limits:
           cpus: "0.5"
-          memory: 384M
+          memory: 320M
+    logging: *default-logging
+
+  cbt:
+    build:
+      context: ..
+      dockerfile: apps/cbt/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: https://api.smpm3bdg.sch.id/api/v1
+    image: smpmuh3-cbt:prod
+    container_name: smpmuh3-cbt
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=384
+      API_INTERNAL_URL: http://api:4000/api/v1
+    networks: [internal, web]
+    depends_on:
+      api:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3005/ >/dev/null 2>&1 || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.75"
+          memory: 512M
     logging: *default-logging
 
   # ---------- WordPress — situs utama di apex/www ----------
@@ -235,8 +265,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.5"
-          memory: 320M
+          cpus: "0.4"
+          memory: 256M
     logging: *default-logging
 
   wordpress:
@@ -268,7 +298,33 @@ services:
       resources:
         limits:
           cpus: "0.5"
-          memory: 384M
+          memory: 320M
+    logging: *default-logging
+
+  # ---------- e-Rapor SMP 2025.2 (CodeIgniter 4 + Postgres + ionCube) ----------
+  # Source app TIDAK masuk git (lisensi Kemdikbud) — build context /root/erapor.
+  erapor:
+    build:
+      context: ../../erapor
+      dockerfile: Dockerfile
+    image: smpmuh3-erapor:prod
+    container_name: smpmuh3-erapor
+    restart: unless-stopped
+    volumes:
+      - erapor-app:/var/www/erapor
+      - erapor-pgdata:/var/lib/postgresql/data
+    networks: [internal, web]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 55575 -q && pidof php-fpm >/dev/null"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.75"
+          memory: 512M
     logging: *default-logging
 
   caddy:
@@ -282,6 +338,7 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - wp-data:/var/www/html:ro   # file statis WP dilayani Caddy; .php → fastcgi
+      - erapor-app:/var/www/erapor:ro   # file statis e-Rapor; .php → fastcgi
       - caddy-data:/data
       - caddy-config:/config
     networks: [web]
@@ -307,3 +364,5 @@ volumes:
   caddy-config:
   mariadb-data:
   wp-data:
+  erapor-app:
+  erapor-pgdata:
