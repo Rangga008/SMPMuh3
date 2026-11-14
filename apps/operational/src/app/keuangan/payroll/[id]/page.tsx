@@ -133,11 +133,11 @@ export default function PayrollRunPage() {
             action={
               canManage ? (
                 <span className="flex gap-2">
+                  {run.status === 'DRAFT' || run.status === 'FINALIZED' ? (
+                    <Button size="sm" variant="outline" onClick={async () => void run_(() => recomputePayrollRun(run.id), 'Dihitung ulang.')} disabled={busy}>Hitung Ulang</Button>
+                  ) : null}
                   {run.status === 'DRAFT' ? (
-                    <>
-                      <Button size="sm" variant="outline" onClick={async () => void run_(() => recomputePayrollRun(run.id), 'Dihitung ulang.')} disabled={busy}>Hitung Ulang</Button>
-                      <Button size="sm" onClick={async () => void run_(() => finalizePayrollRun(run.id), 'Run difinalkan.')} disabled={busy}>Finalkan</Button>
-                    </>
+                    <Button size="sm" onClick={async () => void run_(() => finalizePayrollRun(run.id), 'Run difinalkan.')} disabled={busy}>Finalkan</Button>
                   ) : null}
                   {run.status === 'FINALIZED' ? (
                     <Button size="sm" onClick={async () => setPayModal(true)} disabled={busy}>Bayar via Kas</Button>
@@ -145,7 +145,7 @@ export default function PayrollRunPage() {
                   {run.status !== 'PAID' && run.status !== 'VOID' ? (
                     <Button size="sm" variant="ghost" onClick={async () => { if (await confirm('Batalkan run ini?')) void run_(() => voidPayrollRun(run.id), 'Run dibatalkan.'); }} disabled={busy}>Void</Button>
                   ) : null}
-                  {run.status === 'DRAFT' || run.status === 'VOID' ? (
+                  {run.status !== 'PAID' ? (
                     <Button size="sm" variant="ghost" onClick={async () => { if (await confirm('Hapus run ini beserta semua item?')) void run_(async () => { await deletePayrollRun(run.id); router.push('/keuangan/payroll'); }, 'Run dihapus.'); }} disabled={busy}>Hapus</Button>
                   ) : null}
                   {run.status === 'PAID' ? (
@@ -159,6 +159,11 @@ export default function PayrollRunPage() {
             {run.status === 'DRAFT' ? (
               <p className="mb-3 rounded-xl bg-amber-50 px-4 py-2.5 text-xs text-amber-800">
                 Masih draft — absensi & pengaturan yang diubah setelah ini bisa dihitung ulang lewat tombol <b>Hitung Ulang</b>. Finalkan dulu sebelum dibayar.
+              </p>
+            ) : null}
+            {run.status === 'FINALIZED' ? (
+              <p className="mb-3 rounded-xl bg-sky-50 px-4 py-2.5 text-xs text-sky-800">
+                Sudah final — angka masih bisa dikoreksi per pegawai (tombol <b>Koreksi</b>) sampai dibayar via kas.
               </p>
             ) : null}
             <DataTable
@@ -191,7 +196,7 @@ export default function PayrollRunPage() {
                   <td className="whitespace-nowrap px-5 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                     <span className="flex justify-end gap-2">
                       <RowBtn type="button" onClick={async () => setSlip(it)}>Slip</RowBtn>
-                      {canManage && run.status === 'DRAFT' ? (
+                      {canManage && (run.status === 'DRAFT' || run.status === 'FINALIZED') ? (
                         <RowBtn type="button" onClick={async () => setEditItem(it)}>Koreksi</RowBtn>
                       ) : null}
                     </span>

@@ -1466,6 +1466,11 @@ export interface School {
   headmaster?: string | null;
   headmasterNip?: string | null;
   npsn?: string | null;
+  nss?: string | null;
+  nds?: string | null;
+  accreditation?: string | null;
+  kopLine1?: string | null;
+  kopLine2?: string | null;
   headmasterSignatureUrl?: string | null;
   logoUrl: string | null;
   updatedAt: string;

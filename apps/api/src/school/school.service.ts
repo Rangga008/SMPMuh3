@@ -15,6 +15,11 @@ export interface UpdateSchoolInput {
   headmaster?: string | null;
   headmasterNip?: string | null;
   npsn?: string | null;
+  nss?: string | null;
+  nds?: string | null;
+  accreditation?: string | null;
+  kopLine1?: string | null;
+  kopLine2?: string | null;
 }
 
 @Injectable()
@@ -68,6 +73,11 @@ export class SchoolService {
           ? { headmasterNip: input.headmasterNip }
           : {}),
         ...(input.npsn !== undefined ? { npsn: input.npsn } : {}),
+        ...(input.nss !== undefined ? { nss: input.nss } : {}),
+        ...(input.nds !== undefined ? { nds: input.nds } : {}),
+        ...(input.accreditation !== undefined ? { accreditation: input.accreditation } : {}),
+        ...(input.kopLine1 !== undefined ? { kopLine1: input.kopLine1 } : {}),
+        ...(input.kopLine2 !== undefined ? { kopLine2: input.kopLine2 } : {}),
       },
     });
   }

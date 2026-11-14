@@ -136,7 +136,9 @@ function MapPicker({
   }, [radiusM]);
 
   return (
-    <div className="overflow-hidden rounded-xl border border-sand-300">
+    // isolate: pane Leaflet punya z-index 400–1000 — tanpa stacking context
+    // ia tembus menutupi modal/dialog di atasnya dan menelan klik.
+    <div className="isolate overflow-hidden rounded-xl border border-sand-300">
       <div ref={ref} className="h-72 w-full bg-sand-100" />
       {!ready && <p className="px-3 py-2 text-xs text-sand-500">Memuat peta… (butuh internet untuk tile OpenStreetMap)</p>}
       <p className="bg-sand-50 px-3 py-1.5 text-xs text-sand-500">

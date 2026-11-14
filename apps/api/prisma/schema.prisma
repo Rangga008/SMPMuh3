@@ -128,6 +128,11 @@ model School {
   headmaster    String?
   headmasterNip String?  @map("headmaster_nip")
   npsn          String?  // Nomor Pokok Satuan Pendidikan Nasional (NPSN) sekolah
+  nss           String?  // Nomor Statistik Sekolah
+  nds           String?  // Nomor Daftar Sekolah
+  accreditation String?  // mis. "A" — tercetak di kop dokumen resmi
+  kopLine1      String?  @map("kop_line1") // baris yayasan di kop, mis. "PIMPINAN CABANG MUHAMMADIYAH ..."
+  kopLine2      String?  @map("kop_line2") // baris kedua, mis. "MAJELIS PENDIDIKAN DASAR DAN MENENGAH ..."
   headmasterSignatureUrl String? @map("headmaster_signature_url")
   logoUrl       String?  @map("logo_url")
   createdAt     DateTime @default(now()) @map("created_at")
@@ -1185,6 +1190,7 @@ model PayrollItem {
   manualMinutes   Int      @default(0) @map("manual_minutes")  // koreksi manual keuangan — ditambah ke worked (boleh negatif)
   manualNote      String?  @map("manual_note")                 // alasan koreksi manual
   requiredMinutes Int      @default(0) @map("required_minutes") // jam wajib × minggu
+  requiredManual  Boolean  @default(false) @map("required_manual") // true bila jam wajib dioverride manual (dipertahankan saat hitung ulang)
   basePay         Int      @default(0) @map("base_pay")
   transportPay    Int      @default(0) @map("transport_pay")
   grossAmount     Int      @default(0) @map("gross_amount")

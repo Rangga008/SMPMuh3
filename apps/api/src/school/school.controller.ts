@@ -88,6 +88,41 @@ export class UpdateSchoolDto {
   @IsString()
   @MaxLength(20)
   npsn?: string | null;
+
+  /** NSS — Nomor Statistik Sekolah (kolom kanan kop). */
+  @emptyToNull()
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  nss?: string | null;
+
+  /** NDS — Nomor Daftar Sekolah (kolom kanan kop). */
+  @emptyToNull()
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  nds?: string | null;
+
+  /** Status akreditasi, mis. "A" — tercetak "TERAKREDITASI A" di kop. */
+  @emptyToNull()
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  accreditation?: string | null;
+
+  /** Baris yayasan di kop, mis. "PIMPINAN CABANG MUHAMMADIYAH CIBEUNYING KIDUL". */
+  @emptyToNull()
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  kopLine1?: string | null;
+
+  /** Baris kedua kop, mis. "MAJELIS PENDIDIKAN DASAR DAN MENENGAH KOTA BANDUNG". */
+  @emptyToNull()
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  kopLine2?: string | null;
 }
 
 @Controller({ path: 'school', version: '1' })

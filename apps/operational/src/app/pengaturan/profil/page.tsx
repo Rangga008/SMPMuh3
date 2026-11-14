@@ -85,6 +85,11 @@ export default function SchoolProfilePage() {
                       headmaster: String(f.get('headmaster') || ''),
                       headmasterNip: String(f.get('headmasterNip') || ''),
                       npsn: String(f.get('npsn') || ''),
+                      nss: String(f.get('nss') || ''),
+                      nds: String(f.get('nds') || ''),
+                      accreditation: String(f.get('accreditation') || ''),
+                      kopLine1: String(f.get('kopLine1') || ''),
+                      kopLine2: String(f.get('kopLine2') || ''),
                     }),
                   'Profil sekolah diperbarui — situs publik menampilkannya dalam ±5 menit.',
                 );
@@ -113,6 +118,21 @@ export default function SchoolProfilePage() {
               </Field>
               <Field label="NPSN Sekolah" hint="Nomor Pokok Satuan Pendidikan Nasional — identitas sekolah di dokumen resmi">
                 <Input name="npsn" defaultValue={school.npsn ?? ''} placeholder="mis. 20221234" />
+              </Field>
+              <Field label="NSS" hint="Nomor Statistik Sekolah — kolom kanan kop dokumen">
+                <Input name="nss" defaultValue={school.nss ?? ''} placeholder="mis. 202026009099" />
+              </Field>
+              <Field label="NDS" hint="Nomor Daftar Sekolah — kolom kanan kop dokumen">
+                <Input name="nds" defaultValue={school.nds ?? ''} placeholder="mis. 2002210137" />
+              </Field>
+              <Field label="Akreditasi" hint="Tercetak 'TERAKREDITASI X' di kop — mis. A">
+                <Input name="accreditation" defaultValue={school.accreditation ?? ''} placeholder="mis. A" />
+              </Field>
+              <Field label="Kop — Baris Yayasan 1" hint="Teks kecil di atas nama sekolah pada kop cetakan">
+                <Input name="kopLine1" defaultValue={school.kopLine1 ?? ''} placeholder="mis. PIMPINAN CABANG MUHAMMADIYAH CIBEUNYING KIDUL" />
+              </Field>
+              <Field label="Kop — Baris Yayasan 2" hint="Baris kedua di atas nama sekolah">
+                <Input name="kopLine2" defaultValue={school.kopLine2 ?? ''} placeholder="mis. MAJELIS PENDIDIKAN DASAR DAN MENENGAH KOTA BANDUNG" />
               </Field>
               <Field label="NIP/NUPTK Kepala Sekolah" hint="Opsional — tercetak di bawah nama">
                 <Input name="headmasterNip" defaultValue={school.headmasterNip ?? ''} placeholder="mis. 196605151990031007" />
