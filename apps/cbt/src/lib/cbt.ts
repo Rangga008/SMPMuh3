@@ -32,9 +32,9 @@ export interface CbtSession {
 
 export interface CbtQuestion {
   id: string; number: number;
-  type: 'MCQ' | 'MCQ_COMPLEX' | 'TRUE_FALSE' | 'MATCHING';
+  type: 'MCQ' | 'MCQ_COMPLEX' | 'TRUE_FALSE' | 'TRUE_FALSE_COMPLEX' | 'MATCHING';
   weight: number; prompt: string | null;
-  options?: { choices?: string[]; rights?: string[]; pairs?: { left: string; right: string }[] } | null;
+  options?: { choices?: string[]; statements?: string[]; rights?: string[]; pairs?: { left: string; right: string }[] } | null;
 }
 
 export interface CbtPaper {

@@ -25,11 +25,11 @@ export class ScheduleBlockDto {
 
 export class QuestionDto {
   @IsInt() @Min(1) number!: number;
-  @IsString() type!: 'MCQ' | 'MCQ_COMPLEX' | 'TRUE_FALSE' | 'MATCHING';
+  @IsString() type!: 'MCQ' | 'MCQ_COMPLEX' | 'TRUE_FALSE' | 'TRUE_FALSE_COMPLEX' | 'MATCHING';
   @IsOptional() @IsInt() @Min(1) weight?: number;
   @IsOptional() key?: unknown;
   @IsOptional() @IsString() prompt?: string;
-  /** Teks pilihan — {choices:[..]} utk PG/PGK, {pairs:[{left,right}]} utk menjodohkan. */
+  /** Teks pilihan — {choices:[..]} utk PG/PGK, {statements:[..]} utk BSK, {pairs:[{left,right}]} utk menjodohkan. */
   @IsOptional() options?: unknown;
 }
 
@@ -92,6 +92,12 @@ export class ExamSeatDto {
   @IsUUID() studentId!: string;
   @IsOptional() @IsUUID() classId?: string;
   @IsOptional() @IsInt() seatNo?: number;
+}
+
+export class ExamRoomUpdateDto {
+  @IsOptional() @IsString() @IsNotEmpty() name?: string;
+  @IsOptional() @IsString() @IsNotEmpty() period?: string;
+  @IsOptional() @IsInt() @Min(1) capacity?: number;
 }
 
 export class UniformDayDto {

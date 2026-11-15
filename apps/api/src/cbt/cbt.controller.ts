@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -7,25 +8,40 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
+  Res,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
 import { PERMISSIONS, type AuthUser } from '@smpmuh3/types';
 import { CurrentUser } from '../identity/decorators/current-user.decorator';
 import { Public } from '../identity/decorators/public.decorator';
 import { RequirePermission } from '../identity/decorators/require-permission.decorator';
 import { CbtService } from './cbt.service';
-import { AnswerDto, CreateExamDto, EnterExamDto, UpdateExamDto } from './dto/cbt.dto';
+import {
+  AnswerDto,
+  CreateExamDto,
+  EnterExamDto,
+  ExamSessionDto,
+  ExamSessionUpdateDto,
+  UpdateExamDto,
+  UpdateGradeDto,
+} from './dto/cbt.dto';
+import type { QuestionDto } from '../ops/dto/ops.dto';
 
 @Controller({ path: 'cbt', version: '1' })
 export class CbtController {
   constructor(private cbt: CbtService) {}
 
-  // ================= Admin / kurikulum =================
+  // ================= Admin / kurikulum / guru (scope mapel) =================
 
   @Get('exams')
   @RequirePermission(PERMISSIONS.ACADEMIC_READ)
-  list(@Query('academicYearId') y?: string) {
-    return this.cbt.listExams(y);
+  list(@CurrentUser() u: AuthUser, @Query('academicYearId') y?: string) {
+    return this.cbt.listExams(u, y);
   }
 
   @Post('exams')
@@ -36,26 +52,111 @@ export class CbtController {
 
   @Get('exams/:id')
   @RequirePermission(PERMISSIONS.ACADEMIC_READ)
-  detail(@Param('id', ParseUUIDPipe) id: string) {
-    return this.cbt.getExam(id);
+  detail(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.cbt.getExam(id, u);
   }
 
   @Patch('exams/:id')
-  @RequirePermission(PERMISSIONS.ACADEMIC_MANAGE)
+  @RequirePermission(PERMISSIONS.ACADEMIC_READ)
   update(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateExamDto) {
-    return this.cbt.updateExam(id, dto, u.id);
+    return this.cbt.updateExam(id, dto, u);
   }
 
   @Post('exams/:id/regenerate-code')
-  @RequirePermission(PERMISSIONS.ACADEMIC_MANAGE)
+  @RequirePermission(PERMISSIONS.ACADEMIC_READ)
   regenerateCode(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
-    return this.cbt.regenerateCode(id, u.id);
+    return this.cbt.regenerateCode(id, u);
   }
 
   @Delete('exams/:id')
-  @RequirePermission(PERMISSIONS.ACADEMIC_MANAGE)
+  @RequirePermission(PERMISSIONS.ACADEMIC_READ)
   remove(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
-    return this.cbt.deleteExam(id, u.id);
+    return this.cbt.deleteExam(id, u);
+  }
+
+  // ---- Sesi per kelompok rombel ----
+  @Post('exams/:id/sessions')
+  @RequirePermission(PERMISSIONS.ACADEMIC_READ)
+  createSession(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() dto: ExamSessionDto) {
+    return this.cbt.createSession(id, dto, u);
+  }
+  @Patch('sessions/:sid')
+  @RequirePermission(PERMISSIONS.ACADEMIC_READ)
+  updateSession(@CurrentUser() u: AuthUser, @Param('sid', ParseUUIDPipe) sid: string, @Body() dto: ExamSessionUpdateDto) {
+    return this.cbt.updateSession(sid, dto, u);
+  }
+  @Delete('sessions/:sid')
+  @RequirePermission(PERMISSIONS.ACADEMIC_READ)
+  deleteSession(@CurrentUser() u: AuthUser, @Param('sid', ParseUUIDPipe) sid: string) {
+    return this.cbt.deleteSession(sid, u);
+  }
+
+  // ---- Monitor (semua staf: proktor/pengawas/tendik/guru/admin) ----
+  @Get('monitor/exams')
+  @RequirePermission(PERMISSIONS.CBT_MONITOR)
+  monitorExams(@Query('academicYearId') y?: string) {
+    return this.cbt.listMonitorExams(y);
+  }
+  @Get('exams/:id/monitor')
+  @RequirePermission(PERMISSIONS.CBT_MONITOR)
+  monitor(@Param('id', ParseUUIDPipe) id: string) {
+    return this.cbt.monitor(id);
+  }
+
+  // ---- Hasil & analisis per rombel ----
+  @Get('exams/:id/results')
+  @RequirePermission(PERMISSIONS.ACADEMIC_READ)
+  results(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Query('classId') classId?: string) {
+    return this.cbt.results(id, classId, u);
+  }
+  @Get('exams/:id/analysis')
+  @RequirePermission(PERMISSIONS.ACADEMIC_READ)
+  analysis(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Query('classId') classId?: string) {
+    return this.cbt.analysis(id, classId, u);
+  }
+  @Get('exams/:id/answers-matrix')
+  @RequirePermission(PERMISSIONS.ACADEMIC_READ)
+  matrix(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Query('classId') classId: string) {
+    if (!classId) throw new BadRequestException('classId wajib untuk rekap jawaban.');
+    return this.cbt.answerMatrix(id, classId, u);
+  }
+  @Get('exams/:id/results.xlsx')
+  @RequirePermission(PERMISSIONS.ACADEMIC_READ)
+  async resultsExcel(
+    @CurrentUser() u: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('classId') classId: string | undefined,
+    @Res() res: Response,
+  ) {
+    const buf = await this.cbt.resultsExcel(id, classId, u);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="hasil-ujian-${id.slice(0, 8)}.xlsx"`);
+    res.send(buf);
+  }
+  /** Edit nilai akhir ledger — guru mapel scope / admin-kurikulum. */
+  @Patch('exams/:id/grades')
+  @RequirePermission(PERMISSIONS.ACADEMIC_READ)
+  updateGrade(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateGradeDto) {
+    return this.cbt.updateGrade(id, dto.studentId, dto.score, u);
+  }
+
+  // ---- Soal ujian (4 tipe: PG/PGK/BS/BSK) ----
+  @Get('exams/:id/questions')
+  @RequirePermission(PERMISSIONS.ACADEMIC_READ)
+  questions(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.cbt.examQuestions(id, u);
+  }
+  @Put('exams/:id/questions')
+  @RequirePermission(PERMISSIONS.ACADEMIC_READ)
+  setQuestions(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() body: { questions: QuestionDto[] }) {
+    return this.cbt.setExamQuestions(id, body.questions ?? [], u);
+  }
+  @Post('exams/:id/questions/import')
+  @RequirePermission(PERMISSIONS.ACADEMIC_READ)
+  @UseInterceptors(FileInterceptor('file'))
+  importQuestions(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @UploadedFile() file: Express.Multer.File) {
+    if (!file) throw new BadRequestException('File wajib diunggah.');
+    return this.cbt.importExamQuestions(id, file, u);
   }
 
   // ================= Siswa (publik — kredensial = NIS + kode + token sesi) =================

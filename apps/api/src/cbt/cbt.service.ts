@@ -7,9 +7,12 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { randomBytes } from 'crypto';
+import * as XLSX from 'xlsx';
+import { PERMISSIONS, type AuthUser } from '@smpmuh3/types';
 import { PrismaService } from '../core/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
-import type { AnswerDto, CreateExamDto, EnterExamDto, UpdateExamDto } from './dto/cbt.dto';
+import { OpsService } from '../ops/ops.service';
+import type { AnswerDto, CreateExamDto, EnterExamDto, ExamSessionDto, UpdateExamDto } from './dto/cbt.dto';
 
 /** Alfabet tanpa karakter rancu (0/O/1/I/L) untuk kode ujian. */
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -45,6 +48,16 @@ function gradeAnswer(
     const score = Math.round((weight * hits) / k.size);
     return { isCorrect: score >= weight, score };
   }
+  if (type === 'TRUE_FALSE_COMPLEX') {
+    // B-S kompleks: key & answer = array boolean per pernyataan — skor parsial.
+    // Pernyataan yang belum dijawab (bukan boolean) tak pernah dihitung benar.
+    const k = Array.isArray(key) ? key.map(Boolean) : [];
+    const a = Array.isArray(answer) ? answer : [];
+    if (k.length === 0) return zero;
+    const hits = k.filter((v, i) => typeof a[i] === 'boolean' && a[i] === v).length;
+    const score = Math.round((weight * hits) / k.length);
+    return { isCorrect: score >= weight, score };
+  }
   if (type === 'MATCHING') {
     const k = Array.isArray(key) ? key.map(Number) : [];
     const a = Array.isArray(answer) ? answer.map(Number) : [];
@@ -61,17 +74,84 @@ export class CbtService {
   constructor(
     private prisma: PrismaService,
     private audit: AuditService,
+    private ops: OpsService,
   ) {}
+
+  // ================= Scope guru mapel =================
+
+  /** Scope mengajar guru: kode/nama mapel serumpun + jenjang kelas yang diajar.
+   *  null = bukan guru terhubung (staf/admin) — akses luas untuk baca. */
+  private async teacherScope(user: AuthUser) {
+    const emp = await this.prisma.employee.findUnique({
+      where: { userId: user.id },
+      include: {
+        assignments: {
+          include: {
+            subject: { select: { id: true, code: true, name: true } },
+            class: { select: { gradeLevel: true } },
+          },
+        },
+      },
+    });
+    if (!emp || emp.type !== 'TEACHER' || !emp.assignments.length) return null;
+    const codes = new Set(emp.assignments.map((a) => a.subject.code));
+    const names = new Set(emp.assignments.map((a) => a.subject.name));
+    const grades = new Set(emp.assignments.map((a) => a.class.gradeLevel));
+    // Mapel serumpun: semua subject yang berbagi code atau nama dengan yang diajar.
+    const family = await this.prisma.subject.findMany({
+      where: { OR: [{ code: { in: [...codes] } }, { name: { in: [...names] } }] },
+      select: { id: true },
+    });
+    return { codes, names, grades, familyIds: new Set(family.map((f) => f.id)) };
+  }
+
+  private async examForScope(examId: string) {
+    const exam = await this.prisma.exam.findUnique({
+      where: { id: examId },
+      include: { assessment: { include: { subject: { select: { code: true, name: true } } } } },
+    });
+    if (!exam) throw new NotFoundException('Ujian tidak ditemukan.');
+    return exam;
+  }
+
+  private async targetGrades(classIds: string[]) {
+    const classes = await this.prisma.class.findMany({
+      where: { id: { in: classIds } },
+      select: { gradeLevel: true },
+    });
+    return [...new Set(classes.map((c) => c.gradeLevel))];
+  }
+
+  /** Gate scope ujian: admin/kurikulum bebas; guru hanya mapel serumpun
+   *  pada jenjang yang diajar; staf non-guru boleh baca, tak boleh kelola. */
+  private async scopeOk(user: AuthUser, examId: string, manage: boolean) {
+    const exam = await this.examForScope(examId);
+    if (user.permissions.includes(PERMISSIONS.ACADEMIC_MANAGE)) return exam;
+    const scope = await this.teacherScope(user);
+    if (scope) {
+      if (!scope.familyIds.has(exam.assessment.subjectId)) {
+        throw new ForbiddenException('Ujian ini di luar mapel/jenjang yang Anda ajar.');
+      }
+      const gs = await this.targetGrades(exam.classIds as string[]);
+      if (!gs.some((g) => scope.grades.has(g))) {
+        throw new ForbiddenException('Ujian ini di luar jenjang kelas yang Anda ajar.');
+      }
+      return exam;
+    }
+    if (manage) throw new ForbiddenException('Hanya guru mapel / admin-kurikulum yang boleh mengubah.');
+    return exam;
+  }
 
   // ================= Admin: kelola ujian =================
 
-  listExams(academicYearId?: string) {
-    return this.prisma.exam.findMany({
+  /** Daftar ujian — guru hanya melihat ujian mapel serumpun pada jenjangnya. */
+  async listExams(user: AuthUser, academicYearId?: string) {
+    const exams = await this.prisma.exam.findMany({
       where: academicYearId ? { academicYearId } : {},
       include: {
         assessment: {
           select: {
-            id: true, name: true, type: true,
+            id: true, name: true, type: true, subjectId: true,
             subject: { select: { name: true, code: true } },
             _count: { select: { questions: true } },
           },
@@ -79,6 +159,32 @@ export class CbtService {
         _count: { select: { attempts: true } },
       },
       orderBy: { createdAt: 'desc' },
+    });
+    if (user.permissions.includes(PERMISSIONS.ACADEMIC_MANAGE)) return exams;
+    const scope = await this.teacherScope(user);
+    if (!scope) return exams;
+    const byId = new Map(exams.map((e) => [e.id, e]));
+    const grades = await this.prisma.class.findMany({
+      where: { id: { in: [...new Set(exams.flatMap((e) => e.classIds as string[]))] } },
+      select: { id: true, gradeLevel: true },
+    });
+    const gOf = new Map(grades.map((c) => [c.id, c.gradeLevel]));
+    return exams.filter(
+      (e) =>
+        scope.familyIds.has(e.assessment.subjectId) &&
+        (e.classIds as string[]).some((cid) => scope.grades.has(gOf.get(cid) ?? -1)),
+    ).map((e) => byId.get(e.id)!);
+  }
+
+  /** Daftar ujian untuk monitor — semua staf (proktor/pengawas/tendik/guru/admin). */
+  listMonitorExams(academicYearId?: string) {
+    return this.prisma.exam.findMany({
+      where: academicYearId ? { academicYearId } : {},
+      include: {
+        assessment: { select: { name: true, subject: { select: { name: true } } } },
+        _count: { select: { attempts: true } },
+      },
+      orderBy: { startAt: 'desc' },
     });
   }
 
@@ -125,7 +231,8 @@ export class CbtService {
     return exam;
   }
 
-  async getExam(id: string) {
+  async getExam(id: string, user?: AuthUser) {
+    if (user) await this.scopeOk(user, id, false);
     const exam = await this.prisma.exam.findUnique({
       where: { id },
       include: {
@@ -135,6 +242,7 @@ export class CbtService {
             questions: { orderBy: { number: 'asc' } },
           },
         },
+        sessions: { orderBy: { startAt: 'asc' } },
         attempts: {
           include: {
             student: { select: { id: true, name: true, nis: true } },
@@ -154,9 +262,23 @@ export class CbtService {
       where: { id: { in: exam.classIds as string[] } },
       select: { name: true },
     });
+    // Boleh kelola (soal/sesi/nilai/edit)? admin·kurikulum atau guru dalam scope.
+    let canManage = false;
+    if (user) {
+      if (user.permissions.includes(PERMISSIONS.ACADEMIC_MANAGE)) {
+        canManage = true;
+      } else {
+        const scope = await this.teacherScope(user);
+        if (scope?.familyIds.has(exam.assessment.subjectId)) {
+          const gs = await this.targetGrades(exam.classIds as string[]);
+          canManage = gs.some((g) => scope.grades.has(g));
+        }
+      }
+    }
     return {
       ...exam,
       classNames: clsNames.map((c) => c.name),
+      canManage,
       attempts: exam.attempts.map((a) => ({
         ...a,
         token: undefined,
@@ -165,9 +287,8 @@ export class CbtService {
     };
   }
 
-  async updateExam(id: string, dto: UpdateExamDto, actorId: string) {
-    const exam = await this.prisma.exam.findUnique({ where: { id } });
-    if (!exam) throw new NotFoundException('Ujian tidak ditemukan.');
+  async updateExam(id: string, dto: UpdateExamDto, actor: AuthUser) {
+    const exam = await this.scopeOk(actor, id, true);
     const start = dto.startAt ? new Date(dto.startAt) : exam.startAt;
     const end = dto.endAt ? new Date(dto.endAt) : exam.endAt;
     if (!(end > start)) throw new BadRequestException('Waktu selesai harus setelah waktu mulai.');
@@ -185,37 +306,100 @@ export class CbtService {
         ...(dto.status !== undefined ? { status: dto.status } : {}),
       },
     });
-    await this.audit.log({ actorId, action: 'exam.update', entity: 'exam', entityId: id });
+    await this.audit.log({ actorId: actor.id, action: 'exam.update', entity: 'exam', entityId: id });
     return updated;
   }
 
   /** Kode baru — bila kode lama bocor, ganti tanpa hapus ujian. */
-  async regenerateCode(id: string, actorId: string) {
-    const exam = await this.prisma.exam.findUnique({ where: { id } });
-    if (!exam) throw new NotFoundException('Ujian tidak ditemukan.');
+  async regenerateCode(id: string, actor: AuthUser) {
+    await this.scopeOk(actor, id, true);
     const updated = await this.prisma.exam.update({
       where: { id },
       data: { code: genCode() },
       select: { id: true, code: true },
     });
-    await this.audit.log({ actorId, action: 'exam.regenerate-code', entity: 'exam', entityId: id });
+    await this.audit.log({ actorId: actor.id, action: 'exam.regenerate-code', entity: 'exam', entityId: id });
     return updated;
   }
 
-  async deleteExam(id: string, actorId: string) {
-    const exam = await this.prisma.exam.findUnique({
-      where: { id },
-      include: { _count: { select: { attempts: true } } },
-    });
-    if (!exam) throw new NotFoundException('Ujian tidak ditemukan.');
+  async deleteExam(id: string, actor: AuthUser) {
+    const exam = await this.scopeOk(actor, id, true).then((e) =>
+      this.prisma.exam.findUniqueOrThrow({ where: { id: e.id }, include: { _count: { select: { attempts: true } } } }),
+    );
     if (exam._count.attempts > 0) {
       throw new ConflictException(
         `Sudah ada ${exam._count.attempts} siswa mengerjakan — tutup ujian saja, jangan dihapus.`,
       );
     }
     await this.prisma.exam.delete({ where: { id } });
-    await this.audit.log({ actorId, action: 'exam.delete', entity: 'exam', entityId: id });
+    await this.audit.log({ actorId: actor.id, action: 'exam.delete', entity: 'exam', entityId: id });
     return { ok: true };
+  }
+
+  // ================= Sesi ujian per kelompok rombel =================
+
+  async createSession(examId: string, dto: ExamSessionDto, actor: AuthUser) {
+    const exam = await this.scopeOk(actor, examId, true);
+    this.validateSession(exam, dto);
+    const s = await this.prisma.examSession.create({
+      data: {
+        examId,
+        name: dto.name.trim(),
+        classIds: dto.classIds,
+        startAt: new Date(dto.startAt),
+        endAt: new Date(dto.endAt),
+      },
+    });
+    await this.audit.log({ actorId: actor.id, action: 'exam.session.create', entity: 'exam', entityId: examId, metadata: { session: s.name } });
+    return s;
+  }
+
+  async updateSession(sessionId: string, dto: Partial<ExamSessionDto>, actor: AuthUser) {
+    const s = await this.prisma.examSession.findUniqueOrThrow({
+      where: { id: sessionId },
+      include: { exam: { include: { assessment: { include: { subject: { select: { code: true, name: true } } } } } } },
+    });
+    await this.scopeOk(actor, s.examId, true);
+    const merged = {
+      name: dto.name ?? s.name,
+      classIds: dto.classIds ?? (s.classIds as string[]),
+      startAt: dto.startAt ?? s.startAt.toISOString(),
+      endAt: dto.endAt ?? s.endAt.toISOString(),
+    };
+    this.validateSession(s.exam, merged);
+    const updated = await this.prisma.examSession.update({
+      where: { id: sessionId },
+      data: {
+        name: merged.name.trim(),
+        classIds: merged.classIds,
+        startAt: new Date(merged.startAt),
+        endAt: new Date(merged.endAt),
+      },
+    });
+    await this.audit.log({ actorId: actor.id, action: 'exam.session.update', entity: 'exam', entityId: s.examId, metadata: { session: s.name } });
+    return updated;
+  }
+
+  async deleteSession(sessionId: string, actor: AuthUser) {
+    const s = await this.prisma.examSession.findUniqueOrThrow({ where: { id: sessionId } });
+    await this.scopeOk(actor, s.examId, true);
+    await this.prisma.examSession.delete({ where: { id: sessionId } });
+    await this.audit.log({ actorId: actor.id, action: 'exam.session.delete', entity: 'exam', entityId: s.examId, metadata: { session: s.name } });
+    return { ok: true };
+  }
+
+  private validateSession(
+    exam: { classIds: unknown },
+    dto: { name: string; classIds: string[]; startAt: string; endAt: string },
+  ) {
+    if (!dto.name?.trim()) throw new BadRequestException('Nama sesi wajib.');
+    if (!dto.classIds?.length) throw new BadRequestException('Pilih minimal satu rombel untuk sesi.');
+    const allowed = new Set(exam.classIds as string[]);
+    const bad = dto.classIds.filter((c) => !allowed.has(c));
+    if (bad.length) throw new BadRequestException('Ada rombel sesi yang bukan peserta ujian.');
+    if (!(new Date(dto.endAt) > new Date(dto.startAt))) {
+      throw new BadRequestException('Waktu selesai sesi harus setelah waktu mulai.');
+    }
   }
 
   // ================= Siswa: masuk & pengerjaan =================
@@ -228,16 +412,16 @@ export class CbtService {
       where: { code },
       include: {
         assessment: { include: { subject: { select: { name: true } } } },
+        sessions: { orderBy: { startAt: 'asc' } },
       },
     });
     if (!exam) throw new NotFoundException('Kode ujian tidak dikenal.');
     if (exam.status === 'DRAFT') throw new ForbiddenException('Ujian belum dibuka pengawas.');
     if (exam.status === 'CLOSED') throw new ForbiddenException('Ujian sudah ditutup.');
     const now = new Date();
+    const fmt = (d: Date) => d.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
     if (now < exam.startAt) {
-      throw new ForbiddenException(
-        `Ujian baru dimulai ${exam.startAt.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB.`,
-      );
+      throw new ForbiddenException(`Ujian baru dimulai ${fmt(exam.startAt)} WIB.`);
     }
     if (now > exam.endAt) throw new ForbiddenException('Waktu ujian sudah berakhir.');
 
@@ -260,6 +444,23 @@ export class CbtService {
       );
     }
 
+    // Gate sesi: bila ujian punya sesi per kelompok rombel, siswa hanya bisa
+    // masuk dalam jendela sesi rombelnya — deadline juga mengikuti akhir sesi.
+    let windowEnd = exam.endAt;
+    if (exam.sessions.length) {
+      const session = exam.sessions.find((s) => (s.classIds as string[]).includes(enroll.class.id));
+      if (!session) {
+        throw new ForbiddenException(`Rombel ${enroll.class.name} tidak dijadwalkan pada sesi ujian ini.`);
+      }
+      if (now < session.startAt) {
+        throw new ForbiddenException(`Sesi ${session.name} untuk rombelmu baru dimulai ${fmt(session.startAt)} WIB.`);
+      }
+      if (now > session.endAt) {
+        throw new ForbiddenException(`Sesi ${session.name} untuk rombelmu sudah berakhir ${fmt(session.endAt)} WIB.`);
+      }
+      windowEnd = session.endAt;
+    }
+
     const attempt = await this.prisma.examAttempt.findUnique({
       where: { examId_studentId: { examId: exam.id, studentId: student.id } },
     });
@@ -268,7 +469,7 @@ export class CbtService {
     }
     if (!attempt) {
       const deadline = new Date(
-        Math.min(now.getTime() + exam.durationMin * 60_000, exam.endAt.getTime()),
+        Math.min(now.getTime() + exam.durationMin * 60_000, windowEnd.getTime()),
       );
       await this.prisma.examAttempt.create({
         data: { examId: exam.id, studentId: student.id, deadline },
@@ -498,5 +699,301 @@ export class CbtService {
       score: attempt.status === 'SUBMITTED' && exam.showScore ? attempt.score : null,
       maxScore: attempt.status === 'SUBMITTED' && exam.showScore ? attempt.maxScore : null,
     };
+  }
+
+  // ================= Monitor / hasil / analisis =================
+
+  private async examClasses(exam: { academicYearId: string; classIds: unknown }) {
+    const classes = await this.prisma.class.findMany({
+      where: { id: { in: exam.classIds as string[] } },
+      select: { id: true, name: true, gradeLevel: true },
+      orderBy: { name: 'asc' },
+    });
+    const enrollments = await this.prisma.enrollment.findMany({
+      where: {
+        academicYearId: exam.academicYearId,
+        classId: { in: classes.map((c) => c.id) },
+        student: { status: 'ACTIVE' },
+      },
+      include: { student: { select: { id: true, name: true, nis: true } } },
+      orderBy: { student: { name: 'asc' } },
+    });
+    return { classes, enrollments };
+  }
+
+  /** Monitor live per rombel — siapa masuk/sedang/selesai/belum + jawaban terisi. */
+  async monitor(examId: string) {
+    const exam = await this.prisma.exam.findUnique({
+      where: { id: examId },
+      include: {
+        sessions: { orderBy: { startAt: 'asc' } },
+        attempts: {
+          include: {
+            student: { select: { id: true } },
+            _count: { select: { answers: { where: { NOT: { answer: { equals: Prisma.JsonNull } } } } } },
+          },
+        },
+      },
+    });
+    if (!exam) throw new NotFoundException('Ujian tidak ditemukan.');
+    const { classes, enrollments } = await this.examClasses(exam);
+    const byStudent = new Map(exam.attempts.map((a) => [a.studentId, a]));
+    const now = Date.now();
+    return {
+      examId,
+      sessions: exam.sessions,
+      classes: classes.map((c) => {
+        const session = exam.sessions.find((s) => (s.classIds as string[]).includes(c.id));
+        const students = enrollments
+          .filter((e) => e.classId === c.id)
+          .map((e) => {
+            const a = byStudent.get(e.student.id);
+            return {
+              studentId: e.student.id,
+              name: e.student.name,
+              nis: e.student.nis,
+              status: !a ? 'BELUM' : a.status === 'SUBMITTED' ? 'SELESAI' : 'MENGERJAKAN',
+              answered: a?._count.answers ?? 0,
+              startedAt: a?.startedAt ?? null,
+              submittedAt: a?.submittedAt ?? null,
+              remainingSec: a && a.status === 'STARTED' ? Math.max(0, Math.floor((a.deadline.getTime() - now) / 1000)) : null,
+              score: a?.status === 'SUBMITTED' ? a.score : null,
+              maxScore: a?.status === 'SUBMITTED' ? a.maxScore : null,
+            };
+          });
+        return {
+          classId: c.id,
+          className: c.name,
+          gradeLevel: c.gradeLevel,
+          session: session ? { name: session.name, startAt: session.startAt, endAt: session.endAt } : null,
+          total: students.length,
+          done: students.filter((s) => s.status === 'SELESAI').length,
+          working: students.filter((s) => s.status === 'MENGERJAKAN').length,
+          students,
+        };
+      }),
+    };
+  }
+
+  /** Rekap nilai per rombel — semua siswa terdaftar + skor & nilai ledger. */
+  async results(examId: string, classId: string | undefined, user: AuthUser) {
+    const exam = await this.scopeOk(user, examId, false);
+    const { classes, enrollments } = await this.examClasses(exam);
+    const classIds = classId ? [classId] : classes.map((c) => c.id);
+    const attempts = await this.prisma.examAttempt.findMany({
+      where: { examId, studentId: { in: enrollments.filter((e) => classIds.includes(e.classId)).map((e) => e.studentId) } },
+    });
+    const byStudent = new Map(attempts.map((a) => [a.studentId, a]));
+    const grades = await this.prisma.grade.findMany({
+      where: { assessmentId: exam.assessmentId, studentId: { in: enrollments.map((e) => e.studentId) } },
+    });
+    const gradeOf = new Map(grades.map((g) => [g.studentId, g.score]));
+    const maxScore = attempts.reduce((m, a) => Math.max(m, a.maxScore ?? 0), 0);
+    return {
+      exam: { id: exam.id, title: exam.title, assessmentId: exam.assessmentId, maxScore },
+      classes: classes
+        .filter((c) => classIds.includes(c.id))
+        .map((c) => ({
+          classId: c.id,
+          className: c.name,
+          gradeLevel: c.gradeLevel,
+          students: enrollments
+            .filter((e) => e.classId === c.id)
+            .map((e) => {
+              const a = byStudent.get(e.student.id);
+              return {
+                studentId: e.student.id,
+                name: e.student.name,
+                nis: e.student.nis,
+                status: !a ? 'BELUM' : a.status,
+                score: a?.status === 'SUBMITTED' ? a.score : null,
+                maxScore: a?.status === 'SUBMITTED' ? a.maxScore : null,
+                gradeScore: gradeOf.get(e.student.id) ?? null,
+                submittedAt: a?.submittedAt ?? null,
+              };
+            }),
+        })),
+    };
+  }
+
+  /** Analisis butir per rombel — % benar, tersukar/termudah. */
+  async analysis(examId: string, classId: string | undefined, user: AuthUser) {
+    const exam = await this.scopeOk(user, examId, false);
+    const questions = await this.prisma.assessmentQuestion.findMany({
+      where: { assessmentId: exam.assessmentId },
+      orderBy: { number: 'asc' },
+    });
+    let studentIds: string[] | undefined;
+    if (classId) {
+      const enr = await this.prisma.enrollment.findMany({
+        where: { classId, academicYearId: exam.academicYearId, student: { status: 'ACTIVE' } },
+        select: { studentId: true },
+      });
+      studentIds = enr.map((e) => e.studentId);
+    }
+    const answers = await this.prisma.examAnswer.findMany({
+      where: {
+        questionId: { in: questions.map((q) => q.id) },
+        attempt: { examId, status: 'SUBMITTED', ...(studentIds ? { studentId: { in: studentIds } } : {}) },
+      },
+    });
+    const byQ = new Map<string, typeof answers>();
+    for (const a of answers) {
+      const arr = byQ.get(a.questionId) ?? [];
+      arr.push(a);
+      byQ.set(a.questionId, arr);
+    }
+    const rows = questions.map((q) => {
+      const ans = byQ.get(q.id) ?? [];
+      const correct = ans.filter((a) => a.isCorrect === true).length;
+      const avg = ans.length ? ans.reduce((s, a) => s + a.score, 0) / ans.length : 0;
+      return {
+        id: q.id, number: q.number, type: q.type, weight: q.weight,
+        prompt: q.prompt, key: q.key, options: q.options,
+        answered: ans.length, correct,
+        correctPct: ans.length ? Math.round((correct / ans.length) * 100) : null,
+        avgScore: Math.round(avg * 100) / 100,
+        difficulty: ans.length ? (avg / q.weight >= 0.75 ? 'Mudah' : avg / q.weight >= 0.4 ? 'Sedang' : 'Sukar') : null,
+      };
+    });
+    return {
+      questions: rows,
+      easiest: rows.filter((r) => r.correctPct !== null).sort((a, b) => b.correctPct! - a.correctPct!).slice(0, 5),
+      hardest: rows.filter((r) => r.correctPct !== null).sort((a, b) => a.correctPct! - b.correctPct!).slice(0, 5),
+    };
+  }
+
+  /** Matriks jawaban siswa × soal untuk satu rombel (rekap jawaban). */
+  async answerMatrix(examId: string, classId: string, user: AuthUser) {
+    const exam = await this.scopeOk(user, examId, false);
+    const questions = await this.prisma.assessmentQuestion.findMany({
+      where: { assessmentId: exam.assessmentId },
+      orderBy: { number: 'asc' },
+      select: { id: true, number: true, type: true, weight: true, key: true, prompt: true },
+    });
+    const enr = await this.prisma.enrollment.findMany({
+      where: { classId, academicYearId: exam.academicYearId, student: { status: 'ACTIVE' } },
+      include: { student: { select: { id: true, name: true, nis: true } } },
+      orderBy: { student: { name: 'asc' } },
+    });
+    const attempts = await this.prisma.examAttempt.findMany({
+      where: { examId, studentId: { in: enr.map((e) => e.studentId) } },
+      include: { answers: true },
+    });
+    const aByStudent = new Map(attempts.map((a) => [a.studentId, a]));
+    return {
+      questions,
+      students: enr.map((e) => {
+        const att = aByStudent.get(e.student.id);
+        const byQ = new Map(att?.answers.map((a) => [a.questionId, a]) ?? []);
+        return {
+          studentId: e.student.id,
+          name: e.student.name,
+          nis: e.student.nis,
+          status: !att ? 'BELUM' : att.status,
+          score: att?.status === 'SUBMITTED' ? att.score : null,
+          cells: questions.map((q) => {
+            const a = byQ.get(q.id);
+            return a ? { answer: a.answer, isCorrect: a.isCorrect, score: a.score } : null;
+          }),
+        };
+      }),
+    };
+  }
+
+  /** Ekspor Excel: Rekap Nilai per rombel + Analisis Butir + Rekap Jawaban. */
+  async resultsExcel(examId: string, classId: string | undefined, user: AuthUser) {
+    const exam = await this.scopeOk(user, examId, false);
+    const [res, ana] = await Promise.all([
+      this.results(examId, classId, user),
+      this.analysis(examId, classId, user),
+    ]);
+    const wb = XLSX.utils.book_new();
+    // Sheet 1 — rekap nilai semua rombel terpilih
+    const rows: (string | number)[][] = [['Rombel', 'NIS', 'Nama', 'Status', 'Skor', 'Skor Maks', 'Nilai Akhir', 'Dikumpulkan']];
+    for (const c of res.classes) {
+      for (const s of c.students) {
+        rows.push([
+          c.className, s.nis ?? '', s.name,
+          s.status === 'SUBMITTED' ? 'Selesai' : s.status === 'STARTED' ? 'Mengerjakan' : 'Belum',
+          s.score ?? '', s.maxScore ?? '', s.gradeScore ?? '',
+          s.submittedAt ? new Date(s.submittedAt).toLocaleString('id-ID') : '',
+        ]);
+      }
+    }
+    const ws1 = XLSX.utils.aoa_to_sheet(rows);
+    ws1['!cols'] = [{ wch: 8 }, { wch: 12 }, { wch: 30 }, { wch: 12 }, { wch: 8 }, { wch: 9 }, { wch: 10 }, { wch: 20 }];
+    XLSX.utils.book_append_sheet(wb, ws1, 'Rekap Nilai');
+    // Sheet 2 — analisis butir
+    const ws2 = XLSX.utils.aoa_to_sheet([
+      ['No', 'Tipe', 'Soal', 'Bobot', 'Terjawab', 'Benar', '% Benar', 'Rata-rata', 'Tingkat'],
+      ...ana.questions.map((q) => [
+        q.number, q.type, (q.prompt ?? '').slice(0, 200), q.weight, q.answered, q.correct,
+        q.correctPct ?? '', q.avgScore, q.difficulty ?? '',
+      ] as (string | number)[]),
+    ]);
+    ws2['!cols'] = [{ wch: 4 }, { wch: 10 }, { wch: 60 }, { wch: 6 }, { wch: 8 }, { wch: 6 }, { wch: 7 }, { wch: 8 }, { wch: 8 }];
+    XLSX.utils.book_append_sheet(wb, ws2, 'Analisis Butir');
+    // Sheet 3 — rekap jawaban (bila rombel tunggal)
+    if (res.classes.length === 1 && classId) {
+      const mx = await this.answerMatrix(examId, classId, user);
+      const ws3 = XLSX.utils.aoa_to_sheet([
+        ['NIS', 'Nama', ...mx.questions.map((q) => `S${q.number}`), 'Skor'],
+        ...mx.students.map((s) => [
+          s.nis ?? '', s.name,
+          ...s.cells.map((c) => (c === null ? '' : c.isCorrect === true ? 'B' : c.isCorrect === false ? 'S' : '·')),
+          s.score ?? '',
+        ] as (string | number)[]),
+      ]);
+      ws3['!cols'] = [{ wch: 12 }, { wch: 30 }, ...mx.questions.map(() => ({ wch: 4 })), { wch: 8 }];
+      XLSX.utils.book_append_sheet(wb, ws3, `Jawaban ${res.classes[0]!.className}`);
+    }
+    return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+  }
+
+  /** Edit nilai akhir di ledger (Grade) — guru mapel scope / admin. */
+  async updateGrade(examId: string, studentId: string, score: number, user: AuthUser) {
+    const exam = await this.scopeOk(user, examId, true);
+    const scale = (await this.prisma.assessment.findUniqueOrThrow({ where: { id: exam.assessmentId } })).maxScore || 100;
+    if (score < 0 || score > scale) {
+      throw new BadRequestException(`Nilai harus 0–${scale}.`);
+    }
+    const grade = await this.prisma.grade.upsert({
+      where: { assessmentId_studentId: { assessmentId: exam.assessmentId, studentId } },
+      update: { score: Math.round(score) },
+      create: { assessmentId: exam.assessmentId, studentId, score: Math.round(score) },
+    });
+    await this.audit.log({
+      actorId: user.id, action: 'exam.grade-update', entity: 'exam', entityId: examId,
+      metadata: { studentId, score: Math.round(score), assessmentId: exam.assessmentId },
+    });
+    return grade;
+  }
+
+  // ================= Soal ujian (milik asesmen terkait) =================
+
+  async examQuestions(examId: string, user: AuthUser) {
+    const exam = await this.scopeOk(user, examId, false);
+    return this.ops.listQuestions(exam.assessmentId);
+  }
+
+  async setExamQuestions(examId: string, questions: Parameters<OpsService['setQuestions']>[1], user: AuthUser) {
+    const exam = await this.scopeOk(user, examId, true);
+    for (const q of questions) {
+      if (!['MCQ', 'MCQ_COMPLEX', 'TRUE_FALSE', 'TRUE_FALSE_COMPLEX'].includes(q.type)) {
+        throw new BadRequestException(`Tipe soal ${q.type} tidak didukung — hanya PG/PGK/BS/BSK.`);
+      }
+    }
+    const r = await this.ops.setQuestions(exam.assessmentId, questions);
+    await this.audit.log({ actorId: user.id, action: 'exam.questions-set', entity: 'exam', entityId: examId, metadata: { count: r.count } });
+    return r;
+  }
+
+  async importExamQuestions(examId: string, file: Express.Multer.File, user: AuthUser) {
+    const exam = await this.scopeOk(user, examId, true);
+    const questions = this.ops.parseQuestionWorkbook(file);
+    const r = await this.ops.setQuestions(exam.assessmentId, questions);
+    await this.audit.log({ actorId: user.id, action: 'exam.questions-import', entity: 'exam', entityId: examId, metadata: { count: r.count } });
+    return r;
   }
 }

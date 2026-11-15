@@ -316,6 +316,91 @@ export class OpsService {
   }
 
   // ================= Butir soal & analisis =================
+  /** Parser Excel/CSV import soal — dipakai ops.controller & cbt.controller.
+   *  Tipe: PG/PGK/BS/BSK (B-S kompleks). Kolom A–E = pilihan/pernyataan,
+   *  Kunci: PG→huruf · PGK→huruf-koma · BS→B/S · BSK→B,S per pernyataan. */
+  parseQuestionWorkbook(file: Express.Multer.File): QuestionDto[] {
+    const name = file.originalname.toLowerCase();
+    if (!name.endsWith('.xlsx') && !name.endsWith('.xls') && !name.endsWith('.csv')) {
+      throw new BadRequestException('Hanya file Excel (.xlsx/.xls) atau CSV.');
+    }
+    let wb: XLSX.WorkBook;
+    try {
+      wb = XLSX.read(file.buffer, { type: 'buffer' });
+    } catch {
+      throw new BadRequestException('File tidak dapat dibaca.');
+    }
+    const ws = wb.Sheets[wb.SheetNames[0] ?? ''];
+    if (!ws) throw new BadRequestException('File tidak punya sheet.');
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: '' });
+    const hi = rows.findIndex((r) => String(r[0] ?? '').trim().toLowerCase() === 'no');
+    if (hi < 0) throw new BadRequestException('Kolom header tidak ditemukan — pakai template yang disediakan.');
+    const typeOf = (v: string) => {
+      const t = v.toUpperCase().replace(/[\s-]+/g, '_');
+      if (/^(PG|MCQ|PILIHAN_GANDA)$/.test(t)) return 'MCQ';
+      if (/^(PGK|MCQ_COMPLEX|PILIHAN_GANDA_KOMPLEKS)/.test(t)) return 'MCQ_COMPLEX';
+      if (/^(BS|B_S|TRUE_FALSE|BENAR_SALAH)$/.test(t)) return 'TRUE_FALSE';
+      if (/^(BSK|B_S_K|BENAR_SALAH_KOMPLEKS|TRUE_FALSE_COMPLEX|TFK)/.test(t)) return 'TRUE_FALSE_COMPLEX';
+      return '';
+    };
+    const letterIdx = (s: string) => 'ABCDE'.indexOf(s.trim().toUpperCase());
+    const questions: QuestionDto[] = [];
+    const errors: string[] = [];
+    rows.slice(hi + 1).forEach((r, i) => {
+      const line = hi + 2 + i;
+      const no = Number(String(r[0] ?? '').trim());
+      const cells = (j: number) => String(r[j] ?? '').trim();
+      if (!cells(0) && !cells(1) && !cells(2)) return; // baris kosong
+      if (/^contoh/i.test(cells(0))) return; // baris contoh template
+      const type = typeOf(cells(1));
+      const prompt = cells(2);
+      if (!Number.isInteger(no) || no < 1) { errors.push(`Baris ${line}: nomor soal tidak valid.`); return; }
+      if (!type) { errors.push(`Baris ${line}: tipe "${cells(1)}" tidak dikenal (PG/PGK/BS/BSK).`); return; }
+      if (!prompt) { errors.push(`Baris ${line}: teks soal kosong.`); return; }
+      const weight = Math.max(1, Math.round(Number(cells(10)) || 1));
+      const choices = [3, 4, 5, 6, 7].map((j) => cells(j)).filter(Boolean);
+      let options: unknown;
+      let key: unknown;
+      if (type === 'MCQ' || type === 'MCQ_COMPLEX') {
+        if (choices.length < 2) { errors.push(`Baris ${line}: pilihan jawaban minimal 2.`); return; }
+        options = { choices };
+        const letters = cells(9).split(/[,;\s]+/).filter(Boolean);
+        const idx = letters.map(letterIdx).filter((x) => x >= 0 && x < choices.length);
+        if (type === 'MCQ') {
+          if (idx.length !== 1) { errors.push(`Baris ${line}: kunci PG harus tepat satu huruf A–E.`); return; }
+          key = idx[0];
+        } else {
+          if (idx.length < 1) { errors.push(`Baris ${line}: kunci PGK minimal satu huruf.`); return; }
+          key = [...new Set(idx)];
+        }
+      } else if (type === 'TRUE_FALSE') {
+        const k = cells(9).toUpperCase();
+        if (!/^(B|BENAR|S|SALAH|TRUE|FALSE)$/.test(k)) {
+          errors.push(`Baris ${line}: kunci BS harus B/Benar atau S/Salah.`); return;
+        }
+        key = /^(B|BENAR|TRUE)$/.test(k);
+      } else {
+        // BSK — kolom A–E = pernyataan-pernyataan; kunci = B/S per pernyataan dipisah koma.
+        if (choices.length < 2) { errors.push(`Baris ${line}: BSK butuh ≥2 pernyataan di kolom A–E.`); return; }
+        options = { statements: choices };
+        const marks = cells(9).split(/[,;\s]+/).filter(Boolean).map((m) => m.toUpperCase());
+        if (marks.length !== choices.length || marks.some((m) => !/^(B|BENAR|S|SALAH|TRUE|FALSE)$/.test(m))) {
+          errors.push(`Baris ${line}: kunci BSK = B/S per pernyataan (${choices.length} buah), dipisah koma — mis. B,S,B.`); return;
+        }
+        key = marks.map((m) => /^(B|BENAR|TRUE)$/.test(m));
+      }
+      questions.push({ number: no, type: type as QuestionDto['type'], weight, prompt, options, key });
+    });
+    if (errors.length) throw new BadRequestException(errors.slice(0, 8).join(' '));
+    if (!questions.length) throw new BadRequestException('Tidak ada baris soal yang valid.');
+    const dup = new Set<number>();
+    for (const q of questions) {
+      if (dup.has(q.number)) throw new BadRequestException(`Nomor soal ${q.number} ganda.`);
+      dup.add(q.number);
+    }
+    return questions;
+  }
+
   async setQuestions(assessmentId: string, questions: QuestionDto[]) {
     await this.prisma.assessment.findUniqueOrThrow({ where: { id: assessmentId } });
     return this.prisma.$transaction(async (tx) => {
@@ -908,7 +993,18 @@ export class OpsService {
   createExamRoom(dto: ExamRoomDto) {
     return this.prisma.examRoom.create({ data: { name: dto.name, period: dto.period, academicYearId: dto.academicYearId, capacity: dto.capacity ?? 24 } });
   }
-  listExamRooms(academicYearId: string, period?: string) {
+  async listExamRooms(academicYearId: string, period?: string) {
+    // Backfill kode peserta untuk kursi lama yang belum punya.
+    const missing = await this.prisma.examSeat.findMany({
+      where: { room: { academicYearId }, code: null },
+      select: { id: true, room: { select: { period: true } } },
+    });
+    for (const s of missing) {
+      await this.prisma.examSeat.update({
+        where: { id: s.id },
+        data: { code: await this.nextSeatCode(academicYearId, s.room.period) },
+      });
+    }
     return this.prisma.examRoom.findMany({
       where: { academicYearId, ...(period ? { period } : {}) },
       include: { seats: { include: { student: { select: { id: true, name: true, nis: true } }, class: { select: { id: true, name: true } } }, orderBy: { seatNo: 'asc' } }, _count: { select: { seats: true } } },
@@ -919,7 +1015,9 @@ export class OpsService {
     const room = await this.prisma.examRoom.findUniqueOrThrow({ where: { id: roomId }, include: { _count: { select: { seats: true } } } });
     if (room._count.seats >= room.capacity) throw new ConflictException(`Ruang ${room.name} penuh (${room.capacity}).`);
     const seatNo = dto.seatNo ?? room._count.seats + 1;
-    return this.prisma.examSeat.create({ data: { roomId, studentId: dto.studentId, classId: dto.classId ?? null, seatNo } });
+    return this.prisma.examSeat.create({
+      data: { roomId, studentId: dto.studentId, classId: dto.classId ?? null, seatNo, code: await this.nextSeatCode(room.academicYearId, room.period) },
+    });
   }
   async assignClassToRoom(roomId: string, classId: string) {
     const room = await this.prisma.examRoom.findUniqueOrThrow({ where: { id: roomId }, include: { _count: { select: { seats: true } } } });
@@ -933,10 +1031,50 @@ export class OpsService {
     const free = room.capacity - room._count.seats;
     const toAdd = students.filter((s) => !skip.has(s.studentId)).slice(0, Math.max(free, 0));
     let seat = room._count.seats;
-    const created = await this.prisma.examSeat.createMany({
-      data: toAdd.map((s) => ({ roomId, studentId: s.studentId, classId, seatNo: ++seat })),
+    // Kode peserta dibuat satu per satu (sequence per tahun ajaran) agar unik.
+    for (const s of toAdd) {
+      await this.prisma.examSeat.create({
+        data: { roomId, studentId: s.studentId, classId, seatNo: ++seat, code: await this.nextSeatCode(room.academicYearId, room.period) },
+      });
+    }
+    return { added: toAdd.length, skipped: students.length - toAdd.length };
+  }
+
+  /** Kode peserta: {PERIODE}-{nomor urut 4 digit} — unik per tahun ajaran,
+   *  tercetak di kartu & jadi kode masuk ujian siswa (sinkron CBT). */
+  private async nextSeatCode(academicYearId: string, period: string) {
+    const prefix = period.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6) || 'UJIAN';
+    const count = await this.prisma.examSeat.count({
+      where: { room: { academicYearId }, code: { startsWith: `${prefix}-` } },
     });
-    return { added: created.count, skipped: students.length - toAdd.length };
+    for (let i = count + 1; ; i++) {
+      const code = `${prefix}-${String(i).padStart(4, '0')}`;
+      const clash = await this.prisma.examSeat.findUnique({ where: { code } });
+      if (!clash) return code;
+    }
+  }
+
+  async updateExamRoom(id: string, dto: { name?: string; period?: string; capacity?: number }) {
+    const room = await this.prisma.examRoom.findUniqueOrThrow({ where: { id }, include: { _count: { select: { seats: true } } } });
+    if (dto.capacity !== undefined && dto.capacity < room._count.seats) {
+      throw new ConflictException(`Kapasitas tak boleh di bawah jumlah peserta (${room._count.seats}).`);
+    }
+    return this.prisma.examRoom.update({
+      where: { id },
+      data: {
+        ...(dto.name !== undefined ? { name: dto.name } : {}),
+        ...(dto.period !== undefined ? { period: dto.period } : {}),
+        ...(dto.capacity !== undefined ? { capacity: dto.capacity } : {}),
+      },
+    });
+  }
+  async deleteExamRoom(id: string) {
+    await this.prisma.examRoom.findUniqueOrThrow({ where: { id } });
+    return this.prisma.examRoom.delete({ where: { id } });
+  }
+  async removeExamSeat(seatId: string) {
+    const seat = await this.prisma.examSeat.findUniqueOrThrow({ where: { id: seatId } });
+    return this.prisma.examSeat.delete({ where: { id: seat.id } });
   }
   async examCards(roomId: string) {
     const room = await this.prisma.examRoom.findUniqueOrThrow({

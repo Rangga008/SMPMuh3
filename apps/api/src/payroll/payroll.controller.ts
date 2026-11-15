@@ -337,6 +337,12 @@ export class PayrollController {
     return this.payroll.voidRun(id, user.id);
   }
 
+  @Post('runs/:id/reopen')
+  @RequirePermission(PERMISSIONS.PAYROLL_MANAGE)
+  reopenRun(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
+    return this.payroll.reopenRun(id, user.id);
+  }
+
   @Delete('runs/:id')
   @RequirePermission(PERMISSIONS.PAYROLL_MANAGE)
   deleteRun(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {

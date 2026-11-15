@@ -133,6 +133,9 @@ model School {
   accreditation String?  // mis. "A" — tercetak di kop dokumen resmi
   kopLine1      String?  @map("kop_line1") // baris yayasan di kop, mis. "PIMPINAN CABANG MUHAMMADIYAH ..."
   kopLine2      String?  @map("kop_line2") // baris kedua, mis. "MAJELIS PENDIDIKAN DASAR DAN MENENGAH ..."
+  kopUrl        String?  @map("kop_url") // gambar kop surat utuh — bila diisi, kop teks tidak dipakai
+  treasurer     String?  // bendahara — penandatangan slip gaji
+  treasurerNip  String?  @map("treasurer_nip")
   headmasterSignatureUrl String? @map("headmaster_signature_url")
   logoUrl       String?  @map("logo_url")
   createdAt     DateTime @default(now()) @map("created_at")
@@ -1867,10 +1870,11 @@ model ScheduleBlock {
 // ---------- Asesmen: butir soal & jawaban siswa ----------
 
 enum QuestionType {
-  MCQ          // pilihan ganda
-  MCQ_COMPLEX  // pilihan ganda kompleks (multi jawaban benar)
-  TRUE_FALSE   // benar/salah
-  MATCHING     // menjodohkan
+  MCQ                 // pilihan ganda
+  MCQ_COMPLEX         // pilihan ganda kompleks (multi jawaban benar)
+  TRUE_FALSE          // benar/salah
+  TRUE_FALSE_COMPLEX  // benar/salah kompleks — beberapa pernyataan, masing-masing B/S
+  MATCHING            // menjodohkan (legacy — tak lagi ditawarkan di UI)
 }
 
 /** Butir soal per asesmen — kunci + bobot untuk analisis. */
@@ -1943,11 +1947,30 @@ model Exam {
   createdAt      DateTime       @default(now()) @map("created_at")
   updatedAt      DateTime       @updatedAt @map("updated_at")
 
-  assessment Assessment   @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  assessment Assessment    @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
   attempts   ExamAttempt[]
+  sessions   ExamSession[]
 
   @@index([academicYearId, status])
   @@map("exams")
+}
+
+/** Sesi ujian per kelompok rombel — mis. 7A–7C sesi 1 (08.00–09.30),
+ *  7D–7F sesi 2 (10.00–11.30). Siswa hanya bisa masuk dalam jendela sesi
+ *  rombelnya; bila ujian tak punya sesi, jendela ujian dipakai. */
+model ExamSession {
+  id        String   @id @default(uuid()) @db.Uuid
+  examId    String   @map("exam_id") @db.Uuid
+  name      String   // "Sesi 1"
+  classIds  Json     @map("class_ids") // array uuid rombel yang masuk sesi ini
+  startAt   DateTime @map("start_at")
+  endAt     DateTime @map("end_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  exam Exam @relation(fields: [examId], references: [id], onDelete: Cascade)
+
+  @@index([examId])
+  @@map("exam_sessions")
 }
 
 /** Satu kali pengerjaan ujian oleh satu siswa — token acak = "kunci" sesi CBT. */
@@ -2162,6 +2185,7 @@ model ExamSeat {
   studentId String  @map("student_id") @db.Uuid
   classId   String? @map("class_id") @db.Uuid
   seatNo    Int?    @map("seat_no")
+  code      String? @unique // kode peserta ujian — tercetak di kartu, dipakai masuk CBT
 
   room    ExamRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
   student Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)

@@ -178,13 +178,17 @@ export const upsertUniform = (dto: { day: number; name: string; note?: string })
 
 export interface ExamRoomView {
   id: string; name: string; period: string; capacity: number;
-  seats: { id: string; seatNo?: number | null; student: { id: string; name: string; nis?: string | null }; class?: { id: string; name: string } | null }[];
+  seats: { id: string; seatNo?: number | null; code?: string | null; student: { id: string; name: string; nis?: string | null }; class?: { id: string; name: string } | null }[];
   _count: { seats: number };
 }
 export const listExamRooms = (academicYearId: string, period?: string) =>
   req<ExamRoomView[]>(`/ops/exam-rooms?academicYearId=${academicYearId}${period ? `&period=${period}` : ''}`);
 export const createExamRoom = (dto: { name: string; period: string; academicYearId: string; capacity?: number }) =>
   req('/ops/exam-rooms', { method: 'POST', json: dto });
+export const updateExamRoom = (id: string, dto: { name?: string; period?: string; capacity?: number }) =>
+  req(`/ops/exam-rooms/${id}`, { method: 'PATCH', json: dto });
+export const deleteExamRoom = (id: string) => req(`/ops/exam-rooms/${id}`, { method: 'DELETE' });
+export const removeExamSeat = (seatId: string) => req(`/ops/exam-seats/${seatId}`, { method: 'DELETE' });
 export const assignClassToRoom = (roomId: string, classId: string) =>
   req<{ added: number; skipped: number }>(`/ops/exam-rooms/${roomId}/assign-class`, { method: 'POST', json: { classId } });
 export const getExamCards = (roomId: string) =>
@@ -323,6 +327,8 @@ export interface ExamView {
     questions?: AssessmentQuestion[];
   };
   _count?: { attempts: number };
+  sessions?: ExamSessionView[];
+  canManage?: boolean;
   attempts?: {
     id: string; status: string; startedAt: string; submittedAt?: string | null;
     deadline: string; score?: number | null; maxScore?: number | null;
@@ -345,3 +351,82 @@ export const updateExam = (id: string, dto: Partial<{
 export const regenerateExamCode = (id: string) =>
   req<{ id: string; code: string }>(`/cbt/exams/${id}/regenerate-code`, { method: 'POST' });
 export const deleteExam = (id: string) => req(`/cbt/exams/${id}`, { method: 'DELETE' });
+
+// ---------- Sesi ujian per kelompok rombel ----------
+export interface ExamSessionView {
+  id: string; examId: string; name: string; classIds: string[];
+  startAt: string; endAt: string;
+}
+export const createExamSession = (examId: string, dto: { name: string; classIds: string[]; startAt: string; endAt: string }) =>
+  req<ExamSessionView>(`/cbt/exams/${examId}/sessions`, { method: 'POST', json: dto });
+export const updateExamSession = (sid: string, dto: Partial<{ name: string; classIds: string[]; startAt: string; endAt: string }>) =>
+  req<ExamSessionView>(`/cbt/sessions/${sid}`, { method: 'PATCH', json: dto });
+export const deleteExamSession = (sid: string) => req(`/cbt/sessions/${sid}`, { method: 'DELETE' });
+
+// ---------- Monitor / hasil / analisis ----------
+export interface MonitorClass {
+  classId: string; className: string; gradeLevel: number;
+  session: { name: string; startAt: string; endAt: string } | null;
+  total: number; done: number; working: number;
+  students: {
+    studentId: string; name: string; nis?: string | null;
+    status: 'BELUM' | 'MENGERJAKAN' | 'SELESAI';
+    answered: number; startedAt?: string | null; submittedAt?: string | null;
+    remainingSec?: number | null; score?: number | null; maxScore?: number | null;
+  }[];
+}
+export const examMonitor = (id: string) =>
+  req<{ examId: string; sessions: ExamSessionView[]; classes: MonitorClass[] }>(`/cbt/exams/${id}/monitor`);
+/** Daftar ujian untuk monitor — endpoint cbt.monitor (semua staf: proktor/pengawas/tendik/guru). */
+export const listMonitorExams = (academicYearId?: string) =>
+  req<ExamView[]>(`/cbt/monitor/exams${academicYearId ? `?academicYearId=${academicYearId}` : ''}`);
+
+export interface ResultsClass {
+  classId: string; className: string; gradeLevel: number;
+  students: {
+    studentId: string; name: string; nis?: string | null;
+    status: string; score?: number | null; maxScore?: number | null;
+    gradeScore?: number | null; submittedAt?: string | null;
+  }[];
+}
+export const examResults = (id: string, classId?: string) =>
+  req<{ exam: { id: string; title: string; assessmentId: string; maxScore: number }; classes: ResultsClass[] }>(
+    `/cbt/exams/${id}/results${classId ? `?classId=${classId}` : ''}`);
+
+export interface ItemAnalysis {
+  id: string; number: number; type: string; weight: number;
+  prompt?: string | null; key?: unknown; options?: unknown;
+  answered: number; correct: number; correctPct: number | null;
+  avgScore: number; difficulty: 'Mudah' | 'Sedang' | 'Sukar' | null;
+}
+export const examAnalysis = (id: string, classId?: string) =>
+  req<{ questions: ItemAnalysis[]; easiest: ItemAnalysis[]; hardest: ItemAnalysis[] }>(
+    `/cbt/exams/${id}/analysis${classId ? `?classId=${classId}` : ''}`);
+
+export const examAnswersMatrix = (id: string, classId: string) =>
+  req<{
+    questions: { id: string; number: number; type: string; weight: number; key?: unknown; prompt?: string | null }[];
+    students: {
+      studentId: string; name: string; nis?: string | null; status: string; score?: number | null;
+      cells: ({ answer?: unknown; isCorrect?: boolean | null; score: number } | null)[];
+    }[];
+  }>(`/cbt/exams/${id}/answers-matrix?classId=${classId}`);
+
+export const exportExamResults = (id: string, classId?: string) =>
+  downloadFile(`/cbt/exams/${id}/results.xlsx${classId ? `?classId=${classId}` : ''}`, `hasil-ujian-${id.slice(0, 8)}.xlsx`);
+
+export const updateExamGrade = (id: string, studentId: string, score: number) =>
+  req(`/cbt/exams/${id}/grades`, { method: 'PATCH', json: { studentId, score } });
+
+// ---------- Soal ujian ----------
+export interface ExamQuestion {
+  id: string; number: number; type: 'MCQ' | 'MCQ_COMPLEX' | 'TRUE_FALSE' | 'TRUE_FALSE_COMPLEX' | 'MATCHING';
+  weight: number; prompt?: string | null; key?: unknown; options?: unknown;
+}
+export const examQuestions = (id: string) => req<ExamQuestion[]>(`/cbt/exams/${id}/questions`);
+export const setExamQuestions = (id: string, questions: Omit<ExamQuestion, 'id'>[]) =>
+  req<{ count: number }>(`/cbt/exams/${id}/questions`, { method: 'PUT', json: { questions } });
+export const importExamQuestions = (id: string, file: File) => {
+  const fd = new FormData(); fd.append('file', file);
+  return req<{ count: number }>(`/cbt/exams/${id}/questions/import`, { method: 'POST', body: fd });
+};

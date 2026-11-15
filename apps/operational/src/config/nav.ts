@@ -378,7 +378,14 @@ export const NAV: NavItem[] = [
     ],
     enabled: true,
   },
-  { key: 'cbt', label: 'CBT', icon: '🖥', enabled: false },
+  {
+    key: 'cbt',
+    label: 'Monitor CBT',
+    icon: '🖥',
+    href: '/monitor-cbt',
+    permission: PERMISSIONS.CBT_MONITOR,
+    enabled: true,
+  },
   {
     key: 'keuangan',
     label: 'Keuangan',

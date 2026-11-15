@@ -1,37 +1,92 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { PageTitle, Widget } from '@/components/widgets';
 import { DataTable } from '@/components/data-table';
+import { RowBtn, rowActionClasses } from '@/components/row-btn';
 import { useConfirm } from '@/components/confirm-dialog';
 import { usePermission } from '@/lib/use-permission';
 import { PERMISSIONS } from '@smpmuh3/types';
-import { ApiError, listClasses, type ClassView } from '@/lib/api';
-import { getExam, regenerateExamCode, updateExam, type ExamView } from '@/lib/api-ops';
+import { ApiError, downloadFile, listClasses, type ClassView } from '@/lib/api';
+import {
+  createExamSession, deleteExamSession, examAnalysis, examAnswersMatrix, examMonitor,
+  examQuestions, examResults, exportExamResults, getExam, importExamQuestions, listMonitorExams, regenerateExamCode,
+  setExamQuestions, updateExam, updateExamGrade, updateExamSession,
+  type ExamQuestion, type ExamView, type ItemAnalysis, type MonitorClass,
+} from '@/lib/api-ops';
 
 const STATUS: Record<ExamView['status'], { label: string; tone: 'neutral' | 'primary' | 'danger' }> = {
   DRAFT: { label: 'Draf — siswa belum bisa masuk', tone: 'neutral' },
-  OPEN: { label: 'Dibuka — siswa bisa masuk sesuai jadwal', tone: 'primary' },
+  OPEN: { label: 'Dibuka — siswa masuk sesuai jadwal sesi', tone: 'primary' },
   CLOSED: { label: 'Ditutup', tone: 'danger' },
 };
+const TYPE_LABEL: Record<string, string> = {
+  MCQ: 'Pilihan Ganda', MCQ_COMPLEX: 'PG Kompleks',
+  TRUE_FALSE: 'Benar/Salah', TRUE_FALSE_COMPLEX: 'B-S Kompleks', MATCHING: 'Menjodohkan',
+};
 const dt = (s: string) =>
-  new Date(s).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  new Date(s).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+const toLocalInput = (iso: string) => {
+  const d = new Date(iso);
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 16);
+};
+const mmss = (sec: number) => `${Math.floor(sec / 60)}m ${sec % 60}d`;
+
+type QForm = { number: number; type: ExamQuestion['type']; prompt: string; weight: number; choices: string[]; statements: string[]; keyOne: number; keyMany: Set<number>; keyBool: boolean | null; keyBools: boolean[] };
+const blankQ = (n: number): QForm => ({ number: n, type: 'MCQ', prompt: '', weight: 1, choices: ['', '', '', ''], statements: ['', ''], keyOne: 0, keyMany: new Set(), keyBool: null, keyBools: [true, false] });
+
+const qToForm = (q: ExamQuestion): QForm => {
+  const opts = (q.options ?? {}) as { choices?: string[]; statements?: string[] };
+  return {
+    number: q.number, type: q.type, prompt: q.prompt ?? '', weight: q.weight,
+    choices: opts.choices?.length ? [...opts.choices] : ['', '', '', ''],
+    statements: opts.statements?.length ? [...opts.statements] : ['', ''],
+    keyOne: typeof q.key === 'number' ? q.key : 0,
+    keyMany: new Set(Array.isArray(q.key) && q.type === 'MCQ_COMPLEX' ? (q.key as number[]) : []),
+    keyBool: q.type === 'TRUE_FALSE' ? Boolean(q.key) : null,
+    keyBools: Array.isArray(q.key) && q.type === 'TRUE_FALSE_COMPLEX' ? (q.key as boolean[]) : (opts.statements ?? ['', '']).map(() => true),
+  };
+};
+
+const formToQ = (f: QForm): Omit<ExamQuestion, 'id'> => {
+  if (f.type === 'MCQ') return { number: f.number, type: 'MCQ', weight: f.weight, prompt: f.prompt, options: { choices: f.choices.filter(Boolean) }, key: f.keyOne };
+  if (f.type === 'MCQ_COMPLEX') return { number: f.number, type: 'MCQ_COMPLEX', weight: f.weight, prompt: f.prompt, options: { choices: f.choices.filter(Boolean) }, key: [...f.keyMany].sort() };
+  if (f.type === 'TRUE_FALSE') return { number: f.number, type: 'TRUE_FALSE', weight: f.weight, prompt: f.prompt, key: f.keyBool ?? true };
+  return { number: f.number, type: 'TRUE_FALSE_COMPLEX', weight: f.weight, prompt: f.prompt, options: { statements: f.statements.filter(Boolean) }, key: f.keyBools.slice(0, f.statements.filter(Boolean).length) };
+};
 
 export default function UjianDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [exam, setExam] = useState<ExamView | null>(null);
+  const [monitorOnly, setMonitorOnly] = useState(false);
   const [classes, setClasses] = useState<ClassView[]>([]);
+  const [tab, setTab] = useState<'monitor' | 'sesi' | 'soal' | 'hasil'>('monitor');
+  const [monitor, setMonitor] = useState<{ examId: string; sessions: { id: string; name: string; classIds: string[]; startAt: string; endAt: string }[]; classes: MonitorClass[] } | null>(null);
+  const [questions, setQuestions] = useState<ExamQuestion[]>([]);
+  const [results, setResults] = useState<Awaited<ReturnType<typeof examResults>> | null>(null);
+  const [analysis, setAnalysis] = useState<{ questions: ItemAnalysis[]; easiest: ItemAnalysis[]; hardest: ItemAnalysis[] } | null>(null);
+  const [matrix, setMatrix] = useState<Awaited<ReturnType<typeof examAnswersMatrix>> | null>(null);
+  const [resClass, setResClass] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [modalErr, setModalErr] = useState<string | null>(null);
   const [modal, setModal] = useState(false);
+  const [sesiModal, setSesiModal] = useState<{ id?: string; name: string; classIds: Set<string>; startAt: string; endAt: string } | null>(null);
+  const [qModal, setQModal] = useState<QForm | null>(null);
+  const [gradeEdit, setGradeEdit] = useState<{ studentId: string; name: string; score: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   const canManage = usePermission(PERMISSIONS.ACADEMIC_MANAGE);
+  const canMonitor = usePermission(PERMISSIONS.CBT_MONITOR);
   const { confirm, dialog } = useConfirm();
+
+  const examManage = canManage || exam?.canManage === true;
+  const clsName = useCallback((cid: string) => classes.find((c) => c.id === cid)?.name ?? '—', [classes]);
 
   const load = useCallback(() => {
     getExam(id)
@@ -39,54 +94,60 @@ export default function UjianDetailPage() {
         setExam(x);
         if (!classes.length) listClasses(x.academicYearId).then(setClasses).catch(() => {});
       })
-      .catch((e) => setError(e instanceof ApiError ? e.message : 'Gagal memuat.'));
-  }, [id, classes.length]);
+      .catch((e) => {
+        // Proktor/tendik tanpa academic.read: masih boleh memonitor.
+        if (e instanceof ApiError && e.status === 403 && canMonitor) {
+          listMonitorExams()
+            .then((xs) => {
+              const x = xs.find((y) => y.id === id);
+              if (x) { setExam(x); setMonitorOnly(true); }
+              else setError('Ujian tidak ditemukan.');
+            })
+            .catch(() => setError('Gagal memuat.'));
+        } else setError(e instanceof ApiError ? e.message : 'Gagal memuat.');
+      });
+  }, [id, classes.length, canMonitor]);
   useEffect(load, [load]);
-  // Polling ringan saat ujian dibuka — pantau siswa masuk/submit.
+
+  const loadTab = useCallback(() => {
+    if (tab === 'monitor' && (canMonitor || canManage)) {
+      examMonitor(id).then(setMonitor).catch(() => setMonitor(null));
+    } else if (tab === 'soal') {
+      examQuestions(id).then(setQuestions).catch((e) => setError(e instanceof ApiError ? e.message : 'Gagal memuat soal.'));
+    } else if (tab === 'hasil') {
+      examResults(id, resClass || undefined).then(setResults).catch((e) => setError(e instanceof ApiError ? e.message : 'Gagal memuat hasil.'));
+      examAnalysis(id, resClass || undefined).then(setAnalysis).catch(() => setAnalysis(null));
+      if (resClass) examAnswersMatrix(id, resClass).then(setMatrix).catch(() => setMatrix(null));
+      else setMatrix(null);
+    }
+  }, [id, tab, resClass, canMonitor, canManage]);
+  useEffect(loadTab, [loadTab]);
+
+  // Polling monitor saat ujian dibuka.
   useEffect(() => {
-    if (exam?.status !== 'OPEN') return;
-    const t = setInterval(load, 15_000);
+    if (tab !== 'monitor' || exam?.status !== 'OPEN') return;
+    const t = setInterval(() => examMonitor(id).then(setMonitor).catch(() => {}), 15_000);
     return () => clearInterval(t);
-  }, [exam?.status, load]);
+  }, [tab, exam?.status, id]);
+
+  const flash = (n: string) => { setNotice(n); setTimeout(() => setNotice(null), 4000); };
+  const err = (e: unknown, fb: string) => setError(e instanceof ApiError ? e.message : fb);
 
   const copy = async () => {
     if (!exam) return;
-    try {
-      await navigator.clipboard.writeText(exam.code);
-      setNotice('Kode tersalin.');
-    } catch {
-      setNotice(`Kode: ${exam.code}`);
-    }
+    try { await navigator.clipboard.writeText(exam.code); flash('Kode tersalin.'); }
+    catch { flash(`Kode: ${exam.code}`); }
   };
-
   const regen = async () => {
-    if (!exam) return;
-    const ok = await confirm('Ganti kode ujian? Kode lama langsung tidak berlaku — bagikan kode baru ke siswa.');
-    if (!ok) return;
-    try {
-      await regenerateExamCode(exam.id);
-      setNotice('Kode baru dibuat.');
-      load();
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Gagal mengganti kode.');
-    }
+    if (!exam || !(await confirm('Ganti kode ujian? Kode lama langsung tidak berlaku.'))) return;
+    try { await regenerateExamCode(exam.id); flash('Kode baru dibuat.'); load(); }
+    catch (e) { err(e, 'Gagal mengganti kode.'); }
   };
-
   const setStatus = async (status: ExamView['status']) => {
     if (!exam) return;
-    const msg =
-      status === 'OPEN'
-        ? 'Buka ujian ini? Siswa dengan NIS + kode bisa masuk sesuai jadwal.'
-        : status === 'CLOSED'
-          ? 'Tutup ujian? Sesi berjalan tetap dinilai saat deadline.'
-          : 'Kembalikan ke draf? Siswa tidak bisa masuk.';
+    const msg = status === 'OPEN' ? 'Buka ujian ini?' : status === 'CLOSED' ? 'Tutup ujian? Sesi berjalan dinilai saat deadline.' : 'Kembalikan ke draf?';
     if (!(await confirm(msg))) return;
-    try {
-      await updateExam(exam.id, { status });
-      load();
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Gagal mengubah status.');
-    }
+    try { await updateExam(exam.id, { status }); load(); } catch (e) { err(e, 'Gagal mengubah status.'); }
   };
 
   const save = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -108,121 +169,421 @@ export default function UjianDetailPage() {
         shuffle: f.get('shuffle') === 'on',
         showScore: f.get('showScore') === 'on',
       });
-      setModal(false);
-      setNotice('Ujian diperbarui.');
-      load();
-    } catch (err) {
-      setModalErr(err instanceof ApiError ? err.message : 'Gagal menyimpan.');
-    } finally {
-      setBusy(false);
-    }
+      setModal(false); flash('Ujian diperbarui.'); load();
+    } catch (e2) { setModalErr(e2 instanceof ApiError ? e2.message : 'Gagal menyimpan.'); }
+    finally { setBusy(false); }
   };
 
-  const toLocalInput = (iso: string) => {
-    const d = new Date(iso);
-    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-    return d.toISOString().slice(0, 16);
+  // ---------- Sesi ----------
+  const saveSesi = async () => {
+    if (!sesiModal || !exam) return;
+    setBusy(true);
+    try {
+      const dto = { name: sesiModal.name, classIds: [...sesiModal.classIds], startAt: new Date(sesiModal.startAt).toISOString(), endAt: new Date(sesiModal.endAt).toISOString() };
+      if (sesiModal.id) await updateExamSession(sesiModal.id, dto);
+      else await createExamSession(exam.id, dto);
+      setSesiModal(null); flash('Sesi disimpan.'); load();
+    } catch (e) { err(e, 'Gagal menyimpan sesi.'); }
+    finally { setBusy(false); }
+  };
+  const delSesi = async (sid: string, name: string) => {
+    if (!(await confirm(`Hapus sesi "${name}"? Rombelnya kembali mengikuti jendela ujian utama.`))) return;
+    try { await deleteExamSession(sid); flash('Sesi dihapus.'); load(); }
+    catch (e) { err(e, 'Gagal menghapus sesi.'); }
+  };
+
+  // ---------- Soal ----------
+  const saveQ = async () => {
+    if (!qModal || !exam) return;
+    const f = qModal;
+    if (!f.prompt.trim()) { setModalErr('Teks soal wajib.'); return; }
+    if ((f.type === 'MCQ' || f.type === 'MCQ_COMPLEX') && f.choices.filter(Boolean).length < 2) { setModalErr('Minimal 2 pilihan.'); return; }
+    if (f.type === 'MCQ_COMPLEX' && f.keyMany.size < 1) { setModalErr('Tandai minimal satu kunci PGK.'); return; }
+    if (f.type === 'TRUE_FALSE' && f.keyBool === null) { setModalErr('Pilih kunci Benar/Salah.'); return; }
+    if (f.type === 'TRUE_FALSE_COMPLEX' && f.statements.filter(Boolean).length < 2) { setModalErr('BSK butuh ≥2 pernyataan.'); return; }
+    const next = [...questions];
+    const idx = next.findIndex((q) => q.number === f.number);
+    const q = formToQ(f);
+    if (idx >= 0) next[idx] = { ...q, id: next[idx]!.id } as ExamQuestion;
+    else next.push(q as ExamQuestion);
+    next.sort((a, b) => a.number - b.number);
+    setBusy(true);
+    try {
+      await setExamQuestions(exam.id, next.map(({ id: _id, ...rest }) => rest));
+      setQModal(null); setModalErr(null); flash('Soal disimpan.');
+      examQuestions(exam.id).then(setQuestions).catch(() => {});
+    } catch (e) { setModalErr(e instanceof ApiError ? e.message : 'Gagal menyimpan soal.'); }
+    finally { setBusy(false); }
+  };
+  const delQ = async (num: number) => {
+    if (!exam || !(await confirm(`Hapus soal nomor ${num}?`))) return;
+    try {
+      await setExamQuestions(exam.id, questions.filter((q) => q.number !== num).map(({ id: _id, ...rest }) => rest));
+      examQuestions(exam.id).then(setQuestions).catch(() => {});
+      flash('Soal dihapus.');
+    } catch (e) { err(e, 'Gagal menghapus soal.'); }
+  };
+  const onImport = async (f: File | undefined) => {
+    if (!f || !exam) return;
+    setBusy(true);
+    try {
+      const r = await importExamQuestions(exam.id, f);
+      flash(`${r.count} soal diimpor.`);
+      examQuestions(exam.id).then(setQuestions).catch(() => {});
+      load();
+    } catch (e) { err(e, 'Gagal impor soal.'); }
+    finally { setBusy(false); }
+  };
+
+  // ---------- Hasil ----------
+  const saveGrade = async () => {
+    if (!gradeEdit || !exam) return;
+    setBusy(true);
+    try {
+      await updateExamGrade(exam.id, gradeEdit.studentId, Math.round(Number(gradeEdit.score)));
+      setGradeEdit(null); flash('Nilai akhir diperbarui.');
+      examResults(exam.id, resClass || undefined).then(setResults).catch(() => {});
+    } catch (e) { err(e, 'Gagal menyimpan nilai.'); }
+    finally { setBusy(false); }
   };
 
   const done = exam?.attempts?.filter((a) => a.status === 'SUBMITTED').length ?? 0;
   const total = exam?.attempts?.length ?? 0;
+  const TABS = [
+    ['monitor', '📺 Monitor'], ['sesi', '🕒 Sesi'], ['soal', '📝 Soal'], ['hasil', '📊 Hasil & Analisis'],
+  ] as const;
+
+  const keyText = (q: ExamQuestion | ItemAnalysis) => {
+    const opts = (q.options ?? {}) as { choices?: string[]; statements?: string[] };
+    if (q.type === 'MCQ') return `Kunci: ${'ABCDE'[Number(q.key)] ?? '—'}`;
+    if (q.type === 'MCQ_COMPLEX') return `Kunci: ${(Array.isArray(q.key) ? q.key as number[] : []).map((i) => 'ABCDE'[i]).join(',')}`;
+    if (q.type === 'TRUE_FALSE') return `Kunci: ${q.key ? 'Benar' : 'Salah'}`;
+    if (q.type === 'TRUE_FALSE_COMPLEX') return `Kunci: ${(Array.isArray(q.key) ? q.key as boolean[] : []).map((b) => (b ? 'B' : 'S')).join(',')}`;
+    return '';
+  };
 
   return (
     <Shell>
       <PageTitle
         title={exam?.title ?? 'Ujian'}
         subtitle={exam ? `${exam.assessment.subject.name} · ${exam.assessment.name}` : ''}
-        actions={
-          <Link href="/kurikulum/ujian" className="text-sm font-bold text-primary-700 hover:underline">← Semua Ujian</Link>
-        }
+        actions={<Link href="/kurikulum/ujian" className="text-sm font-bold text-primary-700 hover:underline">← Semua Ujian</Link>}
       />
       {error ? <p className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p> : null}
       {notice ? <p className="mb-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{notice}</p> : null}
       {!exam ? null : (
-        <div className="grid gap-4 lg:grid-cols-3">
-          {/* ---------- Kode & pengaturan ---------- */}
-          <Widget title="Kode Akses" subtitle="Bagikan ke siswa — mereka masuk situs CBT dengan NIS + kode ini.">
-            <div className="space-y-3 p-5">
-              <button
-                type="button"
-                onClick={() => void copy()}
-                title="Klik untuk salin"
-                className="w-full rounded-2xl bg-primary-700 px-4 py-5 text-center font-mono text-3xl font-black tracking-[0.2em] text-white transition hover:bg-primary-800"
-              >
-                {exam.code}
-              </button>
-              <p className="text-center text-xs text-sand-500">Klik kode untuk menyalin</p>
-              <div className="flex gap-2">
-                {canManage ? (
-                  <Button size="sm" variant="outline" className="flex-1" onClick={() => void regen()}>Ganti Kode</Button>
-                ) : null}
-                <Button size="sm" variant="outline" className="flex-1" onClick={load}>↻ Segarkan</Button>
-              </div>
-              <div className="rounded-xl bg-sand-50 p-3 text-xs text-sand-600">
-                <p><Badge tone={STATUS[exam.status].tone}>{STATUS[exam.status].label}</Badge></p>
-                <p className="mt-2">📅 {dt(exam.startAt)} → {dt(exam.endAt)}</p>
-                <p>⏱ Durasi {exam.durationMin} menit · {exam.assessment.questions?.length ?? exam.assessment._count?.questions ?? '—'} butir</p>
-                <p>🏫 Rombel: {exam.classNames?.join(', ') || '—'}</p>
-                <p>🔀 Acak soal: {exam.shuffle ? 'Ya' : 'Tidak'} · Nilai tampil: {exam.showScore ? 'Ya' : 'Tidak'}</p>
-                {exam.instructions ? <p className="mt-1 italic">“{exam.instructions}”</p> : null}
-              </div>
-              {canManage ? (
+        <>
+          {/* ---------- Header: kode + status ---------- */}
+          <div className="mb-4 grid gap-4 lg:grid-cols-3">
+            <Widget title="Kode Akses" subtitle="Siswa masuk situs CBT dengan NIS + kode ini.">
+              <div className="space-y-3 p-4">
+                <button type="button" onClick={() => void copy()} title="Klik untuk salin"
+                  className="w-full rounded-2xl bg-primary-700 px-4 py-4 text-center font-mono text-2xl font-black tracking-[0.2em] text-white transition hover:bg-primary-800">
+                  {exam.code}
+                </button>
                 <div className="flex gap-2">
-                  {exam.status !== 'OPEN' ? (
-                    <Button size="sm" className="flex-1" onClick={() => void setStatus('OPEN')}>Buka Ujian</Button>
-                  ) : (
-                    <Button size="sm" variant="outline" className="flex-1" onClick={() => void setStatus('CLOSED')}>Tutup</Button>
-                  )}
-                  {exam.status !== 'DRAFT' ? (
-                    <Button size="sm" variant="outline" className="flex-1" onClick={() => void setStatus('DRAFT')}>Draf</Button>
-                  ) : null}
-                  <Button size="sm" variant="outline" className="flex-1" onClick={() => { setModalErr(null); setModal(true); }}>Edit</Button>
+                  {examManage ? <Button size="sm" variant="outline" className="flex-1" onClick={() => void regen()}>Ganti Kode</Button> : null}
+                  <Button size="sm" variant="outline" className="flex-1" onClick={load}>↻ Segarkan</Button>
                 </div>
-              ) : null}
+              </div>
+            </Widget>
+            <div className="lg:col-span-2">
+              <Widget title="Pengaturan" subtitle={`${done}/${total} siswa masuk`}>
+                <div className="grid gap-3 p-4 text-sm text-sand-700 sm:grid-cols-2">
+                  <div className="space-y-1.5 text-xs">
+                    <p><Badge tone={STATUS[exam.status].tone}>{STATUS[exam.status].label}</Badge></p>
+                    <p>📅 {dt(exam.startAt)} → {dt(exam.endAt)}</p>
+                    <p>⏱ {exam.durationMin} menit · {exam.assessment.questions?.length ?? exam.assessment._count?.questions ?? '—'} butir</p>
+                    <p>🏫 {exam.classNames?.join(', ') || '—'}</p>
+                    <p>🔀 Acak: {exam.shuffle ? 'Ya' : 'Tidak'} · Nilai tampil: {exam.showScore ? 'Ya' : 'Tidak'}</p>
+                  </div>
+                  <div className="flex flex-col justify-end gap-2">
+                    {examManage ? (
+                      <div className="flex gap-2">
+                        {exam.status !== 'OPEN'
+                          ? <Button size="sm" className="flex-1" onClick={() => void setStatus('OPEN')}>Buka Ujian</Button>
+                          : <Button size="sm" variant="outline" className="flex-1" onClick={() => void setStatus('CLOSED')}>Tutup</Button>}
+                        {exam.status !== 'DRAFT' ? <Button size="sm" variant="outline" onClick={() => void setStatus('DRAFT')}>Draf</Button> : null}
+                        <Button size="sm" variant="outline" onClick={() => { setModalErr(null); setModal(true); }}>Edit</Button>
+                      </div>
+                    ) : <p className="text-xs text-sand-400">Anda punya akses lihat/monitor — kelola oleh guru mapel/admin.</p>}
+                  </div>
+                </div>
+              </Widget>
             </div>
-          </Widget>
+          </div>
 
-          {/* ---------- Monitor siswa ---------- */}
-          <div className="lg:col-span-2">
-            <Widget
-              title={`Peserta — ${done}/${total} selesai`}
-              subtitle="Diperbarui otomatis tiap 15 detik saat ujian dibuka."
-            >
-              <DataTable
-                head={['Siswa', 'Rombel', 'Mulai', 'Sisa Waktu', 'Status', 'Nilai']}
-                empty={!total ? 'Belum ada siswa masuk — bagikan kode saat jadwal tiba.' : undefined}
-              >
-                {(exam.attempts ?? []).map((a) => {
-                  const left = a.status === 'STARTED' ? Math.max(0, Math.floor((new Date(a.deadline).getTime() - Date.now()) / 1000)) : null;
-                  const mm = left === null ? '—' : `${Math.floor(left / 60)}m ${left % 60}d`;
-                  return (
-                    <tr key={a.id}>
-                      <td className="px-5 py-2.5">
-                        <p className="font-medium text-sand-900">{a.student.name}</p>
-                        <p className="text-[11px] text-sand-400">{a.student.nis ?? '—'}</p>
-                      </td>
-                      <td className="px-5 py-2.5 text-xs text-sand-600">{a.student.className}</td>
-                      <td className="px-5 py-2.5 text-xs text-sand-600">
-                        {new Date(a.startedAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
-                      </td>
-                      <td className="px-5 py-2.5 text-xs font-bold text-sand-700">{mm}</td>
-                      <td className="px-5 py-2.5">
-                        <Badge tone={a.status === 'SUBMITTED' ? 'primary' : 'accent'}>
-                          {a.status === 'SUBMITTED' ? 'Selesai' : 'Mengerjakan'}
-                        </Badge>
-                      </td>
-                      <td className="px-5 py-2.5 font-black text-sand-900">
-                        {a.status === 'SUBMITTED' ? `${a.score ?? 0}/${a.maxScore ?? 0}` : '—'}
+          {/* ---------- Tabs ---------- */}
+          {!monitorOnly ? (
+            <div className="mb-4 flex gap-1 rounded-2xl border border-sand-200 bg-white p-1 shadow-card">
+              {TABS.map(([k, l]) => (
+                <button key={k} type="button" onClick={() => setTab(k)}
+                  className={`flex-1 rounded-xl px-3 py-2 text-sm font-bold transition ${tab === k ? 'bg-primary-700 text-white' : 'text-sand-600 hover:bg-sand-50'}`}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {/* ---------- MONITOR ---------- */}
+          {(tab === 'monitor' || monitorOnly) && (
+            <Widget title="Monitor Pengerjaan" subtitle="Status siswa per rombel — diperbarui tiap 15 detik saat ujian dibuka.">
+              {!monitor ? (
+                <p className="p-5 text-sm text-sand-400">Memuat monitor…</p>
+              ) : monitor.classes.length === 0 ? (
+                <p className="p-5 text-sm text-sand-400">Belum ada rombel peserta.</p>
+              ) : (
+                <div className="grid gap-4 p-4 md:grid-cols-2">
+                  {monitor.classes.map((c) => (
+                    <div key={c.classId} className="rounded-2xl border border-sand-200">
+                      <div className="flex items-center justify-between border-b border-sand-100 px-4 py-2.5">
+                        <div>
+                          <p className="font-extrabold text-sand-900">{c.className}</p>
+                          {c.session ? <p className="text-[11px] text-sand-500">{c.session.name} · {dt(c.session.startAt)}–{dt(c.session.endAt)}</p> : <p className="text-[11px] text-sand-400">Jendela ujian utama</p>}
+                        </div>
+                        <Badge tone={c.done === c.total && c.total > 0 ? 'primary' : 'accent'}>{c.done}/{c.total} selesai{c.working ? ` · ${c.working} mengerjakan` : ''}</Badge>
+                      </div>
+                      <ul className="max-h-64 divide-y divide-sand-50 overflow-y-auto">
+                        {c.students.map((s) => (
+                          <li key={s.studentId} className="flex items-center justify-between px-4 py-2 text-xs">
+                            <div className="min-w-0">
+                              <p className="truncate font-semibold text-sand-800">{s.name}</p>
+                              <p className="text-sand-400">{s.nis ?? '—'}{s.answered ? ` · ${s.answered} terjawab` : ''}</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {s.remainingSec != null ? <span className="font-mono text-[10px] text-amber-600">⏱ {mmss(s.remainingSec)}</span> : null}
+                              {s.status === 'SELESAI' ? (
+                                <Badge tone="primary">✓ {s.score ?? 0}/{s.maxScore ?? 0}</Badge>
+                              ) : s.status === 'MENGERJAKAN' ? (
+                                <Badge tone="accent">Mengerjakan</Badge>
+                              ) : (
+                                <Badge tone="neutral">Belum masuk</Badge>
+                              )}
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Widget>
+          )}
+
+          {/* ---------- SESI ---------- */}
+          {tab === 'sesi' && (
+            <Widget title="Sesi Ujian per Kelompok Rombel"
+              subtitle="Bagi rombel ke sesi berbeda — siswa hanya bisa masuk dalam jendela sesi rombelnya. Rombel tanpa sesi mengikuti jendela ujian utama."
+              action={examManage ? <Button size="sm" onClick={() => setSesiModal({ name: `Sesi ${(exam.sessions?.length ?? 0) + 1}`, classIds: new Set(), startAt: toLocalInput(exam.startAt), endAt: toLocalInput(exam.endAt) })}>+ Sesi</Button> : undefined}>
+              {!(exam.sessions?.length) ? (
+                <p className="p-5 text-sm text-sand-400">Belum ada sesi — semua rombel memakai jendela ujian utama ({dt(exam.startAt)}–{dt(exam.endAt)}).</p>
+              ) : (
+                <DataTable head={['Sesi', 'Rombel', 'Jendela Akses', '']}>
+                  {exam.sessions.map((s) => (
+                    <tr key={s.id}>
+                      <td className="px-5 py-3 font-bold text-sand-900">{s.name}</td>
+                      <td className="px-5 py-3 text-xs text-sand-600">{s.classIds.map(clsName).join(', ')}</td>
+                      <td className="px-5 py-3 text-xs text-sand-600">{dt(s.startAt)} → {dt(s.endAt)}</td>
+                      <td className="px-5 py-3">
+                        {examManage ? (
+                          <div className="flex gap-1.5">
+                            <RowBtn onClick={() => setSesiModal({ id: s.id, name: s.name, classIds: new Set(s.classIds), startAt: toLocalInput(s.startAt), endAt: toLocalInput(s.endAt) })}>Edit</RowBtn>
+                            <RowBtn tone="danger" onClick={() => void delSesi(s.id, s.name)}>Hapus</RowBtn>
+                          </div>
+                        ) : null}
                       </td>
                     </tr>
-                  );
-                })}
-              </DataTable>
+                  ))}
+                </DataTable>
+              )}
             </Widget>
-          </div>
-        </div>
+          )}
+
+          {/* ---------- SOAL ---------- */}
+          {tab === 'soal' && (
+            <Widget title={`Butir Soal — ${questions.length}`}
+              subtitle="Tipe: Pilihan Ganda · PG Kompleks · Benar/Salah · B-S Kompleks."
+              action={examManage ? (
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" onClick={() => downloadFile(`/ops/assessments/${exam.assessment.id}/questions/template`, 'template-soal.xlsx').catch(() => setError('Gagal unduh template.'))}>Template</Button>
+                  <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()} disabled={busy}>Impor Excel</Button>
+                  <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => { void onImport(e.target.files?.[0]); e.target.value = ''; }} />
+                  <Button size="sm" onClick={() => { setModalErr(null); setQModal(blankQ(questions.length + 1)); }}>+ Soal</Button>
+                </div>
+              ) : undefined}>
+              {!questions.length ? (
+                <p className="p-5 text-sm text-sand-400">Belum ada soal — tambah manual atau impor dari Excel.</p>
+              ) : (
+                <div className="divide-y divide-sand-100">
+                  {questions.map((q) => (
+                    <div key={q.id} className="flex items-start gap-3 px-5 py-3.5">
+                      <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-xs font-black text-primary-700">{q.number}</span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge tone="neutral">{TYPE_LABEL[q.type] ?? q.type}</Badge>
+                          <span className="text-[11px] text-sand-400">bobot {q.weight}</span>
+                          <span className="text-[11px] font-semibold text-emerald-700">{keyText(q)}</span>
+                        </div>
+                        <p className="mt-1 text-sm text-sand-800">{q.prompt}</p>
+                        {(() => {
+                          const o = (q.options ?? {}) as { choices?: string[]; statements?: string[] };
+                          if (o.choices?.length) return (
+                            <ul className="mt-1 space-y-0.5 text-xs text-sand-500">
+                              {o.choices.map((c, i) => {
+                                const isKey = q.type === 'MCQ' ? q.key === i : Array.isArray(q.key) && (q.key as number[]).includes(i);
+                                return <li key={i} className={isKey ? 'font-bold text-emerald-700' : ''}>{'ABCDE'[i]}. {c}{isKey ? ' ✓' : ''}</li>;
+                              })}
+                            </ul>
+                          );
+                          if (o.statements?.length) return (
+                            <ul className="mt-1 space-y-0.5 text-xs text-sand-500">
+                              {o.statements.map((st, i) => (
+                                <li key={i}>• {st} <b className={Array.isArray(q.key) && (q.key as boolean[])[i] ? 'text-emerald-700' : 'text-red-600'}>({Array.isArray(q.key) && (q.key as boolean[])[i] ? 'B' : 'S'})</b></li>
+                              ))}
+                            </ul>
+                          );
+                          return null;
+                        })()}
+                      </div>
+                      {examManage ? (
+                        <div className="flex shrink-0 gap-1.5">
+                          <RowBtn onClick={() => { setModalErr(null); setQModal(qToForm(q)); }}>Edit</RowBtn>
+                          <RowBtn tone="danger" onClick={() => void delQ(q.number)}>Hapus</RowBtn>
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Widget>
+          )}
+
+          {/* ---------- HASIL ---------- */}
+          {tab === 'hasil' && (
+            <div className="space-y-4">
+              <Widget title="Rekap Nilai per Rombel"
+                action={
+                  <div className="flex items-center gap-2">
+                    <Select value={resClass} onChange={(e) => setResClass(e.target.value)} className="w-36">
+                      <option value="">Semua rombel</option>
+                      {classes.filter((c) => exam.classIds.includes(c.id)).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </Select>
+                    <Button size="sm" variant="outline" onClick={() => void exportExamResults(exam.id, resClass || undefined).catch((e) => err(e, 'Gagal ekspor.'))}>⬇ Excel</Button>
+                  </div>
+                }>
+                {!results ? <p className="p-5 text-sm text-sand-400">Memuat…</p> : results.classes.map((c) => (
+                  <div key={c.classId} className="border-b border-sand-100 last:border-0">
+                    <p className="bg-sand-50 px-5 py-2 text-xs font-black uppercase tracking-wider text-sand-600">{c.className}</p>
+                    <DataTable head={['NIS', 'Nama', 'Status', 'Skor', 'Nilai Akhir', '']}>
+                      {c.students.map((s) => (
+                        <tr key={s.studentId}>
+                          <td className="px-5 py-2.5 text-xs text-sand-500">{s.nis ?? '—'}</td>
+                          <td className="px-5 py-2.5 font-medium text-sand-900">{s.name}</td>
+                          <td className="px-5 py-2.5">
+                            <Badge tone={s.status === 'SUBMITTED' ? 'primary' : s.status === 'STARTED' ? 'accent' : 'neutral'}>
+                              {s.status === 'SUBMITTED' ? 'Selesai' : s.status === 'STARTED' ? 'Mengerjakan' : 'Belum'}
+                            </Badge>
+                          </td>
+                          <td className="px-5 py-2.5 text-xs text-sand-600">{s.status === 'SUBMITTED' ? `${s.score ?? 0}/${s.maxScore ?? 0}` : '—'}</td>
+                          <td className="px-5 py-2.5 font-black text-sand-900">{s.gradeScore ?? '—'}</td>
+                          <td className="px-5 py-2.5">
+                            {examManage && s.status === 'SUBMITTED' ? (
+                              <button type="button" className={rowActionClasses('neutral')}
+                                onClick={() => setGradeEdit({ studentId: s.studentId, name: s.name, score: String(s.gradeScore ?? '') })}>
+                                Edit Nilai
+                              </button>
+                            ) : null}
+                          </td>
+                        </tr>
+                      ))}
+                    </DataTable>
+                  </div>
+                ))}
+              </Widget>
+
+              <div className="grid gap-4 lg:grid-cols-2">
+                <Widget title="Soal Termudah" subtitle="Persentase benar tertinggi">
+                  <ul className="divide-y divide-sand-50">
+                    {(analysis?.easiest ?? []).map((q) => (
+                      <li key={q.id} className="flex items-center gap-3 px-5 py-2.5 text-sm">
+                        <span className="flex size-7 items-center justify-center rounded-lg bg-emerald-50 text-xs font-black text-emerald-700">{q.number}</span>
+                        <span className="min-w-0 flex-1 truncate text-sand-700">{q.prompt}</span>
+                        <Badge tone="primary">{q.correctPct}%</Badge>
+                      </li>
+                    ))}
+                    {!analysis?.easiest.length ? <li className="px-5 py-3 text-xs text-sand-400">Belum ada jawaban dinilai.</li> : null}
+                  </ul>
+                </Widget>
+                <Widget title="Soal Tersukar" subtitle="Persentase benar terendah — bahan remedial">
+                  <ul className="divide-y divide-sand-50">
+                    {(analysis?.hardest ?? []).map((q) => (
+                      <li key={q.id} className="flex items-center gap-3 px-5 py-2.5 text-sm">
+                        <span className="flex size-7 items-center justify-center rounded-lg bg-red-50 text-xs font-black text-red-700">{q.number}</span>
+                        <span className="min-w-0 flex-1 truncate text-sand-700">{q.prompt}</span>
+                        <Badge tone="danger">{q.correctPct}%</Badge>
+                      </li>
+                    ))}
+                    {!analysis?.hardest.length ? <li className="px-5 py-3 text-xs text-sand-400">Belum ada jawaban dinilai.</li> : null}
+                  </ul>
+                </Widget>
+              </div>
+
+              <Widget title="Analisis Butir Lengkap" subtitle="Tingkat kesukaran per soal pada rombel terpilih">
+                <DataTable head={['No', 'Tipe', 'Soal', 'Bobot', 'Terjawab', 'Benar', '% Benar', 'Rata2', 'Tingkat']}
+                  empty={!analysis?.questions.length ? 'Belum ada soal.' : undefined}>
+                  {(analysis?.questions ?? []).map((q) => (
+                    <tr key={q.id}>
+                      <td className="px-4 py-2.5 font-bold text-sand-900">{q.number}</td>
+                      <td className="px-4 py-2.5 text-[11px] text-sand-500">{TYPE_LABEL[q.type] ?? q.type}</td>
+                      <td className="max-w-72 px-4 py-2.5"><p className="truncate text-xs text-sand-700">{q.prompt}</p><p className="text-[10px] text-emerald-700">{keyText(q)}</p></td>
+                      <td className="px-4 py-2.5 text-xs text-sand-600">{q.weight}</td>
+                      <td className="px-4 py-2.5 text-xs text-sand-600">{q.answered}</td>
+                      <td className="px-4 py-2.5 text-xs text-sand-600">{q.correct}</td>
+                      <td className="px-4 py-2.5 font-bold text-sand-800">{q.correctPct ?? '—'}%</td>
+                      <td className="px-4 py-2.5 text-xs text-sand-600">{q.avgScore}</td>
+                      <td className="px-4 py-2.5">
+                        {q.difficulty ? <Badge tone={q.difficulty === 'Mudah' ? 'primary' : q.difficulty === 'Sedang' ? 'accent' : 'danger'}>{q.difficulty}</Badge> : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </DataTable>
+              </Widget>
+
+              {matrix && resClass ? (
+                <Widget title={`Rekap Jawaban — ${classes.find((c) => c.id === resClass)?.name ?? ''}`} subtitle="B = benar · S = salah · · = kosong">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-sand-200 text-left text-sand-500">
+                          <th className="px-4 py-2">NIS</th><th className="px-4 py-2">Nama</th>
+                          {matrix.questions.map((q) => <th key={q.id} className="px-1.5 py-2 text-center" title={q.prompt ?? ''}>{q.number}</th>)}
+                          <th className="px-4 py-2 text-right">Skor</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {matrix.students.map((s) => (
+                          <tr key={s.studentId} className="border-b border-sand-50">
+                            <td className="px-4 py-1.5 text-sand-500">{s.nis ?? '—'}</td>
+                            <td className="px-4 py-1.5 font-medium text-sand-800">{s.name}</td>
+                            {s.cells.map((c, i) => (
+                              <td key={i} className={`px-1.5 py-1.5 text-center font-bold ${c === null ? 'text-sand-300' : c.isCorrect === true ? 'text-emerald-600' : c.isCorrect === false ? 'text-red-500' : 'text-sand-400'}`}>
+                                {c === null ? '·' : c.isCorrect === true ? 'B' : c.isCorrect === false ? 'S' : '·'}
+                              </td>
+                            ))}
+                            <td className="px-4 py-1.5 text-right font-black text-sand-900">{s.score ?? '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </Widget>
+              ) : null}
+            </div>
+          )}
+        </>
       )}
 
+      {/* ---------- Modal edit ujian ---------- */}
       <Modal open={modal} onClose={() => setModal(false)} title="Edit Ujian" size="xl">
         {exam ? (
           <form onSubmit={save} className="space-y-4">
@@ -252,6 +613,151 @@ export default function UjianDetailPage() {
               <Button type="submit" disabled={busy}>{busy ? 'Menyimpan…' : 'Simpan'}</Button>
             </div>
           </form>
+        ) : null}
+      </Modal>
+
+      {/* ---------- Modal sesi ---------- */}
+      <Modal open={!!sesiModal} onClose={() => setSesiModal(null)} title={sesiModal?.id ? 'Edit Sesi' : 'Sesi Baru'}>
+        {sesiModal && exam ? (
+          <div className="space-y-4">
+            <Field label="Nama sesi"><Input value={sesiModal.name} onChange={(e) => setSesiModal({ ...sesiModal, name: e.target.value })} placeholder="Sesi 1" /></Field>
+            <Field label="Rombel pada sesi ini">
+              <div className="flex flex-wrap gap-2 rounded-xl border border-sand-200 p-3">
+                {classes.filter((c) => exam.classIds.includes(c.id)).map((c) => (
+                  <label key={c.id} className="flex items-center gap-1.5 rounded-lg bg-sand-50 px-2.5 py-1.5 text-xs font-medium">
+                    <input type="checkbox" checked={sesiModal.classIds.has(c.id)}
+                      onChange={(e) => {
+                        const n = new Set(sesiModal.classIds);
+                        if (e.target.checked) n.add(c.id); else n.delete(c.id);
+                        setSesiModal({ ...sesiModal, classIds: n });
+                      }} /> {c.name}
+                  </label>
+                ))}
+              </div>
+            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Mulai"><Input type="datetime-local" value={sesiModal.startAt} onChange={(e) => setSesiModal({ ...sesiModal, startAt: e.target.value })} /></Field>
+              <Field label="Selesai"><Input type="datetime-local" value={sesiModal.endAt} onChange={(e) => setSesiModal({ ...sesiModal, endAt: e.target.value })} /></Field>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setSesiModal(null)}>Batal</Button>
+              <Button disabled={busy || !sesiModal.classIds.size} onClick={() => void saveSesi()}>{busy ? 'Menyimpan…' : 'Simpan Sesi'}</Button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+
+      {/* ---------- Modal editor soal ---------- */}
+      <Modal open={!!qModal} onClose={() => setQModal(null)} title={`Soal No. ${qModal?.number ?? ''}`} size="xl">
+        {qModal ? (
+          <div className="space-y-4">
+            {modalErr ? <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{modalErr}</p> : null}
+            <div className="grid grid-cols-3 gap-3">
+              <Field label="Tipe">
+                <Select value={qModal.type} onChange={(e) => setQModal({ ...qModal, type: e.target.value as QForm['type'] })}>
+                  <option value="MCQ">Pilihan Ganda</option>
+                  <option value="MCQ_COMPLEX">PG Kompleks (≥1 benar)</option>
+                  <option value="TRUE_FALSE">Benar / Salah</option>
+                  <option value="TRUE_FALSE_COMPLEX">B-S Kompleks (pernyataan)</option>
+                </Select>
+              </Field>
+              <Field label="Nomor"><Input type="number" min={1} value={qModal.number} onChange={(e) => setQModal({ ...qModal, number: Number(e.target.value) || 1 })} /></Field>
+              <Field label="Bobot"><Input type="number" min={1} value={qModal.weight} onChange={(e) => setQModal({ ...qModal, weight: Number(e.target.value) || 1 })} /></Field>
+            </div>
+            <Field label="Teks soal">
+              <textarea className="w-full rounded-xl border border-sand-200 p-3 text-sm" rows={3} value={qModal.prompt} onChange={(e) => setQModal({ ...qModal, prompt: e.target.value })} />
+            </Field>
+
+            {(qModal.type === 'MCQ' || qModal.type === 'MCQ_COMPLEX') && (
+              <Field label={qModal.type === 'MCQ' ? 'Pilihan + kunci (radio)' : 'Pilihan + kunci (centang semua yang benar)'}>
+                <div className="space-y-2">
+                  {qModal.choices.map((c, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      {qModal.type === 'MCQ' ? (
+                        <input type="radio" name="keyOne" checked={qModal.keyOne === i} onChange={() => setQModal({ ...qModal, keyOne: i })} className="size-4 accent-primary-600" />
+                      ) : (
+                        <input type="checkbox" checked={qModal.keyMany.has(i)} onChange={(e) => {
+                          const n = new Set(qModal.keyMany);
+                          if (e.target.checked) n.add(i); else n.delete(i);
+                          setQModal({ ...qModal, keyMany: n });
+                        }} className="size-4 accent-primary-600" />
+                      )}
+                      <span className="w-5 text-xs font-bold text-sand-500">{'ABCDE'[i]}.</span>
+                      <Input value={c} onChange={(e) => setQModal({ ...qModal, choices: qModal.choices.map((x, xi) => xi === i ? e.target.value : x) })} placeholder={`Pilihan ${'ABCDE'[i]}`} />
+                      {qModal.choices.length > 2 ? (
+                        <button type="button" className="text-red-500" onClick={() => setQModal({ ...qModal, choices: qModal.choices.filter((_, xi) => xi !== i) })}>✕</button>
+                      ) : null}
+                    </div>
+                  ))}
+                  {qModal.choices.length < 5 ? (
+                    <button type="button" className="text-xs font-bold text-primary-700" onClick={() => setQModal({ ...qModal, choices: [...qModal.choices, ''] })}>+ tambah pilihan</button>
+                  ) : null}
+                </div>
+              </Field>
+            )}
+
+            {qModal.type === 'TRUE_FALSE' && (
+              <Field label="Kunci jawaban">
+                <div className="flex gap-3">
+                  {[['Benar', true], ['Salah', false]].map(([l, v]) => (
+                    <label key={l as string} className={`flex-1 rounded-xl border px-4 py-3 text-center text-sm font-bold ${qModal.keyBool === v ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-sand-200'}`}>
+                      <input type="radio" name="keyBool" className="hidden" checked={qModal.keyBool === (v as boolean)} onChange={() => setQModal({ ...qModal, keyBool: v as boolean })} />
+                      {l as string}
+                    </label>
+                  ))}
+                </div>
+              </Field>
+            )}
+
+            {qModal.type === 'TRUE_FALSE_COMPLEX' && (
+              <Field label="Pernyataan + kunci B/S masing-masing">
+                <div className="space-y-2">
+                  {qModal.statements.map((st, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <Input value={st} onChange={(e) => setQModal({ ...qModal, statements: qModal.statements.map((x, xi) => xi === i ? e.target.value : x) })} placeholder={`Pernyataan ${i + 1}`} />
+                      <div className="flex shrink-0 gap-1">
+                        {[true, false].map((v) => (
+                          <button key={String(v)} type="button"
+                            className={`rounded-lg px-3 py-2 text-xs font-black ${qModal.keyBools[i] === v ? 'bg-primary-700 text-white' : 'bg-sand-100 text-sand-500'}`}
+                            onClick={() => setQModal({ ...qModal, keyBools: qModal.keyBools.map((x, xi) => xi === i ? v : x) })}>
+                            {v ? 'B' : 'S'}
+                          </button>
+                        ))}
+                      </div>
+                      {qModal.statements.length > 2 ? (
+                        <button type="button" className="text-red-500" onClick={() => setQModal({ ...qModal, statements: qModal.statements.filter((_, xi) => xi !== i), keyBools: qModal.keyBools.filter((_, xi) => xi !== i) })}>✕</button>
+                      ) : null}
+                    </div>
+                  ))}
+                  {qModal.statements.length < 5 ? (
+                    <button type="button" className="text-xs font-bold text-primary-700"
+                      onClick={() => setQModal({ ...qModal, statements: [...qModal.statements, ''], keyBools: [...qModal.keyBools, true] })}>+ tambah pernyataan</button>
+                  ) : null}
+                </div>
+              </Field>
+            )}
+
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setQModal(null)}>Batal</Button>
+              <Button disabled={busy} onClick={() => void saveQ()}>{busy ? 'Menyimpan…' : 'Simpan Soal'}</Button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+
+      {/* ---------- Modal edit nilai ---------- */}
+      <Modal open={!!gradeEdit} onClose={() => setGradeEdit(null)} title={`Nilai Akhir — ${gradeEdit?.name ?? ''}`}>
+        {gradeEdit ? (
+          <div className="space-y-4">
+            <Field label={`Nilai akhir (0–${results?.exam.maxScore ?? 100})`}>
+              <Input type="number" min={0} max={results?.exam.maxScore ?? 100} value={gradeEdit.score} onChange={(e) => setGradeEdit({ ...gradeEdit, score: e.target.value })} />
+            </Field>
+            <p className="text-xs text-sand-500">Tersimpan ke ledger penilaian — tercatat di log audit.</p>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setGradeEdit(null)}>Batal</Button>
+              <Button disabled={busy} onClick={() => void saveGrade()}>{busy ? 'Menyimpan…' : 'Simpan'}</Button>
+            </div>
+          </div>
         ) : null}
       </Modal>
       {dialog}

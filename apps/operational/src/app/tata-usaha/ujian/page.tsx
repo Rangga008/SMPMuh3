@@ -5,7 +5,8 @@ import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { PageTitle, Widget } from '@/components/widgets';
 import {
-  assignClassToRoom, createExamRoom, getExamCards, listExamRooms, type ExamRoomView,
+  assignClassToRoom, createExamRoom, deleteExamRoom, getExamCards, listExamRooms,
+  removeExamSeat, updateExamRoom, type ExamRoomView,
 } from '@/lib/api-ops';
 import { listAcademicYears, listClasses, type AcademicYear, type ClassView } from '@/lib/api';
 
@@ -15,6 +16,7 @@ export default function UjianPage() {
   const [yearId, setYearId] = useState('');
   const [rooms, setRooms] = useState<ExamRoomView[]>([]);
   const [roomModal, setRoomModal] = useState(false);
+  const [editRoom, setEditRoom] = useState<ExamRoomView | null>(null);
   const [assignModal, setAssignModal] = useState<ExamRoomView | null>(null);
   const [assignClassId, setAssignClassId] = useState('');
   const [busy, setBusy] = useState(false);
@@ -47,6 +49,7 @@ export default function UjianPage() {
         <table>
           <tr><td>Nama</td><td>: <b>${s.student.name}</b></td></tr>
           <tr><td>NIS</td><td>: ${s.student.nis ?? '—'}</td></tr>
+          <tr><td>Kode Peserta</td><td>: <b>${s.code ?? '—'}</b></td></tr>
           <tr><td>Kelas</td><td>: ${s.class?.name ?? '—'}</td></tr>
           <tr><td>Ruang</td><td>: <b>${room.name}</b> · No. ${s.seatNo ?? '—'}</td></tr>
         </table>
@@ -88,10 +91,27 @@ export default function UjianPage() {
               <Badge tone={r._count.seats >= r.capacity ? 'danger' : 'accent'}>{r._count.seats}/{r.capacity}</Badge>
             </div>
             <ul className="mt-2 max-h-28 space-y-0.5 overflow-y-auto text-xs text-sand-600">
-              {r.seats.map((s) => <li key={s.id}>{s.seatNo}. {s.student.name} <span className="text-sand-400">({s.class?.name ?? '—'})</span></li>)}
+              {r.seats.map((s) => (
+                <li key={s.id} className="group flex items-center justify-between gap-1">
+                  <span>{s.seatNo}. {s.student.name} <span className="text-sand-400">({s.class?.name ?? '—'})</span>
+                    {s.code ? <span className="ml-1 rounded bg-sand-100 px-1 font-mono text-[10px] text-sand-500">{s.code}</span> : null}</span>
+                  <button type="button" title="Keluarkan dari ruang"
+                    className="hidden text-red-500 hover:text-red-700 group-hover:inline"
+                    onClick={async () => {
+                      if (!window.confirm(`Keluarkan ${s.student.name} dari ${r.name}?`)) return;
+                      try { await removeExamSeat(s.id); load(); } catch (err) { setError(err instanceof Error ? err.message : 'Gagal.'); }
+                    }}>✕</button>
+                </li>
+              ))}
             </ul>
-            <div className="mt-3 flex gap-2">
+            <div className="mt-3 flex flex-wrap gap-2">
               <Button size="sm" variant="outline" onClick={() => { setAssignModal(r); setAssignClassId(''); }}>+ Rombel</Button>
+              <Button size="sm" variant="outline" onClick={() => setEditRoom(r)}>Edit</Button>
+              <Button size="sm" variant="outline" className="text-red-600" onClick={async () => {
+                if (!window.confirm(`Hapus ruang ${r.name}? ${r._count.seats} peserta ikut terhapus.`)) return;
+                try { await deleteExamRoom(r.id); setNotice('Ruang dihapus.'); load(); }
+                catch (err) { setError(err instanceof Error ? err.message : 'Gagal menghapus.'); }
+              }}>Hapus</Button>
               <Button size="sm" onClick={() => void printCards(r.id)} disabled={!r._count.seats}>Cetak Kartu</Button>
             </div>
           </div>
@@ -114,6 +134,29 @@ export default function UjianPage() {
           <Field label="Nama ruang"><Input name="name" required placeholder="Ruang 1 / Lab IPA" /></Field>
           <Field label="Periode ujian"><Input name="period" required placeholder="US 2026 / PTS Ganjil" /></Field>
           <Field label="Kapasitas"><Input name="capacity" type="number" min={1} defaultValue={24} /></Field>
+          <div className="flex justify-end"><Button type="submit" disabled={busy}>Simpan</Button></div>
+        </form>
+      </Modal>
+
+      <Modal open={!!editRoom} onClose={() => setEditRoom(null)} title={`Edit ${editRoom?.name ?? ''}`}>
+        <form className="grid gap-4" onSubmit={async (e) => {
+          e.preventDefault();
+          if (!editRoom) return;
+          const fd = new FormData(e.currentTarget);
+          setBusy(true);
+          try {
+            await updateExamRoom(editRoom.id, {
+              name: String(fd.get('name')), period: String(fd.get('period')),
+              capacity: Number(fd.get('capacity')) || editRoom.capacity,
+            });
+            setEditRoom(null); load(); setNotice('Ruang diperbarui.');
+          } catch (err) { setError(err instanceof Error ? err.message : 'Gagal.'); } finally { setBusy(false); }
+        }}>
+          <Field label="Nama ruang"><Input name="name" required defaultValue={editRoom?.name ?? ''} /></Field>
+          <Field label="Periode ujian"><Input name="period" required defaultValue={editRoom?.period ?? ''} /></Field>
+          <Field label={`Kapasitas (peserta saat ini: ${editRoom?._count.seats ?? 0})`}>
+            <Input name="capacity" type="number" min={editRoom?._count.seats ?? 1} defaultValue={editRoom?.capacity ?? 24} />
+          </Field>
           <div className="flex justify-end"><Button type="submit" disabled={busy}>Simpan</Button></div>
         </form>
       </Modal>

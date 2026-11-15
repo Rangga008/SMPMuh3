@@ -655,7 +655,7 @@ export class PayrollService {
         items: {
           include: {
             employee: {
-              select: { name: true, nip: true, type: true, payScale: { select: { name: true } } },
+              select: { name: true, nip: true, type: true, staffKind: true, additionalDuty: true, payScale: { select: { name: true } } },
             },
             lines: { orderBy: { createdAt: 'asc' } },
           },
@@ -1192,6 +1192,22 @@ export class PayrollService {
     });
     await this.audit.log({ actorId, action: 'payroll.run.void', entity: 'payroll_run', entityId: id });
     return { voided: true };
+  }
+
+  /** Aktifkan kembali run yang di-VOID — item tidak dihapus saat void,
+   *  jadi run kembali ke DRAFT dengan angka utuh (bisa dihitung ulang/dikoreksi). */
+  async reopenRun(id: string, actorId: string) {
+    const run = await this.prisma.payrollRun.findUnique({ where: { id } });
+    if (!run) throw new NotFoundException('Run tidak ditemukan');
+    if (run.status !== 'VOID') {
+      throw new ConflictException('Hanya run berstatus Batal yang bisa diaktifkan lagi');
+    }
+    const u = await this.prisma.payrollRun.update({
+      where: { id },
+      data: { status: 'DRAFT', finalizedAt: null, finalizedBy: null },
+    });
+    await this.audit.log({ actorId, action: 'payroll.run.reopen', entity: 'payroll_run', entityId: id });
+    return u;
   }
 
   async deleteRun(id: string, actorId: string) {

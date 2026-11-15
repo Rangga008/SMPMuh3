@@ -123,6 +123,26 @@ export class UpdateSchoolDto {
   @IsString()
   @MaxLength(300)
   kopLine2?: string | null;
+
+  /** Key storage gambar kop — null untuk menghapus (kembali ke kop teks). */
+  @emptyToNull()
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  kopUrl?: string | null;
+
+  /** Nama bendahara — penandatangan slip gaji. */
+  @emptyToNull()
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  treasurer?: string | null;
+
+  @emptyToNull()
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  treasurerNip?: string | null;
 }
 
 @Controller({ path: 'school', version: '1' })
@@ -153,6 +173,15 @@ export class SchoolController {
   @Get('signature')
   async getSignature(@Res({ passthrough: true }) res: Response) {
     const { buf, mime } = await this.school.getSignature();
+    res.set({ 'Content-Type': mime, 'Cache-Control': 'public, max-age=300' });
+    return new StreamableFile(buf);
+  }
+
+  /** Gambar kop surat utuh (publik) — dipakai <img> di dokumen cetakan. */
+  @Public()
+  @Get('kop')
+  async getKop(@Res({ passthrough: true }) res: Response) {
+    const { buf, mime } = await this.school.getKop();
     res.set({ 'Content-Type': mime, 'Cache-Control': 'public, max-age=300' });
     return new StreamableFile(buf);
   }
@@ -226,6 +255,34 @@ export class SchoolController {
     await this.audit.log({
       actorId: me.id,
       action: 'school.signature_upload',
+      entity: 'school',
+      entityId: school.id,
+    });
+    return school;
+  }
+
+  @Post('kop')
+  @RequirePermission(PERMISSIONS.SCHOOL_MANAGE)
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadKop(
+    @CurrentUser() me: AuthUser,
+    @UploadedFile(
+      new ParseFilePipeBuilder()
+        .addMaxSizeValidator({ maxSize: 5 * 1024 * 1024 })
+        .addFileTypeValidator({
+          fileType: /image\/(png|jpeg|webp)/,
+        })
+        .build({ fileIsRequired: true }),
+    )
+    file: Express.Multer.File,
+  ) {
+    if (!file.mimetype.startsWith('image/')) {
+      throw new NotFoundException('Hanya file gambar yang diperbolehkan');
+    }
+    const school = await this.school.uploadKop(file);
+    await this.audit.log({
+      actorId: me.id,
+      action: 'school.kop_upload',
       entity: 'school',
       entityId: school.id,
     });

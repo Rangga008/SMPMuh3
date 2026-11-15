@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { DataTable } from '@/components/data-table';
@@ -22,6 +22,7 @@ import {
   getPensionLedger,
   getPensionSummary,
   getPayrollSettings,
+  getSchool,
   listBosHonors,
   listCashAccounts,
   listDeductionTypes,
@@ -40,6 +41,8 @@ import {
   updateLoan,
   updatePayrollSettings,
   updatePayScale,
+  updateSchool,
+  uploadSchoolKop,
   upsertBosHonor,
   type BosHonorView,
   type CashAccountView,
@@ -52,6 +55,7 @@ import {
   type PayScaleView,
   type PensionSummaryRow,
   type PayrollSettings,
+  type School,
 } from '@/lib/api';
 
 import { RowBtn } from '@/components/row-btn';
@@ -86,6 +90,8 @@ export default function PayrollPengaturanPage() {
   const [pension, setPension] = useState<PensionSummaryRow[]>([]);
   const [bos, setBos] = useState<BosHonorView[]>([]);
   const [payrollSettings, setPayrollSettings] = useState<PayrollSettings | null>(null);
+  const [school, setSchool] = useState<School | null>(null);
+  const kopRef = useRef<HTMLInputElement>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -114,6 +120,7 @@ export default function PayrollPengaturanPage() {
     getPensionSummary().then(setPension).catch(() => undefined);
     listBosHonors({}).then(setBos).catch(() => undefined);
     getPayrollSettings().then(setPayrollSettings).catch(() => undefined);
+    getSchool().then(setSchool).catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -155,6 +162,98 @@ export default function PayrollPengaturanPage() {
       />
       {error ? <p role="alert" className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</p> : null}
       {notice ? <p role="status" className="mb-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">{notice}</p> : null}
+
+      {canManage && school ? (
+        <Widget title="Slip Gaji & Kop Surat" className="mb-5">
+          <div className="grid gap-5 lg:grid-cols-2">
+            <form
+              className="grid gap-3 content-start"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const f = new FormData(e.currentTarget);
+                void run(
+                  () =>
+                    updateSchool({
+                      headmaster: String(f.get('headmaster') || ''),
+                      headmasterNip: String(f.get('headmasterNip') || ''),
+                      treasurer: String(f.get('treasurer') || ''),
+                      treasurerNip: String(f.get('treasurerNip') || ''),
+                    }).then(setSchool),
+                  'Penandatangan slip diperbarui.',
+                );
+              }}
+            >
+              <p className="text-xs font-semibold uppercase tracking-wide text-sand-500">Penandatangan Slip</p>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Kepala Sekolah">
+                  <Input name="headmaster" defaultValue={school.headmaster ?? ''} key={`hm-${school.id}`} placeholder="Nama + gelar" />
+                </Field>
+                <Field label="NIP/NUPTK">
+                  <Input name="headmasterNip" defaultValue={school.headmasterNip ?? ''} key={`hn-${school.id}`} />
+                </Field>
+                <Field label="Bendahara / Keuangan">
+                  <Input name="treasurer" defaultValue={school.treasurer ?? ''} key={`tr-${school.id}`} placeholder="Nama bendahara" />
+                </Field>
+                <Field label="NIP Bendahara" hint="Opsional">
+                  <Input name="treasurerNip" defaultValue={school.treasurerNip ?? ''} key={`tn-${school.id}`} />
+                </Field>
+              </div>
+              <div>
+                <Button type="submit" size="sm" disabled={busy}>Simpan Penandatangan</Button>
+              </div>
+            </form>
+            <div className="grid gap-3 content-start">
+              <p className="text-xs font-semibold uppercase tracking-wide text-sand-500">Kop Surat (gambar)</p>
+              <div className="rounded-xl border border-sand-200 bg-white p-2">
+                {school.kopUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={`/kop.png?v=${Date.parse(school.updatedAt)}`} alt="Kop surat" className="w-full" />
+                ) : (
+                  <p className="px-2 py-6 text-center text-xs text-sand-400">
+                    Belum ada gambar kop — slip memakai kop teks otomatis (isi di Pengaturan → Profil).
+                  </p>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  ref={kopRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    void run(
+                      () => uploadSchoolKop(file).then(setSchool),
+                      'Kop surat diperbarui — tercetak di semua slip gaji.',
+                    ).finally(() => { if (kopRef.current) kopRef.current.value = ''; });
+                  }}
+                />
+                <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => kopRef.current?.click()}>
+                  {school.kopUrl ? 'Ganti Gambar Kop' : 'Unggah Gambar Kop'}
+                </Button>
+                {school.kopUrl ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    disabled={busy}
+                    onClick={async () => {
+                      if (await confirm('Hapus gambar kop? Slip kembali ke kop teks otomatis.'))
+                        void run(() => updateSchool({ kopUrl: null }).then(setSchool), 'Kop gambar dihapus — kembali ke kop teks.');
+                    }}
+                  >
+                    Hapus
+                  </Button>
+                ) : null}
+              </div>
+              <p className="text-[11px] text-sand-400">
+                Unggah gambar kop surat utuh (header resmi sekolah) — lebar menyesuaikan kertas. PNG/JPG/WebP, maks 5 MB.
+              </p>
+            </div>
+          </div>
+        </Widget>
+      ) : null}
 
       <div className="mb-5 flex flex-wrap gap-2">
         {TABS.map((t) => (

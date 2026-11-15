@@ -20,6 +20,9 @@ export interface UpdateSchoolInput {
   accreditation?: string | null;
   kopLine1?: string | null;
   kopLine2?: string | null;
+  kopUrl?: string | null;
+  treasurer?: string | null;
+  treasurerNip?: string | null;
 }
 
 @Injectable()
@@ -78,6 +81,9 @@ export class SchoolService {
         ...(input.accreditation !== undefined ? { accreditation: input.accreditation } : {}),
         ...(input.kopLine1 !== undefined ? { kopLine1: input.kopLine1 } : {}),
         ...(input.kopLine2 !== undefined ? { kopLine2: input.kopLine2 } : {}),
+        ...(input.kopUrl !== undefined ? { kopUrl: input.kopUrl } : {}),
+        ...(input.treasurer !== undefined ? { treasurer: input.treasurer } : {}),
+        ...(input.treasurerNip !== undefined ? { treasurerNip: input.treasurerNip } : {}),
       },
     });
   }
@@ -116,13 +122,31 @@ export class SchoolService {
     return this.getImage('signature');
   }
 
-  /** Stream gambar tersimpan (logo / signature) dengan fallback 404 rapi. */
-  private async getImage(kind: 'logo' | 'signature') {
+  /** Gambar kop surat utuh — bila diisi, menggantikan kop teks di cetakan. */
+  async uploadKop(file: Express.Multer.File) {
+    const ext =
+      file.mimetype === 'image/png' ? 'png' : file.mimetype === 'image/jpeg' ? 'jpg' : 'webp';
+    const key = `school/kop.${ext}`;
+    await this.storage.putObject(key, file.buffer, file.mimetype);
     const school = await this.get();
-    const url = kind === 'logo' ? school.logoUrl : school.headmasterSignatureUrl;
+    return this.prisma.school.update({
+      where: { id: school.id },
+      data: { kopUrl: key },
+    });
+  }
+
+  async getKop() {
+    return this.getImage('kop');
+  }
+
+  /** Stream gambar tersimpan (logo / signature / kop) dengan fallback 404 rapi. */
+  private async getImage(kind: 'logo' | 'signature' | 'kop') {
+    const school = await this.get();
+    const url =
+      kind === 'logo' ? school.logoUrl : kind === 'signature' ? school.headmasterSignatureUrl : school.kopUrl;
     if (!url) {
       throw new NotFoundException(
-        kind === 'logo' ? 'Logo belum diunggah' : 'Tanda tangan belum diunggah',
+        kind === 'logo' ? 'Logo belum diunggah' : kind === 'signature' ? 'Tanda tangan belum diunggah' : 'Kop surat belum diunggah',
       );
     }
     const ext = url.split('.').pop() ?? 'png';
@@ -134,7 +158,7 @@ export class SchoolService {
       return { buf, mime };
     } catch {
       throw new NotFoundException(
-        `Berkas ${kind === 'logo' ? 'logo' : 'tanda tangan'} tidak ditemukan di storage`,
+        `Berkas ${kind === 'logo' ? 'logo' : kind === 'signature' ? 'tanda tangan' : 'kop surat'} tidak ditemukan di storage`,
       );
     }
   }

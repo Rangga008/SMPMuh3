@@ -10,9 +10,10 @@ import {
   createLetterCategory,
   deleteLetter,
   deleteLetterCategory,
-  downloadLetterFile,
+  downloadFile,
   listLetterCategories,
   listLetters,
+  previewFile,
   updateLetter,
   uploadLetterFile,
   type Letter,
@@ -186,9 +187,14 @@ export default function SuratPage() {
             <td className="px-5 py-3 text-right">
               <span className="flex justify-end gap-2">
                 {l.fileName ? (
-                  <RowBtn type="button" onClick={async () => { try { const blob = await downloadLetterFile(l.id); const url = URL.createObjectURL(blob); window.open(url, '_blank'); } catch { setError('Gagal membuka lampiran.'); } }}>
-                    Detail
-                  </RowBtn>
+                  <>
+                    <RowBtn type="button" onClick={async () => { try { await previewFile(`/tu/letters/${l.id}/file`); } catch { setError('Gagal membuka lampiran.'); } }}>
+                      Lihat
+                    </RowBtn>
+                    <RowBtn type="button" onClick={async () => { try { await downloadFile(`/tu/letters/${l.id}/file`, l.fileName ?? 'lampiran'); } catch { setError('Gagal mengunduh lampiran.'); } }}>
+                      Unduh
+                    </RowBtn>
+                  </>
                 ) : null}
                 <RowBtn type="button" onClick={async () => { setModalFile(null); setModal(l); }}>
                   Ubah

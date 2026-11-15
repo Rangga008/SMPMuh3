@@ -194,6 +194,40 @@ export default function CbtRunnerPage() {
         </div>
       );
     }
+    if (q.type === 'TRUE_FALSE_COMPLEX') {
+      const statements = opts.statements ?? [];
+      const sel = Array.isArray(answers[q.id]) ? (answers[q.id] as boolean[]) : [];
+      return (
+        <div className="space-y-2.5">
+          <p className="text-xs font-bold text-sand-500">Tentukan BENAR/SALAH untuk tiap pernyataan:</p>
+          {statements.map((st, i) => (
+            <div key={i} className="flex flex-col gap-2 rounded-2xl border border-sand-200 bg-white p-3.5 sm:flex-row sm:items-center">
+              <span className="flex-1 text-sm font-medium">
+                <span className="mr-1.5 inline-grid size-6 place-items-center rounded-lg bg-sand-100 text-[11px] font-black text-sand-500">{i + 1}</span>
+                {st}
+              </span>
+              <div className="flex shrink-0 gap-2">
+                {([['B', true], ['S', false]] as const).map(([lbl, v]) => (
+                  <button
+                    key={lbl}
+                    type="button"
+                    onClick={() => {
+                      const next = statements.map((_, k) => (k === i ? v : (sel[k] ?? null)));
+                      pick(q, next);
+                    }}
+                    className={`w-12 rounded-xl border-2 py-2.5 text-sm font-black transition ${
+                      sel[i] === v ? 'border-primary-600 bg-primary-600 text-white' : 'border-sand-200 bg-white text-sand-600 hover:border-sand-300'
+                    }`}
+                  >
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
     // MATCHING — tiap item kiri pilih pasangan kanan.
     const pairs = opts.pairs ?? [];
     const rights = opts.rights?.length ? opts.rights : [...new Set(pairs.map((p) => p.right))];

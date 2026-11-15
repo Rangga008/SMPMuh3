@@ -286,6 +286,18 @@ export async function downloadFile(path: string, filename: string) {
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
+/** Preview file terproteksi di tab baru — fetch blob dengan token lalu object URL.
+ *  PDF/gambar tampil langsung di viewer browser; docx/xlsx terunduh (tak ada viewer). */
+export async function previewFile(path: string) {
+  const tokens = getTokens();
+  const res = await fetch(`${API}${path}`, {
+    headers: tokens?.accessToken ? { Authorization: `Bearer ${tokens.accessToken}` } : {},
+  });
+  if (!res.ok) throw new Error('Gagal membuka berkas.');
+  const url = URL.createObjectURL(await res.blob());
+  window.open(url, '_blank');
+  setTimeout(() => URL.revokeObjectURL(url), 120_000);
+}
 export const exportRegistrationsXlsx = (q: {
   waveId?: string;
   academicYearId?: string;
@@ -1471,6 +1483,9 @@ export interface School {
   accreditation?: string | null;
   kopLine1?: string | null;
   kopLine2?: string | null;
+  kopUrl?: string | null;
+  treasurer?: string | null;
+  treasurerNip?: string | null;
   headmasterSignatureUrl?: string | null;
   logoUrl: string | null;
   updatedAt: string;
@@ -1515,6 +1530,7 @@ async function uploadSchoolImage(path: string, file: File): Promise<School> {
 export const uploadSchoolLogo = (file: File) => uploadSchoolImage('/school/logo', file);
 export const uploadSchoolSignature = (file: File) =>
   uploadSchoolImage('/school/signature', file);
+export const uploadSchoolKop = (file: File) => uploadSchoolImage('/school/kop', file);
 
 // ---------- Akademik lanjutan (fase 6) ----------
 export const updateClass = (id: string, dto: Record<string, unknown>) =>
@@ -2013,7 +2029,7 @@ export interface PayrollItemView {
   grossAmount: number;
   deductionAmount: number;
   netAmount: number;
-  employee?: { name: string; nip?: string | null; type?: string; payScale?: { name: string } | null };
+  employee?: { name: string; nip?: string | null; type?: string; staffKind?: string | null; additionalDuty?: string | null; payScale?: { name: string } | null };
   lines?: PayrollLineView[];
 }
 export interface PayrollRunView {
@@ -2119,6 +2135,8 @@ export const voidPayrollRun = (id: string) =>
   req<{ voided: boolean }>(`${py}/runs/${id}/void`, { method: 'POST' });
 export const deletePayrollRun = (id: string) =>
   req<{ deleted: boolean }>(`${py}/runs/${id}`, { method: 'DELETE' });
+export const reopenPayrollRun = (id: string) =>
+  req<PayrollRunView>(`${py}/runs/${id}/reopen`, { method: 'POST' });
 
 // ---- absen selfie (semua pegawai) ----
 export interface MyAttendance {

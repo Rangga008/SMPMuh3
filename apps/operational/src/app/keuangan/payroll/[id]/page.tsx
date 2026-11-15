@@ -17,6 +17,7 @@ import {
   me,
   payPayrollRun,
   recomputePayrollRun,
+  reopenPayrollRun,
   updatePayrollItem,
   voidPayrollRun,
   type CashAccountView,
@@ -63,7 +64,7 @@ export default function PayrollRunPage() {
         setSchool(sc);
         // Nama penanda tangan: profil sekolah dulu, lalu cache lokal.
         setPrincipal(sc.headmaster ?? localStorage.getItem('payroll.principal') ?? '');
-        setTreasurer(localStorage.getItem('payroll.treasurer') ?? '');
+        setTreasurer(sc.treasurer ?? localStorage.getItem('payroll.treasurer') ?? '');
       })
       .catch(() => undefined);
     me().then((u) => setCanManage(u.permissions.includes(PERMISSIONS.PAYROLL_MANAGE))).catch(() => undefined);
@@ -144,6 +145,9 @@ export default function PayrollRunPage() {
                   ) : null}
                   {run.status !== 'PAID' && run.status !== 'VOID' ? (
                     <Button size="sm" variant="ghost" onClick={async () => { if (await confirm('Batalkan run ini?')) void run_(() => voidPayrollRun(run.id), 'Run dibatalkan.'); }} disabled={busy}>Void</Button>
+                  ) : null}
+                  {run.status === 'VOID' ? (
+                    <Button size="sm" variant="outline" onClick={async () => { if (await confirm('Aktifkan lagi run ini? Status kembali ke Draft — item gaji tetap tersimpan.')) void run_(() => reopenPayrollRun(run.id), 'Run diaktifkan lagi (Draft).'); }} disabled={busy}>Aktifkan Lagi</Button>
                   ) : null}
                   {run.status !== 'PAID' ? (
                     <Button size="sm" variant="ghost" onClick={async () => { if (await confirm('Hapus run ini beserta semua item?')) void run_(async () => { await deletePayrollRun(run.id); router.push('/keuangan/payroll'); }, 'Run dihapus.'); }} disabled={busy}>Hapus</Button>

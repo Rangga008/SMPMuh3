@@ -37,6 +37,8 @@ export const PERMISSIONS = {
   PAYROLL_MANAGE: 'payroll.manage',
   SARPRAS_READ: 'sarpras.read',
   SARPRAS_MANAGE: 'sarpras.manage',
+  /** Monitor ujian CBT — untuk semua staf (tendik/pengawas/guru/admin). */
+  CBT_MONITOR: 'cbt.monitor',
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];

@@ -12,13 +12,15 @@ import {
   deleteLetterCategory,
   deleteMutation,
   listLetterCategories,
+  downloadFile,
   listMutations,
   listStudents,
+  previewFile,
   updateMutation,
   type LetterCategory,
   type StudentMutation,
 } from '@/lib/api';
-import { mutationLetterUrl, uploadMutationLetter } from '@/lib/api-ops';
+import { uploadMutationLetter } from '@/lib/api-ops';
 
 import { RowBtn } from '@/components/row-btn';
 import { FilePick } from '@/components/file-pick';
@@ -193,9 +195,14 @@ export function MutasiView({ direction }: { direction: 'IN' | 'OUT' }) {
             <td className="px-5 py-3 text-right">
               <span className="flex justify-end gap-2">
                 {m.fileName ? (
-                  <RowBtn type="button" onClick={() => window.open(mutationLetterUrl(m.id), '_blank')}>
-                    Detail
-                  </RowBtn>
+                  <>
+                    <RowBtn type="button" onClick={async () => { try { await previewFile(`/ops/mutations/${m.id}/letter`); } catch { setError('Gagal membuka surat.'); } }}>
+                      Lihat
+                    </RowBtn>
+                    <RowBtn type="button" onClick={async () => { try { await downloadFile(`/ops/mutations/${m.id}/letter`, m.fileName ?? 'surat-mutasi'); } catch { setError('Gagal mengunduh surat.'); } }}>
+                      Unduh
+                    </RowBtn>
+                  </>
                 ) : null}
                 <RowBtn type="button" onClick={async () => { setModalFile(null); setModal(m); }}>
                   Ubah
