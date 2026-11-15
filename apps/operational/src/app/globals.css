@@ -46,13 +46,13 @@
 
 /* Variant for the dark-green sidebar — light thumb on dark track. */
 .dark-scroll {
-  scrollbar-color: rgb(255 255 255 / 0.16) transparent;
+  scrollbar-color: rgb(255 255 255 / 0.35) transparent;
 }
 .dark-scroll::-webkit-scrollbar-thumb {
-  background: rgb(255 255 255 / 0.16);
+  background: rgb(255 255 255 / 0.35);
 }
 .dark-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgb(255 255 255 / 0.28);
+  background: rgb(255 255 255 / 0.5);
 }
 
 /* Subtle fade for page content — removes the hard white flash on navigation. */

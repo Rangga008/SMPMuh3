@@ -140,7 +140,7 @@ function NavScrollList({ children }: { children: ReactNode }) {
   return (
     <ul
       ref={ref}
-      className="dark-scroll flex-1 space-y-1 overflow-y-auto px-3 py-4"
+      className="dark-scroll min-h-0 flex-1 space-y-1 overflow-y-auto px-3 py-4"
     >
       {children}
     </ul>

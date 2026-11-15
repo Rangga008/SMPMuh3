@@ -1,13 +1,26 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { NAV_LINKS } from './site-header';
 import { HeaderAuth } from './header-auth';
 import { ThemeToggle } from './theme-toggle';
 
+const ICONS: Record<string, string> = {
+  Beranda: '⌂',
+  Alur: '🧭',
+  Biaya: '💳',
+  Gelombang: '🌊',
+  Titipan: '🤝',
+  Kontak: '📞',
+};
+
+/** Menu hamburger → bottom sheet tile-grid (konsisten dgn app, enak di HP). */
 export function MobileNav() {
   const [open, setOpen] = useState(false);
+  const pathname = usePathname();
+  useEffect(() => setOpen(false), [pathname]);
 
   return (
     <div className="ml-auto lg:hidden">
@@ -28,23 +41,49 @@ export function MobileNav() {
       </button>
 
       {open ? (
-        <nav
-          aria-label="Navigasi seluler"
-          className="absolute inset-x-0 top-16 border-b border-sand-200 bg-white px-4 pb-4 pt-2 shadow-soft sm:px-6"
-        >
-          {NAV_LINKS.map((l) => (
-            <Link
-              key={l.href}
-              href={l.href}
-              onClick={() => setOpen(false)}
-              className="block rounded-xl px-3 py-2.5 text-sm font-medium text-sand-800 transition-colors hover:bg-primary-50 hover:text-primary-800 focus-visible:focus-ring"
-            >
-              {l.label}
-            </Link>
-          ))}
-          <ThemeToggle mobile />
-          <HeaderAuth mobile />
-        </nav>
+        <div className="fixed inset-0 z-[70]">
+          <button
+            type="button"
+            aria-label="Tutup menu"
+            className="absolute inset-0 bg-black/55 backdrop-blur-sm"
+            onClick={() => setOpen(false)}
+          />
+          <nav
+            aria-label="Navigasi seluler"
+            className="absolute inset-x-0 bottom-0 max-h-[80dvh] overflow-y-auto rounded-t-3xl border-t border-sand-200 bg-white shadow-soft"
+          >
+            <div className="flex items-center justify-between px-5 pb-2 pt-4">
+              <p className="font-extrabold text-sand-900">Menu</p>
+              <button
+                type="button"
+                aria-label="Tutup menu"
+                onClick={() => setOpen(false)}
+                className="flex size-9 items-center justify-center rounded-xl bg-sand-100 text-sand-600"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="grid grid-cols-3 gap-2.5 px-5 pb-3">
+              {NAV_LINKS.map((l) => (
+                <Link
+                  key={l.href}
+                  href={l.href}
+                  onClick={() => setOpen(false)}
+                  className="flex flex-col items-center gap-1.5 rounded-2xl border border-sand-200 bg-sand-50 p-3.5 text-center text-sand-800 transition-colors active:bg-primary-50"
+                >
+                  <span aria-hidden="true" className="text-xl leading-none">
+                    {ICONS[l.label] ?? '▪'}
+                  </span>
+                  <span className="text-xs font-semibold">{l.label}</span>
+                </Link>
+              ))}
+            </div>
+            <div className="border-t border-sand-100 px-5 py-3 pb-8">
+              <ThemeToggle mobile />
+              <HeaderAuth mobile />
+            </div>
+          </nav>
+        </div>
       ) : null}
     </div>
   );

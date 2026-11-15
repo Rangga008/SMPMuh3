@@ -10,6 +10,7 @@ const TABS = [
   { href: '/', label: 'Beranda', icon: '⌂' },
   { href: '/cek-status', label: 'Cek Status', icon: '🔍' },
   { href: '/daftar', label: 'Daftar', icon: '✏' },
+  { href: '/titipan', label: 'Titipan', icon: '🤝' },
 ] as const;
 
 const active = (pathname: string, href: string) =>

@@ -96,7 +96,8 @@
   --color-primary-700: #2a7fc2;
   --color-primary-800: #3d92d1;
 
-  --color-accent-400: #35b6ea;
+  --color-accent-300: #1590c0;
+  --color-accent-400: #0e7ca8;
   --color-accent-500: #1aa6dc;
   --color-accent-700: #3db4e8;
 
@@ -116,6 +117,32 @@
 .dark .bg-white\/90 {
   background-color: rgb(22 40 63 / 0.92);
 }
+.dark .bg-white\/95 {
+  background-color: rgb(22 40 63 / 0.95);
+}
+.dark .bg-white\/70,
+.dark .bg-white\/60,
+.dark .bg-white\/50 {
+  background-color: rgb(22 40 63 / 0.7);
+}
+/* Link/teks primer di atas permukaan gelap — versi cerah agar kontras. */
+.dark .text-primary-600,
+.dark .text-primary-700,
+.dark .text-primary-800 {
+  color: #8fc9f5;
+}
+.dark .text-accent-700,
+.dark .text-accent-600 {
+  color: #7fd4f5;
+}
+/* Teks muted sand dicerahkan agar tetap terbaca di atas permukaan gelap. */
+.dark .text-sand-300 {
+  color: #7d96b3;
+}
+.dark .text-sand-400,
+.dark .text-sand-500 {
+  color: #8ba0bd;
+}
 .dark .divide-sand-100 > :not([hidden]) ~ :not([hidden]) {
   border-color: #1a2f4d;
 }
@@ -123,19 +150,28 @@
 .dark .to-white {
   --tw-gradient-to: #13233d;
 }
-/* Notice sukses/gagal (emerald/red) — permukaan gelap + teks cerah. */
+/* Notice sukses/gagal (emerald/red/amber) — permukaan gelap + teks cerah. */
 .dark .bg-red-50 {
   background-color: #451a21;
 }
+.dark .bg-red-100 {
+  background-color: #5a2230;
+}
 .dark .text-red-700,
-.dark .text-red-600 {
+.dark .text-red-600,
+.dark .text-red-800 {
   color: #f09595;
 }
 .dark .bg-emerald-50 {
   background-color: #0d2a22;
 }
+.dark .bg-emerald-100,
+.dark .bg-emerald-200 {
+  background-color: #12403a;
+}
 .dark .text-emerald-700,
-.dark .text-emerald-600 {
+.dark .text-emerald-600,
+.dark .text-emerald-800 {
   color: #5dd39e;
 }
 .dark .bg-amber-50,
@@ -143,7 +179,8 @@
   background-color: #3d2a10;
 }
 .dark .text-amber-700,
-.dark .text-amber-800 {
+.dark .text-amber-800,
+.dark .text-amber-900 {
   color: #f0b45a;
 }
 .dark .border-red-200 {
@@ -154,6 +191,26 @@
 }
 .dark .border-amber-200 {
   border-color: #7a5420;
+}
+/* Sky (status Sakit/info) — permukaan gelap + teks cerah. */
+.dark .bg-sky-50 {
+  background-color: #10293d;
+}
+.dark .text-sky-700,
+.dark .text-sky-800,
+.dark .text-sky-900 {
+  color: #7ec8f0;
+}
+.dark .border-sky-200 {
+  border-color: #1e4a66;
+}
+/* Angka pemasukan/saldo (green/cyan) dicerahkan di atas gelap. */
+.dark .text-green-600,
+.dark .text-green-700 {
+  color: #4ade80;
+}
+.dark .text-cyan-700 {
+  color: #5fd4e8;
 }
 
 /* Subtle Islamic geometric star pattern — decorative background ornament. */
