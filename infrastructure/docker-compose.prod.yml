@@ -215,7 +215,7 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      NODE_OPTIONS: --max-old-space-size=384
+      NODE_OPTIONS: --max-old-space-size=448
       API_INTERNAL_URL: http://api:4000/api/v1
     networks: [internal, web]
     depends_on:
@@ -230,8 +230,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.75"
-          memory: 512M
+          cpus: "1.0"
+          memory: 640M
     logging: *default-logging
 
   # ---------- WordPress — situs utama di apex/www ----------

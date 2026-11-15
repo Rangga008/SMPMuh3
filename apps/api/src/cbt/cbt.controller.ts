@@ -15,6 +15,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { PERMISSIONS, type AuthUser } from '@smpmuh3/types';
 import { CurrentUser } from '../identity/decorators/current-user.decorator';
@@ -160,9 +161,13 @@ export class CbtController {
   }
 
   // ================= Siswa (publik — kredensial = NIS + kode + token sesi) =================
+  // Satu sesi ujian bisa diisi ~180 siswa dari 1 IP publik sekolah (NAT lab),
+  // jadi endpoint siswa dikecualikan dari limit 300/menit global — keamanan
+  // tetap terjaga karena tiap request wajib token sesi yang tak tertebak.
 
   /** Masuk: NIS + kode → token sesi + info persiapan. */
   @Public()
+  @Throttle({ default: { limit: 1200, ttl: 60_000 } })
   @Post('enter')
   enter(@Body() dto: EnterExamDto) {
     return this.cbt.enter(dto);
@@ -170,6 +175,7 @@ export class CbtController {
 
   /** Info sesi untuk halaman persiapan. */
   @Public()
+  @SkipThrottle()
   @Get('session/:token')
   session(@Param('token') token: string) {
     return this.cbt.sessionByToken(token);
@@ -177,6 +183,7 @@ export class CbtController {
 
   /** Daftar soal tanpa kunci + jawaban tersimpan. */
   @Public()
+  @SkipThrottle()
   @Get('paper/:token')
   paper(@Param('token') token: string) {
     return this.cbt.paper(token);
@@ -184,6 +191,7 @@ export class CbtController {
 
   /** Autosave satu jawaban. */
   @Public()
+  @SkipThrottle()
   @Post('paper/:token/answer')
   answer(@Param('token') token: string, @Body() dto: AnswerDto) {
     return this.cbt.saveAnswer(token, dto);
@@ -191,6 +199,7 @@ export class CbtController {
 
   /** Kumpulkan & nilai. */
   @Public()
+  @SkipThrottle()
   @Post('paper/:token/submit')
   submit(@Param('token') token: string) {
     return this.cbt.submit(token);
@@ -198,6 +207,7 @@ export class CbtController {
 
   /** Hasil akhir. */
   @Public()
+  @SkipThrottle()
   @Get('result/:token')
   result(@Param('token') token: string) {
     return this.cbt.result(token);
