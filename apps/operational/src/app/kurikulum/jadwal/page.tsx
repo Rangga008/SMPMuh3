@@ -28,6 +28,7 @@ import {
   type ScheduleView,
   type SubjectView,
 } from '@/lib/api';
+import { listPrasaranas, type Prasarana } from '@/lib/api-ops';
 
 const DAYS = ['', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 const toMin = (hhmm: string) => {
@@ -54,10 +55,12 @@ export default function JadwalPage() {
   const [editAssign, setEditAssign] = useState<AssignmentView | null>(null);
   const [editEmployee, setEditEmployee] = useState<EmployeeDto | null>(null);
   const [editEntry, setEditEntry] = useState<ScheduleView | null>(null);
+  const [rooms, setRooms] = useState<Prasarana[]>([]);
   const canManage = usePermission(PERMISSIONS.ACADEMIC_MANAGE);
   const { confirm, dialog } = useConfirm();
 
   useEffect(() => {
+    listPrasaranas().then(setRooms).catch(() => {});
     Promise.all([listAcademicYears(), listEmployees('TEACHER'), listSubjects()])
       .then(([ys, emps, subs]) => {
         setYears(ys);
@@ -238,7 +241,7 @@ export default function JadwalPage() {
                           <p className="text-xs font-bold text-primary-800">{s.assignment.subject.name}</p>
                           <p className="text-[11px] text-sand-500">{s.assignment.employee.name}</p>
                           <p className="mt-1 flex items-center justify-between text-[11px] font-semibold text-sand-600">
-                            <span>{toHHMM(s.startMinute)}–{toHHMM(s.endMinute)}{s.room ? ` · ${s.room}` : ''}</span>
+                            <span>{toHHMM(s.startMinute)}–{toHHMM(s.endMinute)}{(s.prasarana?.name ?? s.room) ? ` · ${s.prasarana?.name ?? s.room}` : ''}</span>
                             {canManage ? (
                               <span className="flex gap-0.5">
                                 <button
@@ -343,7 +346,10 @@ export default function JadwalPage() {
                   day: Number(f.get('day')),
                   startMinute: toMin(String(f.get('start'))),
                   endMinute: toMin(String(f.get('end'))),
-                  room: String(f.get('room') ?? '') || undefined,
+                  prasaranaId: String(f.get('prasaranaId') ?? '') || undefined,
+                  room: String(f.get('prasaranaId') ?? '')
+                    ? rooms.find((r) => r.id === String(f.get('prasaranaId')))?.name
+                    : String(f.get('room') ?? '') || undefined,
                 }),
               'Entri jadwal ditambahkan.',
             );
@@ -365,8 +371,14 @@ export default function JadwalPage() {
               ))}
             </Select>
           </Field>
-          <Field label="Ruangan">
-            <Input name="room" placeholder="R.7A / Lab" />
+          <Field label="Ruangan (Prasarana)">
+            <Select name="prasaranaId" defaultValue="">
+              <option value="">— pilih ruangan —</option>
+              {rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+            </Select>
+          </Field>
+          <Field label="Atau ketik manual">
+            <Input name="room" placeholder="dipakai bila pilihan kosong" />
           </Field>
           <Field label="Mulai">
             <Input name="start" type="time" required defaultValue="07:00" />
@@ -459,7 +471,10 @@ export default function JadwalPage() {
                     day: Number(f.get('day')),
                     startMinute: toMin(String(f.get('start'))),
                     endMinute: toMin(String(f.get('end'))),
-                    room: String(f.get('room') ?? ''),
+                    prasaranaId: String(f.get('prasaranaId') ?? '') || null,
+                    room: String(f.get('prasaranaId') ?? '')
+                      ? rooms.find((r) => r.id === String(f.get('prasaranaId')))?.name ?? ''
+                      : String(f.get('room') ?? ''),
                   }),
                 'Entri jadwal diperbarui.',
               );
@@ -476,8 +491,14 @@ export default function JadwalPage() {
                 ))}
               </Select>
             </Field>
-            <Field label="Ruangan">
-              <Input name="room" defaultValue={editEntry.room ?? ''} placeholder="R.7A / Lab" />
+            <Field label="Ruangan (Prasarana)">
+              <Select name="prasaranaId" defaultValue={editEntry.prasaranaId ?? ''}>
+                <option value="">— pilih ruangan —</option>
+                {rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+              </Select>
+            </Field>
+            <Field label="Atau ketik manual">
+              <Input name="room" defaultValue={editEntry.room ?? ''} placeholder="dipakai bila pilihan kosong" />
             </Field>
             <Field label="Mulai">
               <Input

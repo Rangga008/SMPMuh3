@@ -318,6 +318,11 @@ export class ClassDto {
   @IsUUID()
   homeroomId?: string;
 
+  /** Ruang rombel — dari data Sarpras/Prasarana. */
+  @IsOptional()
+  @IsUUID()
+  prasaranaId?: string;
+
   @IsOptional()
   @IsInt()
   @Min(1)
@@ -343,6 +348,12 @@ export class UpdateClassDto {
   @ValidateIf((o: UpdateClassDto) => o.homeroomId !== null)
   @IsUUID()
   homeroomId?: string | null;
+
+  /** Ruang rombel — kirim null untuk melepas. */
+  @IsOptional()
+  @ValidateIf((o: UpdateClassDto) => o.prasaranaId !== null)
+  @IsUUID()
+  prasaranaId?: string | null;
 
   @IsOptional()
   @IsInt()
@@ -410,6 +421,11 @@ export class ScheduleEntryDto {
   @IsString()
   @MaxLength(40)
   room?: string;
+
+  /** Ruang dari data Prasarana. */
+  @IsOptional()
+  @IsUUID()
+  prasaranaId?: string;
 }
 
 /** Ubah entri jadwal — semua opsional, yang diisi yang diubah. */
@@ -436,6 +452,12 @@ export class UpdateScheduleEntryDto {
   @IsString()
   @MaxLength(40)
   room?: string;
+
+  /** Ruang dari data Prasarana — kirim null untuk melepas. */
+  @IsOptional()
+  @ValidateIf((o: UpdateScheduleEntryDto) => o.prasaranaId !== null)
+  @IsUUID()
+  prasaranaId?: string | null;
 }
 
 export class AssessmentDto {

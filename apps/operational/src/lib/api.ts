@@ -1014,6 +1014,8 @@ export interface ClassView {
   gradeLevel: number;
   capacity?: number | null;
   homeroom?: { name: string } | null;
+  prasaranaId?: string | null;
+  prasarana?: { id: string; name: string } | null;
   _count?: { enrollments: number };
 }
 export const listSubjects = () => req<SubjectView[]>('/subjects');
@@ -1733,6 +1735,8 @@ export interface ScheduleView {
   startMinute: number;
   endMinute: number;
   room?: string | null;
+  prasaranaId?: string | null;
+  prasarana?: { id: string; name: string } | null;
   assignment: {
     id: string;
     employee: { name: string };
@@ -1751,7 +1755,7 @@ export const createSchedule = (dto: Record<string, unknown>) =>
   req<ScheduleView>('/schedules', { method: 'POST', json: dto });
 export const updateSchedule = (
   id: string,
-  dto: { day?: number; startMinute?: number; endMinute?: number; room?: string },
+  dto: { day?: number; startMinute?: number; endMinute?: number; room?: string; prasaranaId?: string | null },
 ) => req<ScheduleView>(`/schedules/${id}`, { method: 'PATCH', json: dto });
 export const deleteSchedule = (id: string) =>
   req(`/schedules/${id}`, { method: 'DELETE' });

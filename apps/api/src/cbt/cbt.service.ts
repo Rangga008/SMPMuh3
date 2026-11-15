@@ -318,8 +318,22 @@ export class CbtService {
         ...(dto.status !== undefined ? { status: dto.status } : {}),
       },
     });
+    // Ujian dibuka / rombel berubah → siapkan password semua peserta (kartu & login).
+    if (dto.status === 'OPEN' || dto.classIds !== undefined) await this.ensureCredentials(id);
     await this.audit.log({ actorId: actor.id, action: 'exam.update', entity: 'exam', entityId: id });
     return updated;
+  }
+
+  /** Acak ulang password satu siswa — bila bocor/hilang, kartu dicetak ulang. */
+  async regenCredential(examId: string, studentId: string, actor: AuthUser) {
+    await this.scopeOk(actor, examId, true);
+    const cred = await this.prisma.examCredential.upsert({
+      where: { examId_studentId: { examId, studentId } },
+      update: { password: this.genPassword() },
+      create: { examId, studentId, password: this.genPassword() },
+    });
+    await this.audit.log({ actorId: actor.id, action: 'exam.credential-regen', entity: 'exam', entityId: examId, metadata: { studentId } });
+    return { studentId, password: cred.password };
   }
 
   /** Kode baru — bila kode lama bocor, ganti tanpa hapus ujian. */
@@ -417,6 +431,45 @@ export class CbtService {
   // ================= Siswa: masuk & pengerjaan =================
 
   /** Login CBT: NIS + kode ujian → token sesi + info persiapan. */
+  /** Password CBT — 6 karakter tanpa ambigu (0/O, 1/I/L), prefix "KP". */
+  private genPassword() {
+    const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+    let s = 'KP';
+    for (let i = 0; i < 4; i++) s += chars[Math.floor(Math.random() * chars.length)];
+    return s;
+  }
+
+  /** Pastikan semua siswa rombel peserta punya password ujian (dipakai saat OPEN + cetak kartu). */
+  async ensureCredentials(examId: string) {
+    const exam = await this.prisma.exam.findUniqueOrThrow({ where: { id: examId } });
+    const classIds = (exam.classIds as string[]) ?? [];
+    if (!classIds.length) return { created: 0 };
+    const enrolled = await this.prisma.enrollment.findMany({
+      where: { academicYearId: exam.academicYearId, classId: { in: classIds }, student: { status: 'ACTIVE', deletedAt: null } },
+      select: { studentId: true },
+    });
+    const existing = await this.prisma.examCredential.findMany({ where: { examId }, select: { studentId: true } });
+    const have = new Set(existing.map((e) => e.studentId));
+    const missing = enrolled.filter((e) => !have.has(e.studentId));
+    if (!missing.length) return { created: 0 };
+    await this.prisma.examCredential.createMany({
+      data: missing.map((e) => ({ examId, studentId: e.studentId, password: this.genPassword() })),
+    });
+    return { created: missing.length };
+  }
+
+  /** Password siswa untuk satu ujian — dibuat malas bila belum ada. */
+  private async credentialFor(examId: string, studentId: string) {
+    return (
+      (await this.prisma.examCredential.findUnique({
+        where: { examId_studentId: { examId, studentId } },
+      })) ??
+      (await this.prisma.examCredential.create({
+        data: { examId, studentId, password: this.genPassword() },
+      }))
+    );
+  }
+
   async enter(dto: EnterExamDto) {
     const nis = dto.nis.trim();
     const code = dto.code.trim().toUpperCase();
@@ -471,6 +524,12 @@ export class CbtService {
         throw new ForbiddenException(`Sesi ${session.name} untuk rombelmu sudah berakhir ${fmt(session.endAt)} WIB.`);
       }
       windowEnd = session.endAt;
+    }
+
+    // Password ujian — tercetak di kartu peserta; dibuat malas bila belum ada.
+    const cred = await this.credentialFor(exam.id, student.id);
+    if ((dto.password ?? '').trim().toUpperCase() !== cred.password.toUpperCase()) {
+      throw new ForbiddenException('Password ujian salah — cek kartu peserta ujianmu.');
     }
 
     const attempt = await this.prisma.examAttempt.findUnique({

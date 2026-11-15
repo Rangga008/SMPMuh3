@@ -108,6 +108,11 @@ export class EnterExamDto {
   @IsString()
   @IsNotEmpty()
   code!: string;
+
+  /** Password personal — tercetak di kartu peserta. */
+  @IsString()
+  @IsNotEmpty()
+  password!: string;
 }
 
 export class AnswerDto {

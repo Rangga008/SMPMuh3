@@ -231,24 +231,47 @@ export const listUniforms = () => req<{ id: string; day: number; name: string; n
 export const upsertUniform = (dto: { day: number; name: string; note?: string }) =>
   req('/ops/uniforms', { method: 'PUT', json: dto });
 
+export interface ExamSeatView {
+  id: string; seatNo?: number | null; code?: string | null;
+  student: { id: string; name: string; nis?: string | null };
+  class?: { id: string; name: string } | null;
+}
+export interface ExamRoomLinkView {
+  id: string; examId: string; sessionLabel?: string | null;
+  startsAt?: string | null; endsAt?: string | null;
+  exam: { id: string; code: string; title: string; startAt: string; endAt: string; status?: string };
+  seats: ExamSeatView[];
+  _count: { seats: number };
+}
 export interface ExamRoomView {
   id: string; name: string; period: string; capacity: number; examId?: string | null;
+  prasaranaId?: string | null;
+  prasarana?: { id: string; name: string } | null;
   exam?: { id: string; code: string; title: string; startAt: string; endAt: string } | null;
-  seats: { id: string; seatNo?: number | null; code?: string | null; student: { id: string; name: string; nis?: string | null }; class?: { id: string; name: string } | null }[];
+  links?: ExamRoomLinkView[];
+  seats: ExamSeatView[];
   _count: { seats: number };
 }
 export const listExamRooms = (academicYearId: string, period?: string) =>
   req<ExamRoomView[]>(`/ops/exam-rooms?academicYearId=${academicYearId}${period ? `&period=${period}` : ''}`);
-export const createExamRoom = (dto: { name: string; period: string; academicYearId: string; capacity?: number; examId?: string }) =>
+export const createExamRoom = (dto: { name: string; period: string; academicYearId: string; capacity?: number; examId?: string; prasaranaId?: string }) =>
   req('/ops/exam-rooms', { method: 'POST', json: dto });
-export const updateExamRoom = (id: string, dto: { name?: string; period?: string; capacity?: number; examId?: string | null }) =>
+export const updateExamRoom = (id: string, dto: { name?: string; period?: string; capacity?: number; examId?: string | null; prasaranaId?: string | null }) =>
   req(`/ops/exam-rooms/${id}`, { method: 'PATCH', json: dto });
 export const deleteExamRoom = (id: string) => req(`/ops/exam-rooms/${id}`, { method: 'DELETE' });
 export const removeExamSeat = (seatId: string) => req(`/ops/exam-seats/${seatId}`, { method: 'DELETE' });
-export const assignClassToRoom = (roomId: string, classId: string) =>
-  req<{ added: number; skipped: number }>(`/ops/exam-rooms/${roomId}/assign-class`, { method: 'POST', json: { classId } });
-export const getExamCards = (roomId: string) =>
-  req<{ room: ExamRoomView & { academicYear: AcademicYear }; school: { name: string; logoUrl?: string | null; npsn?: string | null } | null }>(`/ops/exam-rooms/${roomId}/cards`);
+export const addRoomLink = (roomId: string, dto: { examId: string; sessionLabel?: string; startsAt?: string; endsAt?: string }) =>
+  req<ExamRoomLinkView>(`/ops/exam-rooms/${roomId}/links`, { method: 'POST', json: dto });
+export const removeRoomLink = (linkId: string) => req(`/ops/exam-room-links/${linkId}`, { method: 'DELETE' });
+export const assignClassToRoom = (roomId: string, classId: string, linkId?: string) =>
+  req<{ added: number; skipped: number }>(`/ops/exam-rooms/${roomId}/assign-class`, { method: 'POST', json: { classId, linkId } });
+export const getExamCards = (roomId: string, linkId?: string) =>
+  req<{
+    room: ExamRoomView & { academicYear: AcademicYear };
+    link?: ExamRoomLinkView | null;
+    credentials?: Record<string, string>;
+    school: { name: string; logoUrl?: string | null; npsn?: string | null } | null;
+  }>(`/ops/exam-rooms/${roomId}/cards${linkId ? `?linkId=${linkId}` : ''}`);
 
 // ---- US-1 / US-2: calon peserta ujian ----
 export interface UsCandidate {

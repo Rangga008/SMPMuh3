@@ -1,22 +1,30 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { Field, Input, Select } from '@smpmuh3/ui';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Badge, Field, Input, Select } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { PageTitle, Widget } from '@/components/widgets';
 import { DataTable } from '@/components/data-table';
-import { getAttendanceRecap, getClassSubjectStats, getGradeLedger } from '@/lib/api-ops';
+import {
+  examResults, getAttendanceRecap, getClassSubjectStats, getGradeLedger, listExams,
+  type ExamView,
+} from '@/lib/api-ops';
 import { listAcademicYears, listClasses, type AcademicYear, type ClassView } from '@/lib/api';
 
-type Tab = 'ledger' | 'stats' | 'absen';
+type Tab = 'ledger' | 'ujian' | 'stats' | 'absen';
+const GRADES = [7, 8, 9];
 
 export default function LedgerPage() {
   const [years, setYears] = useState<AcademicYear[]>([]);
   const [classes, setClasses] = useState<ClassView[]>([]);
+  const [exams, setExams] = useState<ExamView[]>([]);
   const [yearId, setYearId] = useState('');
+  const [grade, setGrade] = useState<number | ''>('');
   const [classId, setClassId] = useState('');
+  const [examId, setExamId] = useState('');
   const [tab, setTab] = useState<Tab>('ledger');
   const [ledger, setLedger] = useState<Awaited<ReturnType<typeof getGradeLedger>> | null>(null);
+  const [ujian, setUjian] = useState<Awaited<ReturnType<typeof examResults>> | null>(null);
   const [stats, setStats] = useState<Awaited<ReturnType<typeof getClassSubjectStats>>>([]);
   const [recap, setRecap] = useState<Awaited<ReturnType<typeof getAttendanceRecap>> | null>(null);
   const [from, setFrom] = useState(new Date().toISOString().slice(0, 8) + '01');
@@ -30,49 +38,91 @@ export default function LedgerPage() {
       if (a) setYearId(a.id);
     });
   }, []);
+
   useEffect(() => {
     if (!yearId) return;
-    listClasses(yearId).then((cs) => { setClasses(cs); if (cs[0]) setClassId((c) => c || cs[0]!.id); });
+    listClasses(yearId).then((cs) => {
+      setClasses(cs);
+      setClassId((c) => (cs.some((x) => x.id === c) ? c : cs[0]?.id ?? ''));
+    });
+    listExams(yearId).then(setExams).catch(() => setExams([]));
   }, [yearId]);
 
+  const classOptions = useMemo(
+    () => classes.filter((c) => (grade ? c.gradeLevel === grade : true)),
+    [classes, grade],
+  );
+  // Ujian yang mencakup kelas terpilih — kelas kosong = semua ujian jenjang/tahun ini.
+  const examOptions = useMemo(
+    () => exams.filter((x) => !classId || x.classIds.includes(classId)),
+    [exams, classId],
+  );
+
+  useEffect(() => {
+    if (classOptions.length && !classOptions.some((c) => c.id === classId)) {
+      setClassId(classOptions[0]!.id);
+    }
+  }, [classOptions, classId]);
+
   const load = useCallback(() => {
-    if (!classId || !yearId) return;
-    getGradeLedger(classId, yearId).then(setLedger).catch(() => setError('Gagal memuat ledger.'));
-    getClassSubjectStats(classId, yearId).then(setStats).catch(() => {});
-    getAttendanceRecap(classId, from, to).then(setRecap).catch(() => {});
-  }, [classId, yearId, from, to]);
+    if (!yearId) return;
+    if (classId) {
+      getGradeLedger(classId, yearId).then(setLedger).catch(() => setError('Gagal memuat ledger.'));
+      getClassSubjectStats(classId, yearId).then(setStats).catch(() => {});
+      getAttendanceRecap(classId, from, to).then(setRecap).catch(() => {});
+    }
+    if (examId) {
+      examResults(examId, classId || undefined).then(setUjian).catch(() => setUjian(null));
+    } else {
+      setUjian(null);
+    }
+  }, [classId, yearId, examId, from, to]);
   useEffect(load, [load]);
 
   return (
     <Shell>
-      <PageTitle title="Ledger & Rekap Kelas" subtitle="Daftar nilai per siswa per mapel, statistik per mapel, dan rekap kehadiran." />
+      <PageTitle title="Ledger & Rekap Kelas" subtitle="Pilih jenjang → kelas → ujian: daftar nilai per asesmen, nilai ujian CBT, statistik mapel, dan rekap kehadiran." />
       {error ? <p className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p> : null}
 
       <div className="mb-4 flex flex-wrap items-end gap-3 rounded-2xl border border-sand-200 bg-white p-4 shadow-card">
         <Field label="Tahun Ajaran">
-          <Select value={yearId} onChange={(e) => { setYearId(e.target.value); setClassId(''); }}>
+          <Select value={yearId} onChange={(e) => { setYearId(e.target.value); setClassId(''); setExamId(''); }}>
             {years.map((y) => <option key={y.id} value={y.id}>{y.name}{y.isActive ? ' (aktif)' : ''}</option>)}
           </Select>
         </Field>
+        <Field label="Jenjang">
+          <Select value={grade} onChange={(e) => setGrade(e.target.value ? Number(e.target.value) : '')}>
+            <option value="">Semua</option>
+            {GRADES.map((g) => <option key={g} value={g}>Kelas {g}</option>)}
+          </Select>
+        </Field>
         <Field label="Kelas">
-          <Select value={classId} onChange={(e) => setClassId(e.target.value)}>
-            {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          <Select value={classId} onChange={(e) => { setClassId(e.target.value); setExamId(''); }}>
+            {classOptions.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </Select>
+        </Field>
+        <Field label="Ujian (khusus tab Nilai Ujian)">
+          <Select value={examId} onChange={(e) => { setExamId(e.target.value); if (e.target.value) setTab('ujian'); }}>
+            <option value="">— pilih ujian —</option>
+            {examOptions.map((x) => (
+              <option key={x.id} value={x.id}>{x.title} · {x.code} · {x.assessment.subject.name}</option>
+            ))}
           </Select>
         </Field>
         <Field label="Dari"><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
         <Field label="Sampai"><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></Field>
         <div className="flex gap-2">
-          {(['ledger', 'stats', 'absen'] as const).map((t) => (
+          {(['ledger', 'ujian', 'stats', 'absen'] as const).map((t) => (
             <button key={t} onClick={() => setTab(t)}
               className={`rounded-xl px-3 py-2 text-sm font-bold ${tab === t ? 'bg-primary-700 text-white' : 'bg-sand-100 text-sand-600'}`}>
-              {t === 'ledger' ? 'Daftar Nilai' : t === 'stats' ? 'Statistik Mapel' : 'Rekap Absen'}
+              {t === 'ledger' ? 'Daftar Nilai' : t === 'ujian' ? 'Nilai Ujian' : t === 'stats' ? 'Statistik Mapel' : 'Rekap Absen'}
             </button>
           ))}
         </div>
       </div>
 
       {tab === 'ledger' && ledger && (
-        <Widget title={`Daftar Nilai — ${ledger.class.name}`}>
+        <Widget title={`Daftar Nilai — ${ledger.class.name}`} subtitle="Nilai akhir per mapel (gabungan semua asesmen).">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
@@ -96,6 +146,42 @@ export default function LedgerPage() {
               </tbody>
             </table>
           </div>
+        </Widget>
+      )}
+
+      {tab === 'ujian' && (
+        <Widget
+          title={ujian ? `Nilai Ujian — ${ujian.exam.title}` : 'Nilai Ujian'}
+          subtitle={examId ? 'Hasil pengerjaan ujian CBT per siswa (skor mentah & nilai akhir).' : 'Pilih ujian di filter atas.'}
+        >
+          {!examId ? (
+            <p className="px-5 py-6 text-sm text-sand-400">Pilih ujian CBT dari dropdown <b>Ujian</b> di atas untuk melihat daftar nilai.</p>
+          ) : !ujian || ujian.classes.every((c) => c.students.length === 0) ? (
+            <p className="px-5 py-6 text-sm text-sand-400">Belum ada hasil untuk ujian ini{ujian ? '' : ' / ujian tidak ditemukan'}.</p>
+          ) : (
+            ujian.classes.map((c) => (
+              <div key={c.classId} className="border-b border-sand-100 last:border-0">
+                <p className="bg-sand-50 px-5 py-2 text-xs font-bold uppercase tracking-wide text-sand-600">
+                  Kelas {c.className} · Kelas {c.gradeLevel}
+                </p>
+                <DataTable head={['NIS', 'Siswa', 'Status', 'Skor', 'Nilai Akhir']}>
+                  {c.students.map((s) => (
+                    <tr key={s.studentId}>
+                      <td className="px-5 py-2.5 text-sand-500">{s.nis ?? '—'}</td>
+                      <td className="px-5 py-2.5 font-medium text-sand-900">{s.name}</td>
+                      <td className="px-5 py-2.5">
+                        <Badge tone={s.status === 'SUBMITTED' ? 'primary' : s.status === 'IN_PROGRESS' ? 'accent' : 'neutral'}>
+                          {s.status === 'SUBMITTED' ? 'Selesai' : s.status === 'IN_PROGRESS' ? 'Mengerjakan' : 'Belum'}
+                        </Badge>
+                      </td>
+                      <td className="px-5 py-2.5 font-semibold">{s.score != null ? `${s.score}/${s.maxScore ?? '?'}` : '—'}</td>
+                      <td className="px-5 py-2.5 font-bold text-primary-700">{s.gradeScore ?? '—'}</td>
+                    </tr>
+                  ))}
+                </DataTable>
+              </div>
+            ))
+          )}
         </Widget>
       )}
 

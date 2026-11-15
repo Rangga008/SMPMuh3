@@ -16,10 +16,12 @@ import {
   type AcademicYear,
   type ClassView,
 } from '@/lib/api';
+import { listPrasaranas, type Prasarana } from '@/lib/api-ops';
 
 export default function AcademicPage() {
   const [year, setYear] = useState<AcademicYear | null>(null);
   const [classes, setClasses] = useState<ClassView[]>([]);
+  const [rooms, setRooms] = useState<Prasarana[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -40,6 +42,7 @@ export default function AcademicPage() {
         return refresh(active?.id);
       })
       .catch(() => setError('Gagal memuat data kurikulum.'));
+    listPrasaranas().then(setRooms).catch(() => {});
   }, [refresh]);
 
   async function run(fn: () => Promise<unknown>, ok: string, form?: HTMLFormElement) {
@@ -89,6 +92,7 @@ export default function AcademicPage() {
                   <p className="text-xs text-sand-500">
                     Kelas {c.gradeLevel} · {c._count?.enrollments ?? 0} siswa
                     {c.homeroom ? ` · Wali: ${c.homeroom.name}` : ''}
+                    {c.prasarana ? ` · 🏫 ${c.prasarana.name}` : ''}
                   </p>
                 </div>
                 {canManage ? (
@@ -143,6 +147,7 @@ export default function AcademicPage() {
                   name: String(f.get('name')),
                   gradeLevel: Number(f.get('gradeLevel')),
                   academicYearId: year?.id,
+                  ...(String(f.get('prasaranaId') ?? '') ? { prasaranaId: String(f.get('prasaranaId')) } : {}),
                 }),
               'Rombel ditambahkan.',
             ).then((ok) => ok && setModal(false));
@@ -155,6 +160,12 @@ export default function AcademicPage() {
               <option value="7">7</option>
               <option value="8">8</option>
               <option value="9">9</option>
+            </Select>
+          </Field>
+          <Field label="Ruang kelas (Prasarana)">
+            <Select name="prasaranaId" defaultValue="">
+              <option value="">— belum ditentukan —</option>
+              {rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
             </Select>
           </Field>
           <div className="flex justify-end gap-2">
@@ -181,6 +192,7 @@ export default function AcademicPage() {
                   updateClass(editClass.id, {
                     name: String(f.get('name')),
                     gradeLevel: Number(f.get('gradeLevel')),
+                    prasaranaId: String(f.get('prasaranaId') ?? '') || null,
                   }),
                 'Rombel diperbarui.',
               ).then((ok) => ok && setEditClass(null));
@@ -195,6 +207,12 @@ export default function AcademicPage() {
                 <option value="7">7</option>
                 <option value="8">8</option>
                 <option value="9">9</option>
+              </Select>
+            </Field>
+            <Field label="Ruang kelas (Prasarana)">
+              <Select name="prasaranaId" defaultValue={editClass.prasaranaId ?? ''}>
+                <option value="">— belum ditentukan —</option>
+                {rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
               </Select>
             </Field>
             <div className="flex justify-end gap-2">

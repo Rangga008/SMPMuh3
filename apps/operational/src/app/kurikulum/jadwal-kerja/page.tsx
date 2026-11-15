@@ -2,12 +2,14 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Button, Field, Input, Modal } from '@smpmuh3/ui';
+import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { useConfirm } from '@/components/confirm-dialog';
 import { DataTable } from '@/components/data-table';
 import { RowBtn } from '@/components/row-btn';
+import { FilePick } from '@/components/file-pick';
 import { PageTitle, Widget } from '@/components/widgets';
+import { useFileViewer } from '@/components/file-viewer';
 import { PERMISSIONS } from '@smpmuh3/types';
 import { usePermission } from '@/lib/use-permission';
 import {
@@ -20,6 +22,10 @@ import {
   type AttendanceSettings,
   type WorkShift,
 } from '@/lib/api';
+import { listPolicies, listUniforms, uploadPolicy, upsertUniform } from '@/lib/api-ops';
+
+const DAYS_FULL = ['', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
+const POLICY_KINDS = ['TATA_TERTIB_SISWA', 'TATA_TERTIB_PTK', 'SERAGAM', 'FORM_MUTASI_MASUK', 'FORM_MUTASI_KELUAR', 'LAINNYA'];
 
 const minToHHMM = (m: number) =>
   `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
@@ -161,13 +167,19 @@ export default function JadwalKerjaPage() {
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [shiftModal, setShiftModal] = useState<WorkShift | 'new' | null>(null);
+  const [polModal, setPolModal] = useState(false);
+  const [policies, setPolicies] = useState<Awaited<ReturnType<typeof listPolicies>>>([]);
+  const [uniforms, setUniforms] = useState<Awaited<ReturnType<typeof listUniforms>>>([]);
   const [mapLat, setMapLat] = useState<number | null>(null);
   const [mapLng, setMapLng] = useState<number | null>(null);
   const [mapRadius, setMapRadius] = useState(200);
   const canManage = usePermission(PERMISSIONS.ACADEMIC_MANAGE);
+  const fv = useFileViewer();
 
   const load = useCallback(() => {
     listWorkShifts().then(setShifts).catch((e) => setError(e.message));
+    listPolicies().then(setPolicies).catch(() => {});
+    listUniforms().then(setUniforms).catch(() => {});
     getAttendanceSettings()
       .then((s) => {
         setSettings(s);
@@ -363,6 +375,72 @@ export default function JadwalKerjaPage() {
         </p>
       </Widget>
 
+      <div className="mt-5 grid gap-5 lg:grid-cols-2">
+        {/* Jadwal seragam PTK — pindahan dari Dokumen agar sekalian dengan jadwal kerja */}
+        <Widget title="Jadwal Seragam PTK" subtitle="Pakaian dinas per hari — terlihat semua pegawai.">
+          <div className="divide-y divide-sand-100">
+            {[1, 2, 3, 4, 5, 6].map((d) => {
+              const u = uniforms.find((x) => x.day === d);
+              return (
+                <div key={d} className="flex items-center gap-3 px-5 py-2.5">
+                  <span className="w-20 text-sm font-bold text-sand-700">{DAYS_FULL[d]}</span>
+                  {canManage ? (
+                    <Input
+                      defaultValue={u?.name ?? ''}
+                      placeholder="— belum diatur —"
+                      onBlur={(e) => {
+                        const v = e.target.value.trim();
+                        if (v && v !== u?.name) void run(() => upsertUniform({ day: d, name: v }), () => `Seragam ${DAYS_FULL[d]} diatur.`);
+                      }}
+                      aria-label={`Seragam ${DAYS_FULL[d]}`}
+                    />
+                  ) : (
+                    <span className="text-sm text-sand-700">{u?.name ?? <span className="text-sand-400">— belum diatur —</span>}</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </Widget>
+
+        {/* Tata tertib & template — dipindah ke sini supaya satu tempat atur jadwal/peraturan */}
+        <Widget title="Tata Tertib & Template" subtitle="Tata tertib siswa/PTK, form mutasi, template dokumen."
+          action={canManage ? <Button size="sm" variant="outline" onClick={() => setPolModal(true)}>+ Upload</Button> : undefined}>
+          <div className="divide-y divide-sand-100">
+            {policies.length === 0 ? <p className="px-5 py-4 text-sm text-sand-400">Belum ada dokumen.</p> : policies.map((p) => (
+              <div key={p.id} className="flex items-center justify-between px-5 py-3">
+                <div>
+                  <p className="text-sm font-bold text-sand-900">{p.title}</p>
+                  <Badge tone="neutral">{p.kind}</Badge>
+                </div>
+                <span className="flex items-center gap-2">
+                  <span className="max-w-36 truncate text-xs text-sand-500" title={p.fileName ?? undefined}>{p.fileName}</span>
+                  <RowBtn type="button" onClick={() => fv.open({ path: `/ops/policies/${p.id}/file`, name: p.fileName ?? 'dokumen' })}>Lihat</RowBtn>
+                </span>
+              </div>
+            ))}
+          </div>
+        </Widget>
+      </div>
+
+      <Modal open={polModal} onClose={() => setPolModal(false)} title="Upload Tata Tertib / Template">
+        <form className="grid gap-4" onSubmit={async (e) => {
+          e.preventDefault();
+          const fd = new FormData(e.currentTarget);
+          const f = fd.get('file') as File;
+          if (!f?.size) return;
+          const r = await run(() => uploadPolicy(String(fd.get('kind')), String(fd.get('title') || f.name), f), () => 'Dokumen terupload.');
+          if (r !== undefined) { setPolModal(false); load(); }
+        }}>
+          <Field label="Jenis">
+            <Select name="kind">{POLICY_KINDS.map((k) => <option key={k} value={k}>{k.replaceAll('_', ' ')}</option>)}</Select>
+          </Field>
+          <Field label="Judul"><Input name="title" placeholder="Tata Tertib Siswa 2026" /></Field>
+          <Field label="File"><FilePick name="file" required accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xlsx,.xls" /></Field>
+          <div className="flex justify-end gap-2"><Button type="submit" disabled={busy}>Upload</Button></div>
+        </form>
+      </Modal>
+
       <Modal open={shiftModal !== null} onClose={() => setShiftModal(null)} title={shiftModal === 'new' ? 'Tambah Shift' : 'Edit Shift'}>
         <form onSubmit={onSaveShift} className="grid gap-3">
           <Field label="Nama shift">
@@ -391,6 +469,7 @@ export default function JadwalKerjaPage() {
         </form>
       </Modal>
       {dialog}
+      {fv.viewer}
     </Shell>
   );
 }

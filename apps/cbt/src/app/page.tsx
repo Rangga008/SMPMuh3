@@ -18,11 +18,15 @@ export default function CbtEntryPage() {
     setBusy(true);
     const f = new FormData(e.currentTarget);
     try {
-      const s = await enterExam(String(f.get('nis')).trim(), String(f.get('code')).trim());
+      const s = await enterExam(
+        String(f.get('nis')).trim(),
+        String(f.get('code')).trim(),
+        String(f.get('password')).trim(),
+      );
       sessionStorage.setItem('cbt.token', s.token);
       router.push(`/${s.token}`);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Gagal masuk — periksa NIS & kode.');
+      setError(err instanceof ApiError ? err.message : 'Gagal masuk — periksa NIS, kode & password.');
     } finally {
       setBusy(false);
     }
@@ -31,7 +35,7 @@ export default function CbtEntryPage() {
   return (
     <ExamShell
       title="Ujian CBT"
-      subtitle="Masuk dengan NIS dan kode ujian dari pengawas"
+      subtitle="Masuk dengan NIS, kode ujian & password dari kartu peserta"
     >
       <form onSubmit={onSubmit} className="space-y-4">
         <Field label="NIS (Nomor Induk Siswa)">
@@ -39,6 +43,9 @@ export default function CbtEntryPage() {
         </Field>
         <Field label="Kode Ujian">
           <Input name="code" required autoComplete="off" placeholder="XXXX-XXXX" className="font-mono tracking-widest uppercase" />
+        </Field>
+        <Field label="Password (di kartu peserta)">
+          <Input name="password" required autoComplete="off" placeholder="KPXXXX" className="font-mono tracking-widest uppercase" />
         </Field>
         {error ? (
           <p role="alert" className="rounded-xl bg-red-50 px-4 py-2.5 text-sm font-medium text-red-700">

@@ -98,6 +98,8 @@ export class ExamRoomDto {
   @IsUUID() academicYearId!: string;
   @IsOptional() @IsInt() @Min(1) capacity?: number;
   @IsOptional() @IsUUID() examId?: string;
+  /** Ruangan dari data Sarpras/Prasarana — sumber nama fisik ruang. */
+  @IsOptional() @IsUUID() prasaranaId?: string;
 }
 
 export class ExamSeatDto {
@@ -111,6 +113,7 @@ export class ExamRoomUpdateDto {
   @IsOptional() @IsString() @IsNotEmpty() period?: string;
   @IsOptional() @IsInt() @Min(1) capacity?: number;
   @IsOptional() @IsUUID() examId?: string | null;
+  @IsOptional() @IsUUID() prasaranaId?: string | null;
 }
 
 export class UniformDayDto {

@@ -60,8 +60,8 @@ export interface CbtResult {
   score: number | null; maxScore: number | null;
 }
 
-export const enterExam = (nis: string, code: string) =>
-  pub<CbtSession>('/enter', { method: 'POST', json: { nis, code } });
+export const enterExam = (nis: string, code: string, password: string) =>
+  pub<CbtSession>('/enter', { method: 'POST', json: { nis, code, password } });
 
 export const getSession = (token: string) => pub<CbtSession>(`/session/${token}`);
 export const getPaper = (token: string) => pub<CbtPaper>(`/paper/${token}`);

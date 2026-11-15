@@ -1324,6 +1324,7 @@ model Student {
   answers      StudentAnswer[]
   examSeats    ExamSeat[]
   examAttempts ExamAttempt[]
+  examCredentials ExamCredential[]
   ekskulMemberships ExtracurricularMember[]
 
   @@index([status, name])
@@ -1430,11 +1431,13 @@ model Class {
   gradeLevel     Int     @map("grade_level")
   academicYearId String  @map("academic_year_id") @db.Uuid
   homeroomId     String? @map("homeroom_id") @db.Uuid
+  prasaranaId    String? @map("prasarana_id") @db.Uuid // ruang rombel — sinkron Sarpras/Prasarana
   capacity       Int?    @default(32)
   createdAt      DateTime @default(now()) @map("created_at")
 
   academicYear AcademicYear        @relation(fields: [academicYearId], references: [id])
   homeroom     Employee?           @relation("Homeroom", fields: [homeroomId], references: [id], onDelete: SetNull)
+  prasarana    Prasarana?          @relation("ClassRoom", fields: [prasaranaId], references: [id], onDelete: SetNull)
   enrollments  Enrollment[]
   invoices     Invoice[]
   assignments  TeachingAssignment[]
@@ -1486,9 +1489,11 @@ model ScheduleEntry {
   day          Int     @map("day_of_week") // 1=Senin … 6=Sabtu
   startMinute  Int     @map("start_minute") // menit sejak 00:00
   endMinute    Int     @map("end_minute")
-  room         String?
+  room         String? // label teks lama — tetap sebagai fallback tampilan
+  prasaranaId  String? @map("prasarana_id") @db.Uuid // ruang dari data Prasarana
 
   assignment TeachingAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  prasarana  Prasarana?         @relation("ScheduleRoom", fields: [prasaranaId], references: [id], onDelete: SetNull)
 
   @@index([assignmentId, day])
   @@map("schedule_entries")
@@ -1971,9 +1976,27 @@ model Exam {
   attempts   ExamAttempt[]
   sessions   ExamSession[]
   rooms      ExamRoom[]
+  roomLinks  ExamRoomExam[]
+  credentials ExamCredential[]
 
   @@index([academicYearId, status])
   @@map("exams")
+}
+
+/** Password login CBT per siswa per ujian — dicetak di kartu peserta (NIS + kode ujian + password). */
+model ExamCredential {
+  id        String   @id @default(uuid()) @db.Uuid
+  examId    String   @map("exam_id") @db.Uuid
+  studentId String   @map("student_id") @db.Uuid
+  password  String // mis. "KP7D2X" — tanpa karakter ambigu (0/O, 1/I)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  exam    Exam    @relation(fields: [examId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([examId, studentId])
+  @@index([examId])
+  @@map("exam_credentials")
 }
 
 /** Sesi ujian per kelompok rombel — mis. 7A–7C sesi 1 (08.00–09.30),
@@ -2192,30 +2215,54 @@ model ExamRoom {
   period         String // label periode ujian, e.g. "US 2026" / "PTS Ganjil"
   academicYearId String  @map("academic_year_id") @db.Uuid
   capacity       Int     @default(24)
-  examId         String?  @map("exam_id") @db.Uuid // tautan ke ujian CBT — kartu cetak NIS+kode ujian
+  examId         String?  @map("exam_id") @db.Uuid // legacy: tautan tunggal (digantikan links)
+  prasaranaId    String?  @map("prasarana_id") @db.Uuid // ruangan dari data Sarpras/Prasarana
   createdAt      DateTime @default(now()) @map("created_at")
 
-  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
-  exam         Exam?        @relation(fields: [examId], references: [id], onDelete: SetNull)
+  academicYear AcademicYear  @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  exam         Exam?         @relation(fields: [examId], references: [id], onDelete: SetNull)
+  prasarana    Prasarana?    @relation(fields: [prasaranaId], references: [id], onDelete: SetNull)
   seats        ExamSeat[]
+  links        ExamRoomExam[]
 
   @@unique([name, period, academicYearId])
   @@map("exam_rooms")
 }
 
+/** Sesi ujian di satu ruang — ruang bisa host beberapa ujian/kelas di waktu berbeda; satu ujian bisa pakai beberapa ruang. */
+model ExamRoomExam {
+  id           String    @id @default(uuid()) @db.Uuid
+  roomId       String    @map("room_id") @db.Uuid
+  examId       String    @map("exam_id") @db.Uuid
+  sessionLabel String?   @map("session_label") // "Sesi 1", "Pagi", dst — opsional
+  startsAt     DateTime? @map("starts_at")     // jendela waktu sesi di ruang ini
+  endsAt       DateTime? @map("ends_at")
+
+  room  ExamRoom   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  exam  Exam       @relation(fields: [examId], references: [id], onDelete: Cascade)
+  seats ExamSeat[]
+
+  @@unique([roomId, examId])
+  @@index([examId])
+  @@map("exam_room_exams")
+}
+
 model ExamSeat {
   id        String  @id @default(uuid()) @db.Uuid
   roomId    String  @map("room_id") @db.Uuid
+  linkId    String? @map("link_id") @db.Uuid // sesi/ujian yang diikuti di ruang ini
   studentId String  @map("student_id") @db.Uuid
   classId   String? @map("class_id") @db.Uuid
   seatNo    Int?    @map("seat_no")
   code      String? @unique // kode peserta ujian — tercetak di kartu, dipakai masuk CBT
 
-  room    ExamRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  student Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  class   Class?   @relation(fields: [classId], references: [id], onDelete: SetNull)
+  room    ExamRoom      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  link    ExamRoomExam? @relation(fields: [linkId], references: [id], onDelete: Cascade)
+  student Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  class   Class?        @relation(fields: [classId], references: [id], onDelete: SetNull)
 
-  @@unique([roomId, studentId])
+  @@unique([linkId, studentId])
+  @@index([roomId, studentId])
   @@index([classId])
   @@map("exam_seats")
 }
@@ -2263,6 +2310,9 @@ model Prasarana {
   width     Float?    // lebar (meter)
   ownership String?   // status kepemilikan — Milik / Sewa / Hibah / dst
   isActive  Boolean   @default(true) @map("is_active")
+  examRooms    ExamRoom[]
+  classes      Class[]         @relation("ClassRoom")
+  schedules    ScheduleEntry[] @relation("ScheduleRoom")
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
 

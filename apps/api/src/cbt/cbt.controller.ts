@@ -160,6 +160,13 @@ export class CbtController {
     return this.cbt.importExamQuestions(id, file, u);
   }
 
+  /** Acak ulang password login satu siswa — cetak ulang kartu setelah ini. */
+  @Post('exams/:id/credentials/:studentId/regen')
+  @RequirePermission(PERMISSIONS.ACADEMIC_READ)
+  regenCredential(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Param('studentId', ParseUUIDPipe) studentId: string) {
+    return this.cbt.regenCredential(id, studentId, u);
+  }
+
   /** Bacaan soal (passthrough ke asesmen terkait). */
   @Get('exams/:id/passages')
   @RequirePermission(PERMISSIONS.ACADEMIC_READ)

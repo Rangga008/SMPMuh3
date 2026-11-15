@@ -14,20 +14,24 @@ import { PERMISSIONS } from '@smpmuh3/types';
 import {
   getFinanceSummary,
   listAcademicYears,
+  listAssignments,
   listClasses,
   listEmployees,
   listLetters,
   listMutations,
   listNotifications,
+  listSchedules,
   listStudents,
   listSubjects,
   me,
+  myEmployee,
   spmbSummary,
   type AcademicYear,
   type FinanceSummary,
+  type ScheduleView,
   type SpmbSummary,
 } from '@/lib/api';
-import { listArchives } from '@/lib/api-ops';
+import { listArchives, listCollections, listUniforms } from '@/lib/api-ops';
 
 const rp = (n: number) => `Rp ${n.toLocaleString('id-ID')}`;
 
@@ -50,6 +54,10 @@ export default function DashboardPage() {
   const [fin, setFin] = useState<FinanceSummary | null>(null);
   const [tu, setTu] = useState<{ masuk: number; keluar: number; mutasi: number; arsip: number } | null>(null);
   const [akd, setAkd] = useState<{ rombel: number; mapel: number } | null>(null);
+  const [emp, setEmp] = useState<{ id: string; name: string } | null>(null);
+  const [myDay, setMyDay] = useState<ScheduleView[]>([]);
+  const [uniformToday, setUniformToday] = useState<string | null>(null);
+  const [pendingCols, setPendingCols] = useState(0);
 
   const can = (p: string) => (perms ?? []).includes(p);
 
@@ -98,6 +106,26 @@ export default function DashboardPage() {
         .then(([c, s]) => setAkd({ rombel: c.length, mapel: s.length }))
         .catch(() => undefined);
     }
+    // Widget personal (guru/tendik): jadwal mengajar hari ini + seragam + pengumpulan tertunda.
+    myEmployee().then(async (e) => {
+      if (!e) return;
+      setEmp({ id: e.id, name: e.name });
+      const today = new Date().getDay() || 7; // 1=Sen…7=Min; jadwal pakai 1..6
+      const [asg, sch, uni] = await Promise.all([
+        listAssignments().catch(() => []),
+        listSchedules().catch(() => []),
+        listUniforms().catch(() => []),
+      ]);
+      const mine = new Set(asg.filter((a) => a.employee.id === e.id).map((a) => a.id));
+      setMyDay(sch.filter((s) => mine.has(s.assignment.id) && s.day === today));
+      setUniformToday(uni.find((u) => u.day === today)?.name ?? null);
+      listAcademicYears().then(async (ys) => {
+        const y = ys.find((x) => x.isActive);
+        if (!y) return;
+        const cols = await listCollections(y.id).catch(() => []);
+        setPendingCols(cols.reduce((n, c) => n + c.items.filter((i) => i.employee.id === e.id && !i.submittedAt).length, 0));
+      }).catch(() => {});
+    }).catch(() => {});
     setErrors(errs);
   }, [perms]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -136,6 +164,38 @@ export default function DashboardPage() {
 
       <div className="mt-5 grid gap-5 lg:grid-cols-3">
         <div className="space-y-5 lg:col-span-2">
+        {emp ? (
+          <Widget title={`Jadwal Saya — ${emp.name}`} subtitle="Info hari ini untuk Anda."
+            action={<Link href="/kurikulum/jadwal-kelas" className="text-xs font-semibold text-primary-700 hover:underline">Jadwal Kelas →</Link>}>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-xl bg-primary-50 p-3">
+                <p className="text-xs font-semibold text-primary-700">MENGAJAR HARI INI</p>
+                {myDay.length === 0 ? (
+                  <p className="mt-1 text-sm text-sand-600">Tidak ada jadwal</p>
+                ) : (
+                  <ul className="mt-1 space-y-1 text-sm font-semibold text-sand-900">
+                    {myDay.slice(0, 4).map((s) => (
+                      <li key={s.id}>
+                        {`${String(Math.floor(s.startMinute / 60)).padStart(2, '0')}.${String(s.startMinute % 60).padStart(2, '0')}`} {s.assignment.subject.code} · {s.assignment.class.name}
+                        {(s.prasarana?.name ?? s.room) ? <span className="text-xs font-normal text-sand-500"> · {s.prasarana?.name ?? s.room}</span> : null}
+                      </li>
+                    ))}
+                    {myDay.length > 4 ? <li className="text-xs font-normal text-sand-500">+{myDay.length - 4} lainnya</li> : null}
+                  </ul>
+                )}
+              </div>
+              <div className="rounded-xl bg-sand-50 p-3">
+                <p className="text-xs font-semibold text-sand-500">SERAGAM HARI INI</p>
+                <p className="mt-1 text-sm font-bold text-sand-900">{uniformToday ?? '—'}</p>
+              </div>
+              <div className={`rounded-xl p-3 ${pendingCols ? 'bg-amber-50' : 'bg-sand-50'}`}>
+                <p className="text-xs font-semibold text-sand-500">PENGUMPULAN TERTUNDA</p>
+                <p className={`mt-1 text-lg font-bold ${pendingCols ? 'text-amber-800' : 'text-sand-900'}`}>{pendingCols}</p>
+                {pendingCols ? <Link href="/kurikulum/dokumen" className="text-xs font-semibold text-primary-700 hover:underline">Kumpulkan →</Link> : null}
+              </div>
+            </div>
+          </Widget>
+        ) : null}
         {can(PERMISSIONS.FINANCE_READ) ? (
           <Widget title="Ringkasan Keuangan" action={<Link href="/keuangan" className="text-xs font-semibold text-primary-700 hover:underline">Buka Keuangan →</Link>}>
             {fin ? (

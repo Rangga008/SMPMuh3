@@ -460,10 +460,20 @@ export class OpsController {
   assignSeat(@Param('id') id: string, @Body() dto: ExamSeatDto) {
     return this.ops.assignSeat(id, dto);
   }
+  @Post('exam-rooms/:id/links')
+  @RequirePermission(PERMISSIONS.TATAUSAHA_MANAGE)
+  addLink(@Param('id') id: string, @Body() dto: { examId: string; sessionLabel?: string; startsAt?: string; endsAt?: string }) {
+    return this.ops.addRoomLink(id, dto);
+  }
+  @Delete('exam-room-links/:linkId')
+  @RequirePermission(PERMISSIONS.TATAUSAHA_MANAGE)
+  removeLink(@Param('linkId') linkId: string) {
+    return this.ops.removeRoomLink(linkId);
+  }
   @Post('exam-rooms/:id/assign-class')
   @RequirePermission(PERMISSIONS.TATAUSAHA_MANAGE)
-  assignClass(@Param('id') id: string, @Body('classId') classId: string) {
-    return this.ops.assignClassToRoom(id, classId);
+  assignClass(@Param('id') id: string, @Body('classId') classId: string, @Body('linkId') linkId?: string) {
+    return this.ops.assignClassToRoom(id, classId, linkId);
   }
   @Patch('exam-rooms/:id')
   @RequirePermission(PERMISSIONS.TATAUSAHA_MANAGE)
@@ -482,8 +492,8 @@ export class OpsController {
   }
   @Get('exam-rooms/:id/cards')
   @RequirePermission(PERMISSIONS.TATAUSAHA_READ)
-  examCards(@Param('id') id: string) {
-    return this.ops.examCards(id);
+  examCards(@Param('id') id: string, @Query('linkId') linkId?: string) {
+    return this.ops.examCards(id, linkId);
   }
 
   /** Data calon peserta US-1/US-2 — daftar peserta & rekapitulasi per rombel. */

@@ -71,6 +71,7 @@ export class PayrollService {
 
   async updatePayScale(id: string, dto: UpdatePayScaleDto, actorId: string) {
     const s = await this.prisma.payScale.findUnique({ where: { id } });
+    await this.refreshDraftRuns();
     if (!s) throw new NotFoundException('Golongan tidak ditemukan');
     const u = await this.prisma.payScale.update({
       where: { id },
@@ -94,6 +95,7 @@ export class PayrollService {
     }
     await this.prisma.payScale.delete({ where: { id } });
     await this.audit.log({ actorId, action: 'payroll.payscale.delete', entity: 'pay_scale', entityId: id });
+    await this.refreshDraftRuns();
     return { deleted: true };
   }
 
@@ -129,6 +131,7 @@ export class PayrollService {
       entityId: 'global',
       metadata: JSON.parse(JSON.stringify(dto)) as Record<string, number>,
     });
+    await this.refreshDraftRuns();
     return s;
   }
 
@@ -155,6 +158,7 @@ export class PayrollService {
       include: { payScale: true },
     });
     await this.audit.log({ actorId, action: 'payroll.employee.update', entity: 'employee', entityId: employeeId });
+    await this.refreshDraftRuns();
     return u;
   }
 
@@ -214,6 +218,7 @@ export class PayrollService {
       ),
     );
     await this.audit.log({ actorId, action: 'payroll.attendance.upsert', entity: 'employee_attendance', entityId: date, metadata: { count: entries.length } });
+    await this.refreshDraftRuns();
     return { saved: entries.length };
   }
 
@@ -270,6 +275,7 @@ export class PayrollService {
       data: { key, name: dto.name, period: dto.period, defaultAmount: dto.defaultAmount ?? 0 },
     });
     await this.audit.log({ actorId, action: 'payroll.honortype.create', entity: 'honor_type', entityId: t.id });
+    await this.refreshDraftRuns();
     return t;
   }
 
@@ -286,6 +292,7 @@ export class PayrollService {
       },
     });
     await this.audit.log({ actorId, action: 'payroll.honortype.update', entity: 'honor_type', entityId: id });
+    await this.refreshDraftRuns();
     return u;
   }
 
@@ -294,6 +301,7 @@ export class PayrollService {
     if (used > 0) throw new ConflictException(`Masih dipakai ${used} honor pegawai`);
     await this.prisma.honorType.delete({ where: { id } });
     await this.audit.log({ actorId, action: 'payroll.honortype.delete', entity: 'honor_type', entityId: id });
+    await this.refreshDraftRuns();
     return { deleted: true };
   }
 
@@ -332,6 +340,7 @@ export class PayrollService {
       },
     });
     await this.audit.log({ actorId, action: 'payroll.honor.create', entity: 'employee_honor', entityId: h.id });
+    await this.refreshDraftRuns();
     return h;
   }
 
@@ -351,12 +360,14 @@ export class PayrollService {
       },
     });
     await this.audit.log({ actorId, action: 'payroll.honor.update', entity: 'employee_honor', entityId: id });
+    await this.refreshDraftRuns();
     return u;
   }
 
   async deleteEmployeeHonor(id: string, actorId: string) {
     await this.prisma.employeeHonor.delete({ where: { id } });
     await this.audit.log({ actorId, action: 'payroll.honor.delete', entity: 'employee_honor', entityId: id });
+    await this.refreshDraftRuns();
     return { deleted: true };
   }
 
@@ -379,6 +390,7 @@ export class PayrollService {
       },
     });
     await this.audit.log({ actorId, action: 'payroll.dedtype.create', entity: 'deduction_type', entityId: t.id });
+    await this.refreshDraftRuns();
     return t;
   }
 
@@ -392,6 +404,7 @@ export class PayrollService {
         ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
       },
     });
+    await this.refreshDraftRuns();
     await this.audit.log({ actorId, action: 'payroll.dedtype.update', entity: 'deduction_type', entityId: id });
     return u;
   }
@@ -424,6 +437,7 @@ export class PayrollService {
       },
     });
     await this.audit.log({ actorId, action: 'payroll.deduction.create', entity: 'employee_deduction', entityId: d.id });
+    await this.refreshDraftRuns();
     return d;
   }
 
@@ -436,12 +450,14 @@ export class PayrollService {
         ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
       },
     });
+    await this.refreshDraftRuns();
     await this.audit.log({ actorId, action: 'payroll.deduction.update', entity: 'employee_deduction', entityId: id });
     return u;
   }
 
   async deleteEmployeeDeduction(id: string, actorId: string) {
     await this.prisma.employeeDeduction.delete({ where: { id } });
+    await this.refreshDraftRuns();
     await this.audit.log({ actorId, action: 'payroll.deduction.delete', entity: 'employee_deduction', entityId: id });
     return { deleted: true };
   }
@@ -549,6 +565,7 @@ export class PayrollService {
       return updated;
     });
     await this.audit.log({ actorId, action: 'payroll.loan.update', entity: 'loan', entityId: id });
+    await this.refreshDraftRuns();
     return u;
   }
 
@@ -619,11 +636,13 @@ export class PayrollService {
       },
     });
     await this.audit.log({ actorId, action: 'payroll.boshonor.upsert', entity: 'bos_honor', entityId: h.id });
+    await this.refreshDraftRuns();
     return h;
   }
 
   async deleteBosHonor(id: string, actorId: string) {
     await this.prisma.bosHonor.delete({ where: { id } });
+    await this.refreshDraftRuns();
     await this.audit.log({ actorId, action: 'payroll.boshonor.delete', entity: 'bos_honor', entityId: id });
     return { deleted: true };
   }
@@ -1059,12 +1078,29 @@ export class PayrollService {
     if (run.status !== 'DRAFT') {
       throw new ConflictException(`Status ${run.status} tidak bisa difinalkan`);
     }
-    const u = await this.prisma.payrollRun.update({
-      where: { id },
-      data: { status: 'FINALIZED', finalizedBy: actorId, finalizedAt: new Date() },
+    const u = await this.prisma.$transaction(async (tx) => {
+      // Recompute dulu — pengaturan (honor/potongan/pinjaman/dll) yang diubah
+      // setelah run dibuat harus ikut sebelum nilai dibekukan.
+      await this.computeItems(tx, id);
+      return tx.payrollRun.update({
+        where: { id },
+        data: { status: 'FINALIZED', finalizedBy: actorId, finalizedAt: new Date() },
+      });
     });
     await this.audit.log({ actorId, action: 'payroll.run.finalize', entity: 'payroll_run', entityId: id });
     return u;
+  }
+
+  /** Hitung ulang semua run berstatus DRAFT — dipanggil setiap mutasi pengaturan
+      gaji agar "simpan = langsung terpakai" tanpa menunggu recompute manual. */
+  private async refreshDraftRuns() {
+    const drafts = await this.prisma.payrollRun.findMany({
+      where: { status: 'DRAFT' },
+      select: { id: true },
+    });
+    for (const d of drafts) {
+      await this.prisma.$transaction((tx) => this.computeItems(tx, d.id));
+    }
   }
 
   /** Bayar run: gerakan kas + tx per item + potong pinjaman + catat pensiun. */

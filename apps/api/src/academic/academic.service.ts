@@ -1259,6 +1259,7 @@ export class AcademicService {
       where: academicYearId ? { academicYearId } : {},
       include: {
         homeroom: { select: { name: true } },
+        prasarana: { select: { id: true, name: true } },
         _count: { select: { enrollments: true } },
       },
       orderBy: [{ gradeLevel: 'asc' }, { name: 'asc' }],
@@ -1285,6 +1286,7 @@ export class AcademicService {
         gradeLevel: dto.gradeLevel,
         academicYearId: dto.academicYearId,
         homeroomId: dto.homeroomId ?? null,
+        prasaranaId: dto.prasaranaId ?? null,
         capacity: dto.capacity ?? 32,
       },
     });
@@ -1312,6 +1314,7 @@ export class AcademicService {
         ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
         ...(dto.gradeLevel !== undefined ? { gradeLevel: dto.gradeLevel } : {}),
         ...(dto.homeroomId !== undefined ? { homeroomId: dto.homeroomId } : {}),
+        ...(dto.prasaranaId !== undefined ? { prasaranaId: dto.prasaranaId } : {}),
         ...(dto.capacity !== undefined ? { capacity: dto.capacity } : {}),
       },
     });
@@ -1456,13 +1459,13 @@ export class AcademicService {
     if (dto.endMinute <= dto.startMinute) {
       throw new ConflictException('Jam selesai harus setelah jam mulai');
     }
-    return this.prisma.scheduleEntry.create({ data: { ...dto, room: dto.room ?? null } });
+    return this.prisma.scheduleEntry.create({ data: { ...dto, room: dto.room ?? null, prasaranaId: dto.prasaranaId ?? null } });
   }
 
   /** Ubah entri jadwal — hari/jam/ruangan; assignment tak bisa pindah kelas. */
   async updateScheduleEntry(
     id: string,
-    dto: { day?: number; startMinute?: number; endMinute?: number; room?: string },
+    dto: { day?: number; startMinute?: number; endMinute?: number; room?: string; prasaranaId?: string | null },
     actorId: string,
   ) {
     const existing = await this.prisma.scheduleEntry.findUnique({ where: { id } });
@@ -1479,6 +1482,7 @@ export class AcademicService {
         ...(dto.startMinute !== undefined ? { startMinute: dto.startMinute } : {}),
         ...(dto.endMinute !== undefined ? { endMinute: dto.endMinute } : {}),
         ...(dto.room !== undefined ? { room: dto.room || null } : {}),
+        ...(dto.prasaranaId !== undefined ? { prasaranaId: dto.prasaranaId } : {}),
       },
     });
     await this.audit.log({ actorId, action: 'schedule.update', entity: 'schedule_entry', entityId: id });
@@ -1503,6 +1507,7 @@ export class AcademicService {
             class: { select: { id: true, name: true } },
           },
         },
+        prasarana: { select: { id: true, name: true } },
       },
       orderBy: [{ day: 'asc' }, { startMinute: 'asc' }],
     });
