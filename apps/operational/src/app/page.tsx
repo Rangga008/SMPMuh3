@@ -32,6 +32,7 @@ import {
   type SpmbSummary,
 } from '@/lib/api';
 import { listArchives, listCollections, listUniforms } from '@/lib/api-ops';
+import { KURIKULUM_ROLES } from '@/config/nav';
 
 const rp = (n: number) => `Rp ${n.toLocaleString('id-ID')}`;
 
@@ -51,6 +52,7 @@ export default function DashboardPage() {
   const [employeeCount, setEmployeeCount] = useState<number | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [perms, setPerms] = useState<string[] | null>(null);
+  const [roles, setRoles] = useState<string[]>([]);
   const [fin, setFin] = useState<FinanceSummary | null>(null);
   const [tu, setTu] = useState<{ masuk: number; keluar: number; mutasi: number; arsip: number } | null>(null);
   const [akd, setAkd] = useState<{ rombel: number; mapel: number } | null>(null);
@@ -60,11 +62,12 @@ export default function DashboardPage() {
   const [pendingCols, setPendingCols] = useState(0);
 
   const can = (p: string) => (perms ?? []).includes(p);
+  const inKurikulum = roles.some((r) => KURIKULUM_ROLES.includes(r));
 
   useEffect(() => {
     const errs: string[] = [];
     me()
-      .then((u) => setPerms(u.permissions))
+      .then((u) => { setPerms(u.permissions); setRoles(u.roles); })
       .catch(() => setPerms([]));
     listAcademicYears()
       .then((ys) => setYear(ys.find((y) => y.isActive) ?? null))
@@ -162,6 +165,34 @@ export default function DashboardPage() {
         ) : null}
       </div>
 
+      {/* Aksi utama — absen selalu 1-tap dari beranda untuk guru & tendik */}
+      {emp ? (
+        <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <Link
+            href="/absen"
+            className="flex items-center gap-3 rounded-3xl border border-primary-200 bg-gradient-to-br from-primary-700 to-primary-900 p-4 text-white shadow-card transition-transform active:scale-[0.98]"
+          >
+            <span aria-hidden className="text-2xl">📸</span>
+            <span>
+              <span className="block text-sm font-extrabold">Absen Saya</span>
+              <span className="block text-xs text-primary-200">Selfie + lokasi</span>
+            </span>
+          </Link>
+          {can(PERMISSIONS.ATTENDANCE_READ) ? (
+            <Link
+              href="/absen-kelas"
+              className="flex items-center gap-3 rounded-3xl border border-accent-200 bg-gradient-to-br from-accent-500 to-accent-700 p-4 text-white shadow-card transition-transform active:scale-[0.98]"
+            >
+              <span aria-hidden className="text-2xl">✅</span>
+              <span>
+                <span className="block text-sm font-extrabold">Absen Kelas</span>
+                <span className="block text-xs text-accent-100">Tandai siswa</span>
+              </span>
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
+
       <div className="mt-5 grid gap-5 lg:grid-cols-3">
         <div className="space-y-5 lg:col-span-2">
         {emp ? (
@@ -219,7 +250,7 @@ export default function DashboardPage() {
             ) : <p className="text-sm text-sand-500">Memuat…</p>}
           </Widget>
         ) : null}
-        {can(PERMISSIONS.ACADEMIC_READ) ? (
+        {inKurikulum && can(PERMISSIONS.ACADEMIC_READ) ? (
           <Widget title="Ringkasan Kurikulum" action={<Link href="/kurikulum/jadwal-kelas" className="text-xs font-semibold text-primary-700 hover:underline">Jadwal &amp; Cetak →</Link>}>
             {akd ? (
               <div className="grid gap-3 sm:grid-cols-3">
@@ -291,7 +322,7 @@ export default function DashboardPage() {
               </Link>
             </li>
             ) : null}
-            {can(PERMISSIONS.ACADEMIC_READ) ? (
+            {inKurikulum && can(PERMISSIONS.ACADEMIC_READ) ? (
             <li>
               <Link href="/kurikulum/jadwal-kelas" className="flex items-center justify-between rounded-xl bg-sand-50 px-3.5 py-2.5 text-sand-800 transition-colors hover:bg-primary-50 hover:text-primary-800">
                 📚 Jadwal kelas <span aria-hidden>→</span>

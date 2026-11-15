@@ -22,7 +22,7 @@ export async function SiteFooter() {
   const year = new Date().getFullYear();
 
   return (
-    <footer className="pattern-islami-light bg-primary-950 text-primary-100">
+    <footer className="pattern-islami-light bg-primary-950 pb-20 text-primary-100 lg:pb-0">
       <div className="mx-auto grid max-w-7xl gap-10 px-4 py-14 sm:px-6 md:grid-cols-3 lg:px-8">
         <div>
           <div className="flex items-center gap-2.5">

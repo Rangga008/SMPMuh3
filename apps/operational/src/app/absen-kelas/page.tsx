@@ -1,10 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { Badge, Button, Field, Input, Select } from '@smpmuh3/ui';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Badge, Input, Select } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { PageTitle, Widget } from '@/components/widgets';
-import { DataTable } from '@/components/data-table';
 import {
   getClassAttendance,
   getMyTeachingToday,
@@ -13,13 +12,33 @@ import {
   type TeacherSession,
 } from '@/lib/api-ops';
 import { ApiError, listClasses, listAcademicYears } from '@/lib/api';
+import { cn } from '@smpmuh3/ui';
 
 const mm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}.${String(m % 60).padStart(2, '0')}`;
-const STATUS_TONE: Record<string, 'primary' | 'accent' | 'neutral' | 'danger'> = {
-  PRESENT: 'primary', SICK: 'accent', PERMIT: 'neutral', ABSENT: 'danger',
+const DOW_FULL = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+const fmtDate = (iso: string) => {
+  const d = new Date(`${iso}T00:00:00`);
+  return `${DOW_FULL[d.getDay()]}, ${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
 };
+const shift = (iso: string, days: number) => {
+  const d = new Date(`${iso}T00:00:00`);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+};
+
+const STATUSES = ['PRESENT', 'SICK', 'PERMIT', 'ABSENT'] as const;
 const STATUS_LABEL: Record<string, string> = {
   PRESENT: 'Hadir', SICK: 'Sakit', PERMIT: 'Izin', ABSENT: 'Alpha',
+};
+const STATUS_SHORT: Record<string, string> = {
+  PRESENT: 'H', SICK: 'S', PERMIT: 'I', ABSENT: 'A',
+};
+const STATUS_ACTIVE_CLS: Record<string, string> = {
+  PRESENT: 'bg-emerald-600 text-white border-emerald-600',
+  SICK: 'bg-sky-600 text-white border-sky-600',
+  PERMIT: 'bg-amber-500 text-white border-amber-500',
+  ABSENT: 'bg-red-600 text-white border-red-600',
 };
 
 export default function AbsenKelasPage() {
@@ -30,10 +49,13 @@ export default function AbsenKelasPage() {
   const [rows, setRows] = useState<ClassAttendanceRow[]>([]);
   const [search, setSearch] = useState('');
   const [taken, setTaken] = useState(false);
+  const [takenBy, setTakenBy] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [allClasses, setAllClasses] = useState<{ id: string; name: string }[]>([]);
+  const [otherOpen, setOtherOpen] = useState(false);
 
   useEffect(() => {
     getMyTeachingToday(date).then((r) => setSessions(r.sessions)).catch(() => setSessions([]));
@@ -51,30 +73,33 @@ export default function AbsenKelasPage() {
     (cid: string) => {
       setClassId(cid);
       setRows([]);
+      setError(null);
+      setNotice(null);
       if (!cid) return;
+      setLoading(true);
       getClassAttendance(cid, date)
         .then((r) => {
           setRows(r.students);
           setTaken(r.taken);
+          setTakenBy(r.takenBy ?? null);
         })
-        .catch((e) => setError(e instanceof ApiError ? e.message : 'Gagal memuat.'));
+        .catch((e) => setError(e instanceof ApiError ? e.message : 'Gagal memuat.'))
+        .finally(() => setLoading(false));
     },
     [date],
   );
 
+  const changeDate = (d: string) => {
+    setDate(d);
+    setRows([]);
+    setClassId('');
+    setNotice(null);
+    setError(null);
+  };
+
   const filtered = rows.filter(
     (s) => !search || s.name.toLowerCase().includes(search.toLowerCase()) || (s.nis ?? '').includes(search),
   );
-
-  const cycle = (id: string) =>
-    setRows((rs) =>
-      rs.map((s) => {
-        if (s.id !== id) return s;
-        const order = ['PRESENT', 'SICK', 'PERMIT', 'ABSENT'];
-        const next = order[(order.indexOf(s.status) + 1) % order.length] ?? 'PRESENT';
-        return { ...s, status: next };
-      }),
-    );
 
   const setStatus = (id: string, status: string) =>
     setRows((rs) => rs.map((s) => (s.id === id ? { ...s, status } : s)));
@@ -97,116 +122,227 @@ export default function AbsenKelasPage() {
     }
   };
 
-  const counts = rows.reduce(
-    (a, s) => ({ ...a, [s.status]: (a[s.status] ?? 0) + 1 }),
-    {} as Record<string, number>,
+  const counts = useMemo(
+    () => rows.reduce((a, s) => ({ ...a, [s.status]: (a[s.status] ?? 0) + 1 }), {} as Record<string, number>),
+    [rows],
   );
+
+  const otherClasses = allClasses.filter((c) => !sessions.some((s) => s.class.id === c.id));
+  const pickedSession = sessions.find((s) => s.class.id === classId);
+  const pickedName = pickedSession?.class.name ?? allClasses.find((c) => c.id === classId)?.name ?? '';
 
   return (
     <Shell>
-      <PageTitle title="Absen Kelas" subtitle="Absensi siswa harian — pilih kelas dari jadwal mengajar Anda, lalu tandai yang tidak hadir." />
+      <PageTitle title="Absen Kelas" subtitle="Pilih tanggal, ketuk kelas dari jadwal Anda, lalu tandai siswa yang tidak hadir." />
       {error ? <p role="alert" className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</p> : null}
       {notice ? <p role="status" className="mb-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">{notice}</p> : null}
 
-      <div className="mb-5 flex flex-wrap items-end gap-3 rounded-2xl border border-sand-200 bg-white p-4 shadow-card">
-        <Field label="Tanggal">
-          <Input type="date" value={date} onChange={(e) => { setDate(e.target.value); setRows([]); setClassId(''); }} />
-        </Field>
-        <Field label="Kelas (jadwal Anda hari ini)" className="flex-1 min-w-56">
-          <Select value={classId} onChange={(e) => pickClass(e.target.value)}>
-            <option value="">— Pilih kelas —</option>
-            <optgroup label="Jadwal mengajar Anda">
-              {sessions.map((s) => (
-                <option key={s.assignmentId} value={s.class.id}>
-                  {s.class.name} — {s.subject.name} ({mm(s.startMinute)}–{mm(s.endMinute)})
-                </option>
-              ))}
-            </optgroup>
-            <optgroup label="Semua kelas">
-              {allClasses.filter((c) => !sessions.some((s) => s.class.id === c.id)).map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </optgroup>
-          </Select>
-        </Field>
-        {rows.length ? (
-          <Field label="Cari siswa">
-            <Input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Nama / NIS…" />
-          </Field>
-        ) : null}
+      {/* Tanggal — geser harian cepat */}
+      <div className="mb-4 flex items-center gap-2 rounded-2xl border border-sand-200 bg-white p-3 shadow-card">
+        <button
+          type="button"
+          aria-label="Hari sebelumnya"
+          onClick={() => changeDate(shift(date, -1))}
+          className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-sand-100 text-lg font-bold text-sand-700 active:bg-sand-200"
+        >
+          ‹
+        </button>
+        <label className="min-w-0 flex-1 cursor-pointer text-center">
+          <span className="block text-sm font-bold text-sand-900">{fmtDate(date)}</span>
+          <span className="text-[11px] text-sand-400">{date === today ? 'Hari ini — ketuk untuk ganti tanggal' : 'Ketuk untuk ganti tanggal'}</span>
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => changeDate(e.target.value)}
+            className="sr-only"
+            aria-label="Pilih tanggal absen"
+          />
+        </label>
+        <button
+          type="button"
+          aria-label="Hari berikutnya"
+          onClick={() => changeDate(shift(date, 1))}
+          className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-sand-100 text-lg font-bold text-sand-700 active:bg-sand-200"
+        >
+          ›
+        </button>
       </div>
 
-      {rows.length ? (
-        <Widget
-          title={`Daftar Siswa${taken ? ' — sudah diabsen' : ''}`}
-          subtitle="Semua default Hadir — klik status untuk mengubah (Sakit/Izin/Alpha), lalu Simpan."
-          action={
-            <div className="flex items-center gap-3">
-              <span className="flex gap-2 text-xs">
-                {Object.entries(counts).map(([k, v]) => (
-                  <Badge key={k} tone={STATUS_TONE[k] ?? 'neutral'}>{STATUS_LABEL[k]} {v}</Badge>
-                ))}
-              </span>
-              <Button onClick={save} disabled={busy}>{busy ? 'Menyimpan…' : 'Simpan Absen'}</Button>
+      {/* Kelas dari jadwal mengajar */}
+      {!classId ? (
+        <>
+          <p className="mb-2 text-xs font-bold uppercase tracking-wider text-sand-500">
+            Jadwal mengajar Anda {date === today ? 'hari ini' : 'tanggal ini'}
+          </p>
+          {sessions.length === 0 ? (
+            <Widget title="Tidak ada jadwal">
+              <p className="px-1 py-2 text-sm text-sand-500">
+                Tidak ada jadwal mengajar Anda di tanggal ini — lupa absen kemarin? Pilih tanggal lain, atau buka <b>kelas lain</b> di bawah.
+              </p>
+            </Widget>
+          ) : (
+            <div className="grid gap-2.5 sm:grid-cols-2">
+              {sessions.map((s) => (
+                <button
+                  key={s.assignmentId}
+                  type="button"
+                  onClick={() => pickClass(s.class.id)}
+                  className="flex items-center gap-3 rounded-2xl border border-sand-200 bg-white p-4 text-left shadow-card transition-colors active:border-primary-300 active:bg-primary-50"
+                >
+                  <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary-700 text-sm font-extrabold text-white">
+                    {s.class.name.replace(/\D/g, '') || s.class.name.slice(0, 2)}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-bold text-sand-900">
+                      {s.class.name} · {s.subject.name}
+                    </span>
+                    <span className="block text-xs text-sand-500">
+                      {mm(s.startMinute)}–{mm(s.endMinute)}
+                    </span>
+                  </span>
+                  <span aria-hidden className="text-sand-300">›</span>
+                </button>
+              ))}
             </div>
-          }
-        >
-          <DataTable
-            head={['NIS', 'Nama', 'Status', 'Catatan']}
-            loading={false}
-            empty={filtered.length === 0 ? 'Tidak ada siswa cocok.' : undefined}
-          >
-            {filtered.map((s) => (
-              <tr key={s.id}>
-                <td className="px-5 py-2.5 text-sand-500">{s.nis ?? '—'}</td>
-                <td className="px-5 py-2.5 font-medium text-sand-900">{s.name}</td>
-                <td className="px-5 py-2.5">
-                  <div className="flex gap-1">
-                    {['PRESENT', 'SICK', 'PERMIT', 'ABSENT'].map((st) => (
-                      <button
-                        key={st}
-                        type="button"
-                        onClick={() => setStatus(s.id, st)}
-                        className={`rounded-lg px-2.5 py-1 text-xs font-bold transition ${
-                          s.status === st
-                            ? st === 'PRESENT'
-                              ? 'bg-emerald-600 text-white'
-                              : st === 'SICK'
-                                ? 'bg-sky-600 text-white'
-                                : st === 'PERMIT'
-                                  ? 'bg-amber-500 text-white'
-                                  : 'bg-red-600 text-white'
-                            : 'bg-sand-100 text-sand-500 hover:bg-sand-200'
-                        }`}
-                      >
-                        {STATUS_LABEL[st]}
-                      </button>
+          )}
+
+          {otherClasses.length ? (
+            <div className="mt-5">
+              <button
+                type="button"
+                onClick={() => setOtherOpen((v) => !v)}
+                aria-expanded={otherOpen}
+                className="flex w-full items-center justify-between rounded-2xl border border-dashed border-sand-300 bg-sand-50 px-4 py-3 text-sm font-semibold text-sand-600"
+              >
+                Kelas lain ({otherClasses.length}) — untuk absen cadangan/admin
+                <span aria-hidden className={cn('transition-transform', otherOpen && 'rotate-180')}>▾</span>
+              </button>
+              {otherOpen ? (
+                <div className="mt-2 rounded-2xl border border-sand-200 bg-white p-3">
+                  <Select value={classId} onChange={(e) => pickClass(e.target.value)}>
+                    <option value="">— Pilih kelas —</option>
+                    {otherClasses.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </Select>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </>
+      ) : (
+        <>
+          {/* Header kelas terpilih */}
+          <div className="mb-3 flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => { setClassId(''); setRows([]); }}
+              className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-sand-200 bg-white text-sand-600 shadow-card"
+              aria-label="Kembali ke pilihan kelas"
+            >
+              ‹
+            </button>
+            <div className="min-w-0 flex-1">
+              <p className="truncate font-extrabold text-sand-900">
+                {pickedName}
+                {pickedSession ? <span className="font-medium text-sand-500"> · {pickedSession.subject.name}</span> : null}
+              </p>
+              <p className="text-xs text-sand-500">
+                {rows.length} siswa{taken ? ` · sudah diabsen${takenBy ? ` oleh ${takenBy}` : ''} — simpan lagi untuk revisi` : ''}
+              </p>
+            </div>
+            {taken ? <Badge tone="primary">Terabsen</Badge> : null}
+          </div>
+
+          {loading ? (
+            <p className="py-8 text-center text-sm text-sand-500">Memuat daftar siswa…</p>
+          ) : rows.length ? (
+            <>
+              <div className="mb-3 flex items-center gap-2">
+                <Input
+                  type="search"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Cari nama / NIS…"
+                  className="flex-1"
+                />
+                <button
+                  type="button"
+                  onClick={() => setRows((rs) => rs.map((s) => ({ ...s, status: 'PRESENT' })))}
+                  className="shrink-0 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs font-bold text-emerald-700"
+                >
+                  Semua Hadir
+                </button>
+              </div>
+
+              {/* Roster — kartu per siswa, tombol status besar */}
+              <ul className="space-y-2 pb-24">
+                {filtered.map((s) => (
+                  <li key={s.id} className="rounded-2xl border border-sand-200 bg-white p-3 shadow-card">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold text-sand-900">{s.name}</p>
+                        <p className="text-xs text-sand-500">{s.nis ?? '—'}</p>
+                      </div>
+                      <div className="flex shrink-0 gap-1">
+                        {STATUSES.map((st) => (
+                          <button
+                            key={st}
+                            type="button"
+                            title={STATUS_LABEL[st]}
+                            onClick={() => setStatus(s.id, st)}
+                            className={cn(
+                              'flex size-9 items-center justify-center rounded-xl border text-sm font-extrabold transition-colors',
+                              s.status === st
+                                ? STATUS_ACTIVE_CLS[st]
+                                : 'border-sand-200 bg-sand-50 text-sand-400 active:bg-sand-200',
+                            )}
+                          >
+                            {STATUS_SHORT[st]}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {s.status !== 'PRESENT' ? (
+                      <Input
+                        value={s.note ?? ''}
+                        onChange={(e) => setRows((rs) => rs.map((x) => (x.id === s.id ? { ...x, note: e.target.value } : x)))}
+                        placeholder={`Catatan ${STATUS_LABEL[s.status]} (opsional)…`}
+                        className="mt-2"
+                      />
+                    ) : null}
+                  </li>
+                ))}
+                {filtered.length === 0 ? (
+                  <li className="py-8 text-center text-sm text-sand-500">Tidak ada siswa cocok dengan pencarian.</li>
+                ) : null}
+              </ul>
+
+              {/* Bar simpan sticky — di atas bottom-nav */}
+              <div className="fixed inset-x-0 bottom-[57px] z-30 border-t border-sand-200 bg-white/95 px-4 py-2.5 backdrop-blur lg:bottom-0">
+                <div className="mx-auto flex max-w-6xl items-center gap-3">
+                  <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
+                    {STATUSES.filter((st) => counts[st]).map((st) => (
+                      <span key={st} className={cn('rounded-lg px-2 py-1 text-[11px] font-bold text-white', STATUS_ACTIVE_CLS[st])}>
+                        {STATUS_LABEL[st]} {counts[st]}
+                      </span>
                     ))}
                   </div>
-                </td>
-                <td className="px-5 py-2.5">
-                  {s.status !== 'PRESENT' ? (
-                    <Input
-                      value={s.note ?? ''}
-                      onChange={(e) => setRows((rs) => rs.map((x) => (x.id === s.id ? { ...x, note: e.target.value } : x)))}
-                      placeholder="Catatan…"
-                    />
-                  ) : (
-                    <span className="text-sand-300">—</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </DataTable>
-        </Widget>
-      ) : classId ? (
-        <p className="text-sm text-sand-500">Memuat daftar siswa…</p>
-      ) : (
-        <Widget title="Pilih kelas untuk mulai">
-          <p className="px-5 py-4 text-sm text-sand-500">
-            Kelas dari jadwal mengajar Anda hari ini tampil di atas. Semua siswa ditandai <b>Hadir</b> secara otomatis — cukup ubah yang tidak hadir.
-          </p>
-        </Widget>
+                  <button
+                    type="button"
+                    onClick={save}
+                    disabled={busy}
+                    className="shrink-0 rounded-xl bg-primary-700 px-5 py-2.5 text-sm font-extrabold text-white shadow-card transition active:scale-95 disabled:opacity-60"
+                  >
+                    {busy ? 'Menyimpan…' : 'Simpan Absen'}
+                  </button>
+                </div>
+              </div>
+            </>
+          ) : (
+            <p className="py-8 text-center text-sm text-sand-500">Tidak ada siswa di kelas ini.</p>
+          )}
+        </>
       )}
     </Shell>
   );

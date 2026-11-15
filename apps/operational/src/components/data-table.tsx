@@ -144,9 +144,9 @@ export function DataTable({
               type="button"
               disabled={current <= 1}
               onClick={() => setPage(current - 1)}
-              className="rounded-lg border border-sand-200 px-2.5 py-1 text-xs font-bold text-sand-600 transition-colors hover:bg-sand-50 disabled:opacity-40"
+              className="rounded-lg border border-sand-200 px-3 py-2 text-xs font-bold text-sand-600 transition-colors hover:bg-sand-50 disabled:opacity-40"
             >
-              ‹ Sebelumnya
+              ‹ Prev
             </button>
             <span className="px-1.5 text-xs font-bold text-sand-700">
               {current} / {pages}
@@ -155,9 +155,9 @@ export function DataTable({
               type="button"
               disabled={current >= pages}
               onClick={() => setPage(current + 1)}
-              className="rounded-lg border border-sand-200 px-2.5 py-1 text-xs font-bold text-sand-600 transition-colors hover:bg-sand-50 disabled:opacity-40"
+              className="rounded-lg border border-sand-200 px-3 py-2 text-xs font-bold text-sand-600 transition-colors hover:bg-sand-50 disabled:opacity-40"
             >
-              Berikutnya ›
+              Next ›
             </button>
           </div>
         </div>

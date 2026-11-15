@@ -29,6 +29,7 @@ export default function AbsenPage() {
   const streamRef = useRef<MediaStream | null>(null);
   const [camOn, setCamOn] = useState(false);
   const [pending, setPending] = useState<0 | 1 | null>(null);
+  const [shot, setShot] = useState<{ url: string; blob: Blob } | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
 
@@ -58,23 +59,47 @@ export default function AbsenPage() {
     streamRef.current = null;
     setCamOn(false);
     setPending(null);
+    setShot((s) => {
+      if (s) URL.revokeObjectURL(s.url);
+      return null;
+    });
   };
 
-  const capture = async () => {
+  /** Jepret ke preview dulu — pegawai bisa lihat/ulangi sebelum dikirim. */
+  const snapPhoto = async () => {
     if (pending == null || !videoRef.current) return;
+    const video = videoRef.current;
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+    canvas.getContext('2d')?.drawImage(video, 0, 0);
+    const blob = await new Promise<Blob | null>((ok) => canvas.toBlob(ok, 'image/jpeg', 0.85));
+    if (!blob) {
+      setErr('Gagal mengambil foto — coba lagi.');
+      return;
+    }
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+    setCamOn(false);
+    setShot({ url: URL.createObjectURL(blob), blob });
+  };
+
+  const retake = () => {
+    setShot((s) => {
+      if (s) URL.revokeObjectURL(s.url);
+      return null;
+    });
+    if (pending != null) void startCam(pending);
+  };
+
+  const submit = async () => {
+    if (pending == null || !shot) return;
     setBusy(true); setErr('');
     try {
       const pos = await new Promise<GeolocationPosition>((ok, no) =>
         navigator.geolocation.getCurrentPosition(ok, no, { enableHighAccuracy: true, timeout: 10000 }),
       );
-      const video = videoRef.current;
-      const canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth || 640;
-      canvas.height = video.videoHeight || 480;
-      canvas.getContext('2d')?.drawImage(video, 0, 0);
-      const blob = await new Promise<Blob | null>((ok) => canvas.toBlob(ok, 'image/jpeg', 0.85));
-      if (!blob) throw new Error('Gagal mengambil foto — coba lagi.');
-      const r = await selfiePunch(pending, pos.coords.latitude, pos.coords.longitude, blob);
+      const r = await selfiePunch(pending, pos.coords.latitude, pos.coords.longitude, shot.blob);
       setMsg(
         `Absen ${r.inOut === 0 ? 'MASUK' : 'PULANG'} tercatat ${fmtTime(r.punchedAt)} WIB — jarak ${r.distanceM} m dari sekolah${
           r.attendance?.status ? ` · status ${r.attendance.status}` : ''
@@ -261,25 +286,69 @@ export default function AbsenPage() {
               </p>
             )}
           </Widget>
+
+          <Widget title="Riwayat Absen" subtitle={`${(data.rows ?? []).length} catatan bulan ini`}>
+            {(data.rows ?? []).length === 0 ? (
+              <p className="text-sm text-sand-500">Belum ada catatan bulan ini.</p>
+            ) : (
+              <ul className="divide-y divide-sand-100">
+                {[...(data.rows ?? [])]
+                  .sort((a, b) => String(b.date).localeCompare(String(a.date)))
+                  .slice(0, 10)
+                  .map((r) => {
+                    const d = new Date(`${String(r.date).slice(0, 10)}T00:00:00`);
+                    return (
+                      <li key={String(r.date)} className="flex items-center gap-3 py-2.5">
+                        <span className="flex w-11 shrink-0 flex-col items-center rounded-xl bg-sand-50 py-1">
+                          <span className="text-base font-extrabold leading-tight text-sand-800">{d.getDate()}</span>
+                          <span className="text-[9px] font-bold uppercase text-sand-400">{DOW[d.getDay()]}</span>
+                        </span>
+                        <span className="min-w-0 flex-1 text-sm font-medium text-sand-800">
+                          {fmtTime(r.checkInAt)} — {fmtTime(r.checkOutAt)}
+                          {r.lateMinutes ? <span className="ml-1 text-xs font-semibold text-amber-700">telat {r.lateMinutes} mnt</span> : null}
+                          {r.note ? <span className="block truncate text-xs font-normal text-sand-500">{r.note}</span> : null}
+                        </span>
+                        <Badge tone={STATUS_BADGE[r.status] ?? 'neutral'}>{r.status}</Badge>
+                      </li>
+                    );
+                  })}
+              </ul>
+            )}
+          </Widget>
         </>
       )}
 
-      {camOn && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-4 shadow-xl">
+      {(camOn || shot) && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 sm:items-center sm:p-4">
+          <div className="w-full max-w-md rounded-t-3xl bg-white p-4 shadow-xl sm:rounded-3xl">
             <h3 className="mb-3 font-semibold">
               Selfie Absen {pending === 0 ? 'Masuk' : 'Pulang'}
             </h3>
-            <video ref={videoRef} autoPlay playsInline muted className="w-full rounded-xl bg-black" />
-            <p className="mt-2 text-xs text-slate-500">
-              Pastikan wajah terlihat jelas. Lokasi Anda akan dicatat saat tombol kirim ditekan.
-            </p>
-            <div className="mt-3 flex justify-end gap-2">
-              <Button variant="secondary" onClick={stopCam} disabled={busy}>Batal</Button>
-              <Button onClick={capture} disabled={busy}>
-                {busy ? 'Mengirim…' : 'Ambil & Kirim'}
-              </Button>
-            </div>
+            {camOn ? (
+              <>
+                <video ref={videoRef} autoPlay playsInline muted className="aspect-[4/3] w-full rounded-2xl bg-black object-cover" />
+                <p className="mt-2 text-xs text-slate-500">
+                  Posisikan wajah di tengah kamera, lalu jepret — Anda bisa meninjau foto sebelum dikirim.
+                </p>
+                <div className="mt-3 flex gap-2">
+                  <Button variant="secondary" onClick={stopCam} className="flex-1">Batal</Button>
+                  <Button onClick={snapPhoto} className="flex-1">📸 Ambil Foto</Button>
+                </div>
+              </>
+            ) : shot ? (
+              <>
+                <img src={shot.url} alt="Pratinjau selfie" className="aspect-[4/3] w-full rounded-2xl bg-black object-cover" />
+                <p className="mt-2 text-xs text-slate-500">
+                  Foto belum terkirim — cek dulu. Lokasi dicatat saat tombol kirim ditekan.
+                </p>
+                <div className="mt-3 flex gap-2">
+                  <Button variant="secondary" onClick={retake} disabled={busy} className="flex-1">↺ Ulangi</Button>
+                  <Button onClick={submit} disabled={busy} className="flex-1">
+                    {busy ? 'Mengirim…' : '✓ Kirim Absen'}
+                  </Button>
+                </div>
+              </>
+            ) : null}
           </div>
         </div>
       )}

@@ -5,6 +5,7 @@ import { spmbConfig } from '@/config/spmb.config';
 import { getSchoolPublic } from '@/lib/school';
 import { SiteHeader } from '@/components/site-header';
 import { SiteFooter } from '@/components/site-footer';
+import { BottomNav } from '@/components/bottom-nav';
 import './globals.css';
 
 const siteUrl = process.env.SPMB_URL ?? 'https://spmb.smpmuh3bdg.sch.id';
@@ -68,8 +69,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           Langsung ke konten
         </a>
         <SiteHeader />
-        <div id="konten">{children}</div>
+        <div id="konten" className="pb-20 lg:pb-0">{children}</div>
         <SiteFooter />
+        <BottomNav />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}

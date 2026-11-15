@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { AuthUser } from '@smpmuh3/types';
 import { cn } from '@smpmuh3/ui';
 import { navFor, type NavItem } from '@/config/nav';
+import { PERMISSIONS, type PermissionKey } from '@smpmuh3/types';
 import { ScrollKeeper } from '@/components/scroll-keeper';
 import { useConfirm } from '@/components/confirm-dialog';
 import { getSchool, getTokens, logout, me, type School } from '@/lib/api';
@@ -218,6 +219,27 @@ export function Shell({ children }: { children: ReactNode }) {
     [user],
   );
 
+  // Kunci halaman — tutup sheet menu tiap pindah rute.
+  useEffect(() => setOpen(false), [pathname]);
+
+  /** Shortcut tengah bottom-nav — modul utama per bidang (fallback: permission). */
+  const quickTab = useMemo((): { href: string; icon: string; label: string } => {
+    const r = user?.roles ?? [];
+    const has = (p: PermissionKey) => (user?.permissions ?? []).includes(p);
+    if (r.includes('staff_kesiswaan')) return { href: '/kesiswaan', icon: '🎓', label: 'Siswa' };
+    if (r.includes('kepala_tu') || r.includes('staff_tu') || r.includes('staff_sarpras'))
+      return { href: '/tata-usaha/surat', icon: '📁', label: 'TU' };
+    if (r.includes('bendahara')) return { href: '/keuangan', icon: '💰', label: 'Keuangan' };
+    if (r.includes('spmb_admin')) return { href: '/spmb', icon: '📋', label: 'SPMB' };
+    // Guru & staf kurikulum → absensi kelas adalah tugas harian utama.
+    if (has(PERMISSIONS.ATTENDANCE_READ)) return { href: '/absen-kelas', icon: '✅', label: 'Absen Kelas' };
+    if (has(PERMISSIONS.STUDENT_READ)) return { href: '/kesiswaan', icon: '🎓', label: 'Siswa' };
+    if (has(PERMISSIONS.TATAUSAHA_READ)) return { href: '/tata-usaha/surat', icon: '📁', label: 'TU' };
+    if (has(PERMISSIONS.FINANCE_READ)) return { href: '/keuangan', icon: '💰', label: 'Keuangan' };
+    if (has(PERMISSIONS.SPMB_REGISTRATION_READ)) return { href: '/spmb', icon: '📋', label: 'SPMB' };
+    return { href: '/pengajuan', icon: '📮', label: 'Pengajuan' };
+  }, [user]);
+
   if (!user) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-sand-100/70">
@@ -401,20 +423,81 @@ export function Shell({ children }: { children: ReactNode }) {
         <aside className="hidden w-64 shrink-0 lg:sticky lg:top-0 lg:block lg:h-screen">
           {sidebar}
         </aside>
-        {/* Drawer mobile */}
+        {/* Sheet "Menu Lainnya" — seluruh modul sebagai tile grid (pola app mobile) */}
         {open ? (
           <div className="fixed inset-0 z-50 lg:hidden">
             <div
               className="absolute inset-0 bg-black/55"
               onClick={() => setOpen(false)}
             />
-            <aside className="absolute inset-y-0 left-0 w-72 shadow-2xl">
-              {sidebar}
-            </aside>
+            <div className="absolute inset-x-0 bottom-0 max-h-[85dvh] overflow-y-auto rounded-t-3xl bg-white shadow-2xl">
+              <div className="sticky top-0 flex items-center justify-between border-b border-sand-100 bg-white/95 px-5 py-3.5 backdrop-blur">
+                <p className="font-extrabold text-sand-900">Menu Lainnya</p>
+                <button
+                  type="button"
+                  aria-label="Tutup menu"
+                  onClick={() => setOpen(false)}
+                  className="flex size-9 items-center justify-center rounded-xl bg-sand-100 text-sand-600"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="space-y-5 px-5 py-4 pb-8">
+                {/* Item tunggal (tanpa anak) masuk grup UTAMA */}
+                <MenuSection
+                  title="Utama"
+                  items={nav.filter((i) => !i.children?.length)}
+                  pathname={pathname}
+                  close={() => setOpen(false)}
+                />
+                {nav
+                  .filter((i) => i.children?.length)
+                  .map((g) => (
+                    <MenuSection
+                      key={g.key}
+                      title={g.label}
+                      items={g.children ?? []}
+                      pathname={pathname}
+                      close={() => setOpen(false)}
+                    />
+                  ))}
+                {/* Akun */}
+                <div>
+                  <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-sand-400">
+                    Akun
+                  </p>
+                  <div className="grid grid-cols-4 gap-2.5">
+                    <MenuTile href="/profil" icon="👤" label="Profil" pathname={pathname} close={() => setOpen(false)} />
+                    <MenuTile href="/pengaturan/profil" icon="⚙" label="Pengaturan" pathname={pathname} close={() => setOpen(false)} />
+                    <button
+                      type="button"
+                      onClick={toggleTheme}
+                      className="flex flex-col items-center gap-1.5 rounded-2xl border border-sand-200 bg-white p-3 text-sand-700"
+                    >
+                      <span className="text-xl">{dark ? '☀' : '☾'}</span>
+                      <span className="text-[11px] font-semibold leading-tight">Tema</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!(await confirm('Keluar dari akun ini sekarang?'))) return;
+                        cachedUser = null;
+                        logout();
+                        router.push('/masuk');
+                      }}
+                      className="flex flex-col items-center gap-1.5 rounded-2xl border border-red-200 bg-red-50 p-3 text-red-700"
+                    >
+                      <span className="text-xl">⎋</span>
+                      <span className="text-[11px] font-semibold leading-tight">Keluar</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         ) : null}
 
-        <main id="konten" className="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
+        <main id="konten" className="min-w-0 flex-1 p-4 pb-24 sm:p-6 lg:p-8 lg:pb-8">
           {/* Pill aksi atas — desktop: profil + toggle tema */}
           <div className="pointer-events-none sticky top-4 z-30 -mt-1 mb-4 hidden justify-end lg:flex">
             <div className="pointer-events-auto flex items-center gap-2 rounded-2xl border border-sand-200 bg-white/80 p-1.5 shadow-soft backdrop-blur">
@@ -438,7 +521,89 @@ export function Shell({ children }: { children: ReactNode }) {
             {children}
           </div>
         </main>
+
+        {/* Bottom navigation — selalu terjangkau jempol di HP */}
+        <nav
+          aria-label="Navigasi cepat"
+          className="fixed inset-x-0 bottom-0 z-40 flex items-stretch border-t border-sand-200 bg-white/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-2px_12px_rgba(0,0,0,0.06)] backdrop-blur lg:hidden"
+        >
+          <BottomTab href="/" icon="⌂" label="Beranda" active={pathname === '/'} />
+          <BottomTab href="/absen" icon="📸" label="Absen Saya" active={routeActive(pathname, '/absen') && pathname !== '/absen-kelas'} />
+          <BottomTab href={quickTab.href} icon={quickTab.icon} label={quickTab.label} active={routeActive(pathname, quickTab.href)} />
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            aria-label="Menu lainnya"
+            className={cn(
+              'flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-semibold transition-colors',
+              open ? 'text-primary-700' : 'text-sand-500',
+            )}
+          >
+            <span aria-hidden="true" className="text-xl leading-none">☰</span>
+            Lainnya
+          </button>
+        </nav>
         <ScrollKeeper />
+      </div>
+    </div>
+  );
+}
+
+/** Satu slot bottom-nav. */
+function BottomTab({ href, icon, label, active }: { href: string; icon: string; label: string; active: boolean }) {
+  return (
+    <Link
+      href={href}
+      className={cn(
+        'flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-semibold transition-colors',
+        active ? 'text-primary-700' : 'text-sand-500',
+      )}
+    >
+      <span aria-hidden="true" className={cn('text-xl leading-none', active && 'scale-110')}>{icon}</span>
+      <span className="truncate px-1">{label}</span>
+      <span className={cn('h-0.5 w-6 rounded-full', active ? 'bg-primary-600' : 'bg-transparent')} />
+    </Link>
+  );
+}
+
+/** Tile satu modul di sheet menu. */
+function MenuTile({
+  href, icon, label, pathname, close,
+}: {
+  href?: string | undefined; icon: string; label: string; pathname: string; close: () => void;
+}) {
+  const active = href !== undefined && routeActive(pathname, href);
+  const cls = cn(
+    'flex flex-col items-center gap-1.5 rounded-2xl border p-3 text-center transition-colors',
+    active ? 'border-primary-300 bg-primary-50 text-primary-800' : 'border-sand-200 bg-white text-sand-700',
+  );
+  const inner = (
+    <>
+      <span aria-hidden="true" className="text-xl leading-none">{icon}</span>
+      <span className="text-[11px] font-semibold leading-tight">{label}</span>
+    </>
+  );
+  return href ? (
+    <Link href={href} onClick={close} className={cls}>{inner}</Link>
+  ) : (
+    <span className={cn(cls, 'cursor-default opacity-60')}>{inner}</span>
+  );
+}
+
+/** Seksi bergaris di sheet menu — judul grup + grid tile anak-anaknya. */
+function MenuSection({
+  title, items, pathname, close,
+}: {
+  title: string; items: NavItem[]; pathname: string; close: () => void;
+}) {
+  if (!items.length) return null;
+  return (
+    <div>
+      <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-sand-400">{title}</p>
+      <div className="grid grid-cols-4 gap-2.5 max-[380px]:grid-cols-3">
+        {items.map((c) => (
+          <MenuTile key={c.key} href={c.href} icon={c.icon === '•' ? '▪' : c.icon} label={c.label} pathname={pathname} close={close} />
+        ))}
       </div>
     </div>
   );

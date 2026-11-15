@@ -21,6 +21,7 @@ export interface NavItem {
 
 /** Role pengelola tiap bidang — admin & kepsek melihat semua. */
 const ADM = ['superadmin', 'ops_admin', 'kepala_sekolah'];
+export const KURIKULUM_ROLES = [...ADM, 'staff_kurikulum', 'guru_mapel'];
 const KESISWAAN_ROLES = [...ADM, 'staff_kesiswaan'];
 const TU_ROLES = [...ADM, 'kepala_tu', 'staff_tu', 'staff_sarpras'];
 const KEUANGAN_ROLES = [...ADM, 'bendahara'];
@@ -96,6 +97,7 @@ export const NAV: NavItem[] = [
     label: 'Kurikulum',
     icon: '📚',
     permission: PERMISSIONS.ACADEMIC_READ,
+    roles: KURIKULUM_ROLES,
     enabled: true,
     children: [
       {
