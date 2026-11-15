@@ -9,12 +9,14 @@ import { RowBtn } from '@/components/row-btn';
 import { FilePick } from '@/components/file-pick';
 import { useConfirm } from '@/components/confirm-dialog';
 import {
-  downloadArchive, previewArchive, createArchiveCategory, deleteArchive, listArchiveCategories, listArchives, updateArchive, uploadArchive,
+  createArchiveCategory, deleteArchive, listArchiveCategories, listArchives, updateArchive, uploadArchive,
   type ArchiveItemView,
 } from '@/lib/api-ops';
+import { useFileViewer } from '@/components/file-viewer';
 
 export default function ArsipPage() {
   const { confirm, dialog } = useConfirm();
+  const fv = useFileViewer();
   const [cats, setCats] = useState<Awaited<ReturnType<typeof listArchiveCategories>>>([]);
   const [rows, setRows] = useState<ArchiveItemView[]>([]);
   const [catId, setCatId] = useState('');
@@ -66,6 +68,7 @@ export default function ArsipPage() {
           </div>
         } />
       {dialog}
+      {fv.viewer}
       {error ? <p className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p> : null}
       {notice ? <p className="mb-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{notice}</p> : null}
 
@@ -88,8 +91,8 @@ export default function ArsipPage() {
               <td className="max-w-44 truncate px-5 py-2.5 text-xs text-sand-600" title={a.fileName}>{a.fileName}</td>
               <td className="px-5 py-2.5 text-right">
                 <span className="flex justify-end gap-2">
-                  <RowBtn type="button" onClick={async () => previewArchive(a.id).catch(() => setError('Gagal membuka file.'))}>Lihat</RowBtn>
-                  <RowBtn type="button" onClick={async () => downloadArchive(a.id, a.fileName).catch(() => setError('Gagal mengunduh file.'))}>Unduh</RowBtn>
+                  <RowBtn type="button" onClick={() => fv.open({ path: `/ops/archives/${a.id}/file`, name: a.fileName, mime: a.mimeType })}>Lihat</RowBtn>
+                  <RowBtn type="button" onClick={async () => fv.download({ path: `/ops/archives/${a.id}/file`, name: a.fileName }).catch(() => setError('Gagal mengunduh file.'))}>Unduh</RowBtn>
                   <RowBtn type="button" onClick={() => { setModalFile(null); setModal(a); }}>Ubah</RowBtn>
                   <RowBtn tone="danger" type="button" onClick={async () => {
                     if (!(await confirm(`Hapus arsip "${a.title}"?`))) return;

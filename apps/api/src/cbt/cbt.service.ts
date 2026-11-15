@@ -12,6 +12,7 @@ import { PERMISSIONS, type AuthUser } from '@smpmuh3/types';
 import { PrismaService } from '../core/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { OpsService } from '../ops/ops.service';
+import { StorageService } from '../core/storage/storage.service';
 import type { AnswerDto, CreateExamDto, EnterExamDto, ExamSessionDto, UpdateExamDto } from './dto/cbt.dto';
 
 /** Alfabet tanpa karakter rancu (0/O/1/I/L) untuk kode ujian. */
@@ -75,6 +76,7 @@ export class CbtService {
     private prisma: PrismaService,
     private audit: AuditService,
     private ops: OpsService,
+    private storage: StorageService,
   ) {}
 
   // ================= Scope guru mapel =================
@@ -177,8 +179,8 @@ export class CbtService {
   }
 
   /** Daftar ujian untuk monitor — semua staf (proktor/pengawas/tendik/guru/admin). */
-  listMonitorExams(academicYearId?: string) {
-    return this.prisma.exam.findMany({
+  async listMonitorExams(academicYearId?: string) {
+    const exams = await this.prisma.exam.findMany({
       where: academicYearId ? { academicYearId } : {},
       include: {
         assessment: { select: { name: true, subject: { select: { name: true } } } },
@@ -186,6 +188,16 @@ export class CbtService {
       },
       orderBy: { startAt: 'desc' },
     });
+    // Lampirkan kelas+jenjang tiap ujian — untuk filter per jenjang di monitor.
+    const ids = [...new Set(exams.flatMap((x) => x.classIds as string[]))];
+    const cls = await this.prisma.class.findMany({
+      where: { id: { in: ids } }, select: { id: true, name: true, gradeLevel: true },
+    });
+    const byId = new Map(cls.map((c) => [c.id, c]));
+    return exams.map((x) => ({
+      ...x,
+      classes: (x.classIds as string[]).map((id) => byId.get(id)).filter((c): c is NonNullable<typeof c> => !!c),
+    }));
   }
 
   async createExam(dto: CreateExamDto, actorId: string) {
@@ -475,8 +487,10 @@ export class CbtService {
         data: { examId: exam.id, studentId: student.id, deadline },
       });
     }
-    const fresh = await this.prisma.examAttempt.findUniqueOrThrow({
+    // Hitung setiap masuk — sinyal keluar-masuk untuk monitor pelanggaran.
+    const fresh = await this.prisma.examAttempt.update({
       where: { examId_studentId: { examId: exam.id, studentId: student.id } },
+      data: { enterCount: { increment: 1 } },
     });
     return this.buildSession(fresh, exam, student, enroll.class.name);
   }
@@ -561,19 +575,25 @@ export class CbtService {
       this.prisma.assessmentQuestion.findMany({
         where: { assessmentId: exam.assessmentId },
         orderBy: { number: 'asc' },
-        select: { id: true, number: true, type: true, weight: true, prompt: true, options: true },
+        select: { id: true, number: true, type: true, weight: true, prompt: true, options: true, passageCode: true, media: true },
       }),
       this.prisma.examAnswer.findMany({
         where: { attemptId: attempt.id },
         select: { questionId: true, answer: true },
       }),
     ]);
+    // Bacaan yang dirujuk soal — kirim sekali per kode.
+    const codes = [...new Set(questions.map((q) => q.passageCode).filter((c): c is string => !!c))];
+    const passages = codes.length
+      ? await this.prisma.assessmentPassage.findMany({ where: { assessmentId: exam.assessmentId, code: { in: codes } }, select: { code: true, content: true, media: true } })
+      : [];
     // Acak deterministik per attempt bila diminta — hash sederhana id+token.
     const ordered = exam.shuffle
       ? [...questions].sort((a, b) => this.seedOf(a.id, token) - this.seedOf(b.id, token))
       : questions;
     return {
       questions: ordered,
+      passages,
       answers: Object.fromEntries(answers.map((a) => [a.questionId, a.answer])),
       deadline: attempt.deadline,
       serverNow: new Date(),
@@ -748,6 +768,14 @@ export class CbtService {
           .filter((e) => e.classId === c.id)
           .map((e) => {
             const a = byStudent.get(e.student.id);
+            // Heuristik pelanggaran: submit terlalu cepat, tanpa jawaban, masuk berkali-kali.
+            const flags: string[] = [];
+            if (a?.status === 'SUBMITTED' && a.submittedAt && exam.durationMin > 0) {
+              const usedMin = (a.submittedAt.getTime() - a.startedAt.getTime()) / 60_000;
+              if (usedMin < exam.durationMin * 0.2) flags.push('SELESAI_CEPAT');
+              if ((a._count?.answers ?? 0) === 0) flags.push('TANPA_JAWABAN');
+            }
+            if ((a?.enterCount ?? 0) > 2) flags.push('MASUK_BERKALI');
             return {
               studentId: e.student.id,
               name: e.student.name,
@@ -759,6 +787,8 @@ export class CbtService {
               remainingSec: a && a.status === 'STARTED' ? Math.max(0, Math.floor((a.deadline.getTime() - now) / 1000)) : null,
               score: a?.status === 'SUBMITTED' ? a.score : null,
               maxScore: a?.status === 'SUBMITTED' ? a.maxScore : null,
+              enterCount: a?.enterCount ?? 0,
+              flags,
             };
           });
         return {
@@ -769,6 +799,7 @@ export class CbtService {
           total: students.length,
           done: students.filter((s) => s.status === 'SELESAI').length,
           working: students.filter((s) => s.status === 'MENGERJAKAN').length,
+          violations: students.filter((s) => s.flags.length > 0).length,
           students,
         };
       }),
@@ -991,9 +1022,36 @@ export class CbtService {
 
   async importExamQuestions(examId: string, file: Express.Multer.File, user: AuthUser) {
     const exam = await this.scopeOk(user, examId, true);
-    const questions = this.ops.parseQuestionWorkbook(file);
-    const r = await this.ops.setQuestions(exam.assessmentId, questions);
+    const name = file.originalname.toLowerCase();
+    let questions: Parameters<OpsService['setQuestions']>[1];
+    let passages: Parameters<OpsService['setQuestions']>[2];
+    if (name.endsWith('.docx')) {
+      const r = await this.ops.parseQuestionDocx(file);
+      questions = r.questions; passages = r.passages;
+    } else {
+      questions = this.ops.parseQuestionWorkbook(file);
+      passages = this.ops.parsePassageSheet(file);
+    }
+    for (const q of questions) {
+      if (!['MCQ', 'MCQ_COMPLEX', 'TRUE_FALSE', 'TRUE_FALSE_COMPLEX'].includes(q.type)) {
+        throw new BadRequestException(`Tipe soal ${q.type} tidak didukung — hanya PG/PGK/BS/BSK.`);
+      }
+    }
+    const r = await this.ops.setQuestions(exam.assessmentId, questions, passages);
     await this.audit.log({ actorId: user.id, action: 'exam.questions-import', entity: 'exam', entityId: examId, metadata: { count: r.count } });
     return r;
+  }
+
+  async examPassages(examId: string, user: AuthUser) {
+    const exam = await this.scopeOk(user, examId, false);
+    return this.ops.listPassages(exam.assessmentId);
+  }
+
+  /** Gambar soal/bacaan hasil impor — key `qmedia/<uuid>.<ext>`. */
+  async questionMedia(key: string) {
+    if (!/^qmedia\/[\w-]+\.(png|jpe?g|gif|webp)$/i.test(key)) throw new BadRequestException('Key media tidak valid.');
+    const buf = await this.storage.getObjectBuffer(key);
+    const mime = /jpe?g$/i.test(key) ? 'image/jpeg' : `image/${key.split('.').pop()}`;
+    return { buf, mime };
   }
 }

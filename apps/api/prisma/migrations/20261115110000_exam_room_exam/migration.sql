@@ -1,0 +1,1 @@
+ALTER TABLE "exam_rooms" ADD COLUMN IF NOT EXISTS "exam_id" UUID REFERENCES "exams"("id") ON DELETE SET NULL;

@@ -1,0 +1,1 @@
+ALTER TABLE "exam_attempts" ADD COLUMN IF NOT EXISTS "enter_count" INTEGER NOT NULL DEFAULT 0;

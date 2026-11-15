@@ -8,6 +8,7 @@ import { Prisma } from '@prisma/client';
 import * as XLSX from 'xlsx';
 import { PrismaService } from '../core/prisma/prisma.service';
 import { StorageService } from '../core/storage/storage.service';
+import { randomUUID } from 'node:crypto';
 import { normalizePhone } from '../identity/users/users.service';
 import {
   AttendanceRowDto,
@@ -15,6 +16,7 @@ import {
   ExamRoomDto,
   ExamSeatDto,
   QuestionDto,
+  PassageDto,
   SaveAnswersDto,
   SaveAttendanceDto,
   ScheduleBlockDto,
@@ -389,7 +391,8 @@ export class OpsService {
         }
         key = marks.map((m) => /^(B|BENAR|TRUE)$/.test(m));
       }
-      questions.push({ number: no, type: type as QuestionDto['type'], weight, prompt, options, key });
+      const passageCode = cells(11).toUpperCase() || undefined;
+      questions.push({ number: no, type: type as QuestionDto['type'], weight, prompt, options, key, ...(passageCode ? { passageCode } : {}) });
     });
     if (errors.length) throw new BadRequestException(errors.slice(0, 8).join(' '));
     if (!questions.length) throw new BadRequestException('Tidak ada baris soal yang valid.');
@@ -401,7 +404,61 @@ export class OpsService {
     return questions;
   }
 
-  async setQuestions(assessmentId: string, questions: QuestionDto[]) {
+  /** Bacaan dari sheet "Bacaan" di workbook Excel — kolom: Kode | Teks. */
+  parsePassageSheet(file: Express.Multer.File): PassageDto[] {
+    try {
+      const wb = XLSX.read(file.buffer, { type: 'buffer' });
+      const ws = wb.Sheets['Bacaan'];
+      if (!ws) return [];
+      const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: '' });
+      const out: PassageDto[] = [];
+      for (const r of rows) {
+        const code = String(r[0] ?? '').trim().toUpperCase();
+        const text = String(r[1] ?? '').trim();
+        if (!code || /^kode$/i.test(code) || !text) continue;
+        out.push({ code, content: `<p>${text.replace(/\n+/g, '</p><p>')}</p>` });
+      }
+      return out;
+    } catch { return []; }
+  }
+
+  /** Parse Word (.docx) — tabel soal + tabel BACAAN; gambar diupload ke storage. */
+  async parseQuestionDocx(file: Express.Multer.File): Promise<{ questions: QuestionDto[]; passages: PassageDto[] }> {
+    const { parseQuestionDocxBuffer } = await import('./question-docx.js');
+    const parsed = await parseQuestionDocxBuffer(file.buffer);
+    if (parsed.errors.length) throw new BadRequestException(parsed.errors.slice(0, 8).join(' '));
+    if (!parsed.questions.length) throw new BadRequestException('Tidak ada soal valid di file Word.');
+    const upload = async (imgs: { ref: string; buf: Buffer; ext: string; mime: string }[], html: string) => {
+      const media: { key: string; name: string }[] = [];
+      let out = html;
+      for (const img of imgs) {
+        const key = `qmedia/${randomUUID()}.${img.ext}`;
+        await this.storage.putObject(key, img.buf, img.mime);
+        media.push({ key, name: `${img.ref}.${img.ext}` });
+        out = out.split(`{{media:${img.ref}}}`).join(`/cbt/media/${key}`);
+      }
+      return { html: out, media };
+    };
+    const passages: PassageDto[] = [];
+    for (const p of parsed.passages) {
+      const r = await upload(p.images, p.content);
+      passages.push({ code: p.code, content: r.html, media: r.media });
+    }
+    const questions: QuestionDto[] = [];
+    for (const q of parsed.questions) {
+      const r = await upload(q.images, q.prompt);
+      questions.push({
+        number: q.number, type: q.type, weight: q.weight, prompt: r.html,
+        ...(q.options !== undefined ? { options: q.options } : {}),
+        ...(q.key !== undefined ? { key: q.key } : {}),
+        ...(q.passageCode ? { passageCode: q.passageCode } : {}),
+        ...(r.media.length ? { media: r.media } : {}),
+      });
+    }
+    return { questions, passages };
+  }
+
+  async setQuestions(assessmentId: string, questions: QuestionDto[], passages?: PassageDto[]) {
     await this.prisma.assessment.findUniqueOrThrow({ where: { id: assessmentId } });
     return this.prisma.$transaction(async (tx) => {
       await tx.assessmentQuestion.deleteMany({ where: { assessmentId } });
@@ -412,9 +469,22 @@ export class OpsService {
           key: q.key === undefined ? Prisma.JsonNull : (q.key as Prisma.InputJsonValue),
           prompt: q.prompt ?? null,
           options: q.options === undefined ? Prisma.JsonNull : (q.options as Prisma.InputJsonValue),
+          passageCode: q.passageCode ?? null,
+          media: q.media === undefined ? Prisma.JsonNull : (q.media as Prisma.InputJsonValue),
         })),
       });
-      return { count: created.count };
+      if (passages?.length) {
+        const codes = new Set(passages.map((p) => p.code));
+        await tx.assessmentPassage.deleteMany({ where: { assessmentId, code: { notIn: [...codes] } } });
+        for (const [i, p] of passages.entries()) {
+          await tx.assessmentPassage.upsert({
+            where: { assessmentId_code: { assessmentId, code: p.code } },
+            update: { content: p.content, sortOrder: i, ...(p.media ? { media: p.media as Prisma.InputJsonValue } : {}) },
+            create: { assessmentId, code: p.code, content: p.content, sortOrder: i, media: p.media === undefined ? Prisma.JsonNull : (p.media as Prisma.InputJsonValue) },
+          });
+        }
+      }
+      return { count: created.count, passages: passages?.length ?? 0 };
     });
   }
 
@@ -424,6 +494,15 @@ export class OpsService {
       orderBy: { number: 'asc' },
       include: { _count: { select: { answers: true } } },
     });
+  }
+
+  listPassages(assessmentId: string) {
+    return this.prisma.assessmentPassage.findMany({ where: { assessmentId }, orderBy: { sortOrder: 'asc' } });
+  }
+
+  /** Template Word import soal — tabel per soal + bacaan, contoh semua tipe. */
+  questionTemplateDocx(): Promise<Buffer> {
+    return import('./question-docx.js').then((m) => m.buildQuestionTemplateDocx());
   }
 
   async saveAnswers(questionId: string, dto: SaveAnswersDto) {
@@ -611,25 +690,45 @@ export class OpsService {
       this.prisma.attendanceRecord.findMany({ where: { classId, date } }),
     ]);
     const map = new Map(records.map((r) => [r.studentId, r]));
+    let takenByName: string | null = null;
+    const takerId = records.find((r) => r.takenBy)?.takenBy;
+    if (takerId) {
+      const u = await this.prisma.user.findUnique({
+        where: { id: takerId }, select: { email: true, employee: { select: { name: true } } },
+      });
+      takenByName = u?.employee?.name ?? u?.email ?? null;
+    }
     return {
-      class: cls, date, taken: records.length > 0,
+      class: cls, date, taken: records.length > 0, takenBy: takenByName,
       students: students.map((e) => ({
         id: e.student.id, name: e.student.name, nis: e.student.nis,
         status: map.get(e.student.id)?.status ?? 'PRESENT',
         note: map.get(e.student.id)?.note ?? null,
+        revised: !!map.get(e.student.id)?.revisedAt,
       })),
     };
   }
 
   async saveAttendance(dto: SaveAttendanceDto, takenById?: string) {
     const date = toDateOnly(dto.date);
+    const existing = await this.prisma.attendanceRecord.findMany({
+      where: { classId: dto.classId, date },
+      select: { studentId: true, status: true },
+    });
+    const before = new Map(existing.map((r) => [r.studentId, r.status]));
     return this.prisma.$transaction(async (tx) => {
       for (const r of dto.rows) {
         // Frontend memakai kode PERMIT; enum DB bernama PERMITTED — normalkan.
         const status = (r.status === 'PERMIT' ? 'PERMITTED' : r.status) as never;
+        const prior = before.get(r.studentId);
+        const revising = prior !== undefined && prior !== status;
         await tx.attendanceRecord.upsert({
           where: { studentId_date: { studentId: r.studentId, date } },
-          update: { status, note: r.note ?? null, takenBy: takenById ?? null, classId: dto.classId },
+          update: {
+            status, note: r.note ?? null,
+            ...(revising ? { revisedBy: takenById ?? null, revisedAt: new Date() } : {}),
+            ...(prior === undefined ? { takenBy: takenById ?? null, classId: dto.classId } : { classId: dto.classId }),
+          },
           create: {
             studentId: r.studentId, classId: dto.classId, date,
             status, note: r.note ?? null, takenBy: takenById ?? null,
@@ -638,6 +737,207 @@ export class OpsService {
       }
       return { saved: dto.rows.length, date };
     });
+  }
+
+  /** Ikhtisar harian seluruh rombel — untuk dasbor kesiswaan:
+      per kelas: sudah/belum diabsen, siapa pengabsen, jumlah per status. */
+  async attendanceDailyOverview(dateIso: string, academicYearId?: string) {
+    const date = toDateOnly(dateIso);
+    const year = academicYearId
+      ? await this.prisma.academicYear.findUniqueOrThrow({ where: { id: academicYearId } })
+      : await this.prisma.academicYear.findFirst({ where: { isActive: true } });
+    if (!year) throw new BadRequestException('Tahun ajaran tidak ada.');
+    const classes = await this.prisma.class.findMany({
+      where: { academicYearId: year.id },
+      orderBy: [{ gradeLevel: 'asc' }, { name: 'asc' }],
+      include: {
+        _count: { select: { enrollments: { where: { student: { status: 'ACTIVE' } } } } },
+      },
+    });
+    const records = await this.prisma.attendanceRecord.findMany({
+      where: { classId: { in: classes.map((c) => c.id) }, date },
+    });
+    // Nama pengabsen: takenBy menyimpan userId → petakan ke nama pegawai/akun.
+    const takerIds = [...new Set(records.flatMap((r) => [r.takenBy, r.revisedBy]).filter((x): x is string => !!x))];
+    const users = takerIds.length
+      ? await this.prisma.user.findMany({ where: { id: { in: takerIds } }, select: { id: true, email: true, employee: { select: { name: true } } } })
+      : [];
+    const nameOf = new Map(users.map((u) => [u.id, u.employee?.name ?? u.email]));
+    const byClass = new Map<string, typeof records>();
+    for (const r of records) {
+      const arr = byClass.get(r.classId) ?? [];
+      arr.push(r);
+      byClass.set(r.classId, arr);
+    }
+    const cnt = (arr: typeof records, s: string) => arr.filter((r) => r.status === s).length;
+    const rows = classes.map((c) => {
+      const arr = byClass.get(c.id) ?? [];
+      const taken = arr.length > 0;
+      const reviser = arr.find((r) => r.revisedBy);
+      return {
+        classId: c.id, name: c.name, gradeLevel: c.gradeLevel,
+        students: c._count.enrollments,
+        taken,
+        takenBy: taken ? (nameOf.get(arr[0]!.takenBy ?? '') ?? null) : null,
+        revisedBy: reviser ? (nameOf.get(reviser.revisedBy ?? '') ?? null) : null,
+        present: cnt(arr, 'PRESENT'), sick: cnt(arr, 'SICK'),
+        permit: cnt(arr, 'PERMITTED') + cnt(arr, 'PERMIT' as never),
+        absent: cnt(arr, 'ABSENT'),
+        recorded: arr.length,
+      };
+    });
+    const total = (k: 'present' | 'sick' | 'permit' | 'absent' | 'students' | 'recorded') =>
+      rows.reduce((a, r) => a + r[k], 0);
+    return {
+      date, academicYear: { id: year.id, name: year.name },
+      classes: rows,
+      summary: {
+        classes: rows.length, takenClasses: rows.filter((r) => r.taken).length,
+        students: total('students'), recorded: total('recorded'),
+        present: total('present'), sick: total('sick'), permit: total('permit'), absent: total('absent'),
+      },
+    };
+  }
+
+  /** Riwayat absen satu siswa + rekap jumlah per status. */
+  async studentAttendanceHistory(studentId: string, academicYearId?: string) {
+    const s = await this.prisma.student.findUniqueOrThrow({
+      where: { id: studentId },
+      select: { id: true, name: true, nis: true, nisn: true },
+    });
+    const records = await this.prisma.attendanceRecord.findMany({
+      where: { studentId },
+      orderBy: { date: 'desc' },
+      take: 400,
+      include: { class: { select: { id: true, name: true, gradeLevel: true, academicYearId: true } } },
+    });
+    const filtered = academicYearId ? records.filter((r) => r.class.academicYearId === academicYearId) : records;
+    const c = (st: string) => filtered.filter((r) => r.status === st).length;
+    return {
+      student: s,
+      counts: { present: c('PRESENT'), sick: c('SICK'), permit: c('PERMITTED'), absent: c('ABSENT'), total: filtered.length },
+      records: filtered.map((r) => ({ date: r.date, status: r.status, note: r.note, class: r.class.name, revised: !!r.revisedAt })),
+    };
+  }
+
+  /** Laporan absensi fleksibel — scope: studentIds | classIds | gradeLevels | (kosong = semua).
+      mode: 'day' (tanggal tunggal) | 'range' (dari–sampai) | 'month' (kalender penuh,
+      tanggal libur/Minggu ditandai) | 'months' (agregat jumlah per bulan dalam rentang). */
+  async attendanceReport(query: {
+    academicYearId?: string | undefined; studentIds?: string[] | undefined; classIds?: string[] | undefined; gradeLevels?: number[] | undefined;
+    mode: 'day' | 'range' | 'month' | 'months'; date?: string | undefined; from?: string | undefined; to?: string | undefined; year?: number | undefined; month?: number | undefined;
+  }) {
+    const year = query.academicYearId
+      ? await this.prisma.academicYear.findUniqueOrThrow({ where: { id: query.academicYearId } })
+      : await this.prisma.academicYear.findFirst({ where: { isActive: true } });
+    if (!year) throw new BadRequestException('Tahun ajaran tidak ada.');
+    const classes = await this.prisma.class.findMany({
+      where: {
+        academicYearId: year.id,
+        ...(query.classIds?.length ? { id: { in: query.classIds } } : {}),
+        ...(query.gradeLevels?.length ? { gradeLevel: { in: query.gradeLevels } } : {}),
+      },
+      orderBy: [{ gradeLevel: 'asc' }, { name: 'asc' }],
+    });
+    const enrollments = await this.prisma.enrollment.findMany({
+      where: {
+        classId: { in: classes.map((c) => c.id) }, academicYearId: year.id,
+        ...(query.studentIds?.length ? { studentId: { in: query.studentIds } } : {}),
+      },
+      include: { student: { select: { id: true, name: true, nis: true, nisn: true, gender: true, status: true } } },
+      orderBy: { student: { name: 'asc' } },
+    });
+
+    // Rentang tanggal per mode.
+    const pad = (n: number) => String(n).padStart(2, '0');
+    let dates: string[] = []; // 'YYYY-MM-DD'
+    let rangeFrom = ''; let rangeTo = '';
+    if (query.mode === 'day') {
+      const d = (query.date ?? '').slice(0, 10);
+      if (!d) throw new BadRequestException('Tanggal wajib.');
+      dates = [d]; rangeFrom = d; rangeTo = d;
+    } else if (query.mode === 'range' || query.mode === 'months') {
+      const f = (query.from ?? '').slice(0, 10); const t = (query.to ?? '').slice(0, 10);
+      if (!f || !t || f > t) throw new BadRequestException('Rentang tanggal tidak valid.');
+      rangeFrom = f; rangeTo = t;
+      if (query.mode === 'range') {
+        for (let d = new Date(`${f}T00:00:00`); d <= new Date(`${t}T00:00:00`); d.setDate(d.getDate() + 1)) {
+          dates.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
+        }
+        if (dates.length > 62) throw new BadRequestException('Rentang maksimal 62 hari — gunakan mode bulanan.');
+      }
+    } else {
+      const y = query.year ?? 0; const m = query.month ?? 0;
+      if (!y || m < 1 || m > 12) throw new BadRequestException('Bulan/tahun wajib.');
+      const dim = new Date(y, m, 0).getDate();
+      rangeFrom = `${y}-${pad(m)}-01`; rangeTo = `${y}-${pad(m)}-${pad(dim)}`;
+      dates = Array.from({ length: dim }, (_, i) => `${y}-${pad(m)}-${pad(i + 1)}`);
+    }
+
+    // Hari libur: Minggu + agenda kalender bertipe LIBUR dalam rentang.
+    const holidayEvts = await this.prisma.academicCalendarEvent.findMany({
+      where: { date: { gte: new Date(rangeFrom), lte: new Date(`${rangeTo}T23:59:59`) }, type: 'LIBUR' },
+      select: { date: true, title: true },
+    });
+    const holidayMap = new Map(holidayEvts.map((e) => [e.date.toISOString().slice(0, 10), e.title]));
+    const isHoliday = (iso: string) => new Date(`${iso}T00:00:00`).getDay() === 0 || holidayMap.has(iso);
+
+    const records = await this.prisma.attendanceRecord.findMany({
+      where: { classId: { in: classes.map((c) => c.id) }, date: { gte: new Date(rangeFrom), lte: new Date(`${rangeTo}T23:59:59`) } },
+      select: { studentId: true, classId: true, date: true, status: true, note: true },
+    });
+    const byStudent = new Map<string, Map<string, { status: string; note: string | null }>>();
+    for (const r of records) {
+      const key = r.date.toISOString().slice(0, 10);
+      const m = byStudent.get(r.studentId) ?? new Map();
+      m.set(key, { status: r.status, note: r.note });
+      byStudent.set(r.studentId, m);
+    }
+
+    const enrByClass = new Map<string, typeof enrollments>();
+    for (const e of enrollments) {
+      const arr = enrByClass.get(e.classId) ?? [];
+      arr.push(e);
+      enrByClass.set(e.classId, arr);
+    }
+    const DAY_NAMES = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+    const tally = (m?: Map<string, { status: string }>) => ({
+      present: m ? [...m.values()].filter((v) => v.status === 'PRESENT').length : 0,
+      sick: m ? [...m.values()].filter((v) => v.status === 'SICK').length : 0,
+      permit: m ? [...m.values()].filter((v) => v.status === 'PERMITTED').length : 0,
+      absent: m ? [...m.values()].filter((v) => v.status === 'ABSENT').length : 0,
+    });
+    // Struktur keluaran: jenjang → kelas → siswa — pemisah alami per kelas & jenjang.
+    const grades = [...new Set(classes.map((c) => c.gradeLevel))].sort((a, b) => a - b);
+    const groups = grades.map((g) => ({
+      gradeLevel: g,
+      classes: classes.filter((c) => c.gradeLevel === g).map((cls) => ({
+        classId: cls.id, name: cls.name,
+        students: (enrByClass.get(cls.id) ?? []).map((e) => {
+          const marks = byStudent.get(e.student.id);
+          return {
+            id: e.student.id, name: e.student.name, nis: e.student.nis, nisn: e.student.nisn,
+            gender: e.student.gender, status: e.student.status,
+            cells: dates.map((d) => {
+              const mark = marks?.get(d);
+              return {
+                date: d,
+                dayName: DAY_NAMES[new Date(`${d}T00:00:00`).getDay()],
+                holiday: isHoliday(d), holidayName: holidayMap.get(d) ?? null,
+                status: mark?.status ?? null, note: mark?.note ?? null,
+              };
+            }),
+            totals: tally(marks),
+          };
+        }),
+      })).filter((c) => c.students.length > 0),
+    })).filter((g) => g.classes.length > 0);
+    return {
+      academicYear: { id: year.id, name: year.name },
+      mode: query.mode, from: rangeFrom, to: rangeTo, dates,
+      holidays: dates.filter(isHoliday).map((d) => ({ date: d, name: holidayMap.get(d) ?? 'Minggu' })),
+      groups,
+    };
   }
 
   /** Rekap absen siswa per kelas — per bulan atau rentang tanggal. */
@@ -991,7 +1291,7 @@ export class OpsService {
 
   // ================= ExamRoom/Seat → kartu peserta =================
   createExamRoom(dto: ExamRoomDto) {
-    return this.prisma.examRoom.create({ data: { name: dto.name, period: dto.period, academicYearId: dto.academicYearId, capacity: dto.capacity ?? 24 } });
+    return this.prisma.examRoom.create({ data: { name: dto.name, period: dto.period, academicYearId: dto.academicYearId, capacity: dto.capacity ?? 24, examId: dto.examId ?? null } });
   }
   async listExamRooms(academicYearId: string, period?: string) {
     // Backfill kode peserta untuk kursi lama yang belum punya.
@@ -1007,7 +1307,11 @@ export class OpsService {
     }
     return this.prisma.examRoom.findMany({
       where: { academicYearId, ...(period ? { period } : {}) },
-      include: { seats: { include: { student: { select: { id: true, name: true, nis: true } }, class: { select: { id: true, name: true } } }, orderBy: { seatNo: 'asc' } }, _count: { select: { seats: true } } },
+      include: {
+        exam: { select: { id: true, code: true, title: true, startAt: true, endAt: true } },
+        seats: { include: { student: { select: { id: true, name: true, nis: true } }, class: { select: { id: true, name: true } } }, orderBy: { seatNo: 'asc' } },
+        _count: { select: { seats: true } },
+      },
       orderBy: { name: 'asc' },
     });
   }
@@ -1054,7 +1358,7 @@ export class OpsService {
     }
   }
 
-  async updateExamRoom(id: string, dto: { name?: string; period?: string; capacity?: number }) {
+  async updateExamRoom(id: string, dto: { name?: string; period?: string; capacity?: number; examId?: string | null }) {
     const room = await this.prisma.examRoom.findUniqueOrThrow({ where: { id }, include: { _count: { select: { seats: true } } } });
     if (dto.capacity !== undefined && dto.capacity < room._count.seats) {
       throw new ConflictException(`Kapasitas tak boleh di bawah jumlah peserta (${room._count.seats}).`);
@@ -1065,6 +1369,7 @@ export class OpsService {
         ...(dto.name !== undefined ? { name: dto.name } : {}),
         ...(dto.period !== undefined ? { period: dto.period } : {}),
         ...(dto.capacity !== undefined ? { capacity: dto.capacity } : {}),
+        ...(dto.examId !== undefined ? { examId: dto.examId } : {}),
       },
     });
   }
@@ -1081,11 +1386,53 @@ export class OpsService {
       where: { id: roomId },
       include: {
         academicYear: true,
+        exam: { select: { id: true, code: true, title: true, startAt: true, endAt: true } },
         seats: { include: { student: { select: { id: true, name: true, nis: true, nisn: true, gender: true } }, class: { select: { name: true } } }, orderBy: { seatNo: 'asc' } },
       },
     });
     const school = await this.prisma.school.findFirst();
     return { room, school };
+  }
+
+  /** Data calon peserta ujian (US-1/US-2) — per rombel jenjang tertentu (default kelas akhir 9). */
+  async usCandidates(academicYearId: string, gradeLevel?: number) {
+    const year = await this.prisma.academicYear.findUniqueOrThrow({ where: { id: academicYearId } });
+    const classes = await this.prisma.class.findMany({
+      where: { academicYearId, ...(gradeLevel ? { gradeLevel } : {}) },
+      orderBy: [{ gradeLevel: 'asc' }, { name: 'asc' }],
+      include: { homeroom: { select: { name: true } } },
+    });
+    const enrollments = await this.prisma.enrollment.findMany({
+      where: { classId: { in: classes.map((c) => c.id) }, academicYearId },
+      include: {
+        student: {
+          select: {
+            id: true, name: true, nis: true, nisn: true, gender: true,
+            birthPlace: true, birthDate: true, status: true,
+            fatherName: true, motherName: true,
+            parent: { select: { name: true } },
+          },
+        },
+      },
+      orderBy: { student: { name: 'asc' } },
+    });
+    const byClass = new Map(enrollments.reduce((a, e) => {
+      const arr = a.get(e.classId) ?? []; arr.push(e); return a.set(e.classId, arr);
+    }, new Map<string, typeof enrollments>()));
+    const school = await this.prisma.school.findFirst();
+    return {
+      school, academicYear: { id: year.id, name: year.name },
+      classes: classes.map((c) => {
+        const students = (byClass.get(c.id) ?? []).map((e) => e.student);
+        return {
+          id: c.id, name: c.name, gradeLevel: c.gradeLevel, homeroom: c.homeroom?.name ?? null,
+          students,
+          total: students.length,
+          male: students.filter((s) => s.gender === 'MALE').length,
+          female: students.filter((s) => s.gender === 'FEMALE').length,
+        };
+      }),
+    };
   }
 
   // ================= Mutasi: upload surat =================

@@ -35,15 +35,24 @@ export interface CbtQuestion {
   type: 'MCQ' | 'MCQ_COMPLEX' | 'TRUE_FALSE' | 'TRUE_FALSE_COMPLEX' | 'MATCHING';
   weight: number; prompt: string | null;
   options?: { choices?: string[]; statements?: string[]; rights?: string[]; pairs?: { left: string; right: string }[] } | null;
+  passageCode?: string | null;
+  media?: { key: string; name: string }[] | null;
 }
+export interface CbtPassage { code: string; content: string; media?: { key: string; name: string }[] | null }
 
 export interface CbtPaper {
   questions: CbtQuestion[];
+  passages?: CbtPassage[];
   answers: Record<string, unknown>;
   deadline: string;
   serverNow: string;
   remainingSec: number;
 }
+
+/** HTML dari impor Word — path gambar relatif API diprefiks base URL penuh. */
+export const mediaUrl = (src: string) => (src.startsWith('http') ? src : `${API}${src.startsWith('/') ? '' : '/'}${src}`);
+export const fixMediaHtml = (html: string) =>
+  html.replace(/src="(\/cbt\/media\/[^"]+)"/g, (_, s: string) => `src="${API}${s}"`);
 
 export interface CbtResult {
   status: string; submittedAt: string | null;

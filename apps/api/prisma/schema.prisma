@@ -1502,6 +1502,8 @@ model AttendanceRecord {
   status    AttendanceStatus
   note      String?
   takenBy   String?          @map("taken_by") @db.Uuid
+  revisedBy String?          @map("revised_by") @db.Uuid
+  revisedAt DateTime?        @map("revised_at")
   createdAt DateTime         @default(now()) @map("created_at")
 
   student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
@@ -1608,9 +1610,25 @@ model Assessment {
   academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
   grades       Grade[]
   questions    AssessmentQuestion[]
+  passages     AssessmentPassage[]
   exams        Exam[]
 
   @@map("assessments")
+}
+
+/** Teks bacaan bersama untuk sekelompok soal — soal merujuk lewat `passageCode`. */
+model AssessmentPassage {
+  id           String @id @default(uuid()) @db.Uuid
+  assessmentId String @map("assessment_id") @db.Uuid
+  code         String // "B1", "B2" — dirujuk soal
+  content      String // teks bacaan (boleh HTML sederhana dari impor Word)
+  media        Json? // gambar bacaan — [{key, name}]
+  sortOrder    Int    @default(0) @map("sort_order")
+
+  assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@unique([assessmentId, code])
+  @@map("assessment_passages")
 }
 
 model Grade {
@@ -1885,8 +1903,10 @@ model AssessmentQuestion {
   type         QuestionType @default(MCQ)
   weight       Int          @default(1) // bobot nilai
   key          Json? // kunci jawaban (index benar / pasangan menjodohkan)
-  prompt       String? // teks soal singkat opsional
-  options      Json? // teks pilihan — {choices:[..]} utk PG/PGK, {pairs:[{left,right}]} utk menjodohkan
+  prompt       String? // teks soal singkat opsional (boleh mengandung HTML sederhana dari impor Word)
+  options      Json? // teks pilihan — {choices:[..]} utk PG/PGK (item boleh {t,img}), {pairs:[{left,right}]} utk menjodohkan
+  passageCode  String?      @map("passage_code") // kode bacaan → AssessmentPassage.code
+  media        Json? // gambar soal dari impor Word — [{key, name}]
 
   assessment  Assessment      @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
   answers     StudentAnswer[]
@@ -1950,6 +1970,7 @@ model Exam {
   assessment Assessment    @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
   attempts   ExamAttempt[]
   sessions   ExamSession[]
+  rooms      ExamRoom[]
 
   @@index([academicYearId, status])
   @@map("exams")
@@ -1985,6 +2006,7 @@ model ExamAttempt {
   submittedAt  DateTime?         @map("submitted_at")
   score        Int?
   maxScore     Int?              @map("max_score")
+  enterCount   Int               @default(0) @map("enter_count") // berapa kali siswa login — indikasi keluar-masuk
   createdAt    DateTime          @default(now()) @map("created_at")
   updatedAt    DateTime          @updatedAt @map("updated_at")
 
@@ -2170,9 +2192,11 @@ model ExamRoom {
   period         String // label periode ujian, e.g. "US 2026" / "PTS Ganjil"
   academicYearId String  @map("academic_year_id") @db.Uuid
   capacity       Int     @default(24)
+  examId         String?  @map("exam_id") @db.Uuid // tautan ke ujian CBT — kartu cetak NIS+kode ujian
   createdAt      DateTime @default(now()) @map("created_at")
 
   academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  exam         Exam?        @relation(fields: [examId], references: [id], onDelete: SetNull)
   seats        ExamSeat[]
 
   @@unique([name, period, academicYearId])

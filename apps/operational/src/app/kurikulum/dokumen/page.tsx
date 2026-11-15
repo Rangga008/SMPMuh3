@@ -10,11 +10,12 @@ import { FilePick } from '@/components/file-pick';
 import { SearchSelect } from '@/components/search-select';
 import { useConfirm } from '@/components/confirm-dialog';
 import {
-  collectionItemUrl, createCollection, deleteStaffDoc, listCollections,
-  listPolicies, listStaffDocs, listUniforms, policyFileUrl, staffDocUrl,
+  createCollection, deleteStaffDoc, listCollections,
+  listPolicies, listStaffDocs, listUniforms,
   submitCollectionFile, uploadPolicy, uploadStaffDoc, upsertUniform,
 } from '@/lib/api-ops';
 import { listAcademicYears, listEmployees, type AcademicYear } from '@/lib/api';
+import { useFileViewer } from '@/components/file-viewer';
 
 const CATS = ['SK', 'IJAZAH', 'ADMINISTRASI', 'PERANGKAT', 'LAINNYA'];
 const POLICY_KINDS = ['TATA_TERTIB_SISWA', 'TATA_TERTIB_PTK', 'SERAGAM', 'FORM_MUTASI_MASUK', 'FORM_MUTASI_KELUAR', 'LAINNYA'];
@@ -39,6 +40,7 @@ export default function DokumenPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const { confirm, dialog } = useConfirm();
+  const fv = useFileViewer();
   const [yearId, setYearId] = useState('');
 
   const load = useCallback(() => {
@@ -106,7 +108,7 @@ export default function DokumenPage() {
                     <li key={i.id} className="flex items-center justify-between">
                       <span>{i.employee.name}</span>
                       {i.submittedAt ? (
-                        <a href={collectionItemUrl(i.id)} className="text-xs font-bold text-emerald-700 hover:underline">✓ {i.fileName}</a>
+                        <button type="button" onClick={() => fv.open({ path: `/ops/collection-items/${i.id}/file`, name: i.fileName ?? 'berkas' })} className="text-xs font-bold text-emerald-700 hover:underline">✓ {i.fileName}</button>
                       ) : (
                         <span className="text-xs font-semibold text-amber-600">belum mengumpulkan</span>
                       )}
@@ -141,7 +143,7 @@ export default function DokumenPage() {
               <td className="max-w-44 truncate px-5 py-2.5 text-xs text-sand-600" title={d.fileName}>{d.fileName}</td>
               <td className="px-5 py-2.5 text-right">
                 <span className="flex justify-end gap-2">
-                  <RowBtn type="button" onClick={() => window.open(staffDocUrl(d.id), '_blank')}>Detail</RowBtn>
+                  <RowBtn type="button" onClick={() => fv.open({ path: `/ops/staff-docs/${d.id}/file`, name: d.fileName, mime: d.mimeType })}>Lihat</RowBtn>
                   <RowBtn tone="danger" type="button" onClick={async () => { if (await confirm(`Hapus dokumen "${d.title}"? File yang tersimpan ikut terhapus.`)) run(() => deleteStaffDoc(d.id), 'Dokumen dihapus.'); }}>Hapus</RowBtn>
                 </span>
               </td>
@@ -163,7 +165,7 @@ export default function DokumenPage() {
                 </div>
                 <span className="flex items-center gap-2">
                   <span className="max-w-36 truncate text-xs text-sand-500" title={p.fileName}>{p.fileName}</span>
-                  <RowBtn type="button" onClick={() => window.open(policyFileUrl(p.id), '_blank')}>Detail</RowBtn>
+                  <RowBtn type="button" onClick={() => fv.open({ path: `/ops/policies/${p.id}/file`, name: p.fileName ?? 'dokumen' })}>Lihat</RowBtn>
                 </span>
               </div>
             ))}
@@ -307,6 +309,7 @@ export default function DokumenPage() {
         </form>
       </Modal>
       {dialog}
+      {fv.viewer}
     </Shell>
   );
 }

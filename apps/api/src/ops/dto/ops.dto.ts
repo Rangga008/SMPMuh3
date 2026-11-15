@@ -31,6 +31,17 @@ export class QuestionDto {
   @IsOptional() @IsString() prompt?: string;
   /** Teks pilihan — {choices:[..]} utk PG/PGK, {statements:[..]} utk BSK, {pairs:[{left,right}]} utk menjodohkan. */
   @IsOptional() options?: unknown;
+  /** Kode bacaan — merujuk AssessmentPassage.code. */
+  @IsOptional() @IsString() passageCode?: string;
+  /** Gambar soal hasil impor Word — [{key, name}]. */
+  @IsOptional() media?: { key: string; name: string }[];
+}
+
+/** Bacaan bersama — satu kode dipakai banyak soal. */
+export class PassageDto {
+  @IsString() code!: string;
+  @IsString() content!: string;
+  @IsOptional() media?: { key: string; name: string }[];
 }
 
 export class AnswerRowDto {
@@ -86,6 +97,7 @@ export class ExamRoomDto {
   @IsString() @IsNotEmpty() period!: string;
   @IsUUID() academicYearId!: string;
   @IsOptional() @IsInt() @Min(1) capacity?: number;
+  @IsOptional() @IsUUID() examId?: string;
 }
 
 export class ExamSeatDto {
@@ -98,6 +110,7 @@ export class ExamRoomUpdateDto {
   @IsOptional() @IsString() @IsNotEmpty() name?: string;
   @IsOptional() @IsString() @IsNotEmpty() period?: string;
   @IsOptional() @IsInt() @Min(1) capacity?: number;
+  @IsOptional() @IsUUID() examId?: string | null;
 }
 
 export class UniformDayDto {

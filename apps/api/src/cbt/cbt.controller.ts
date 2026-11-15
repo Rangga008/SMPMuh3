@@ -160,6 +160,23 @@ export class CbtController {
     return this.cbt.importExamQuestions(id, file, u);
   }
 
+  /** Bacaan soal (passthrough ke asesmen terkait). */
+  @Get('exams/:id/passages')
+  @RequirePermission(PERMISSIONS.ACADEMIC_READ)
+  examPassages(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.cbt.examPassages(id, u);
+  }
+
+  /** Media gambar soal — publik agar <img> di aplikasi siswa langsung tampil. */
+  @Get('media/qmedia/:file')
+  @Public()
+  async media(@Param('file') file: string, @Res() res: Response) {
+    const f = await this.cbt.questionMedia(`qmedia/${file}`);
+    res.setHeader('Content-Type', f.mime);
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.send(f.buf);
+  }
+
   // ================= Siswa (publik — kredensial = NIS + kode + token sesi) =================
   // Satu sesi ujian bisa diisi ~180 siswa dari 1 IP publik sekolah (NAT lab),
   // jadi endpoint siswa dikecualikan dari limit 300/menit global — keamanan

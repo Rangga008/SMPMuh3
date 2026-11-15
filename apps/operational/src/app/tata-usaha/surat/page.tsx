@@ -10,10 +10,8 @@ import {
   createLetterCategory,
   deleteLetter,
   deleteLetterCategory,
-  downloadFile,
   listLetterCategories,
   listLetters,
-  previewFile,
   updateLetter,
   uploadLetterFile,
   type Letter,
@@ -23,6 +21,7 @@ import {
 import { RowBtn } from '@/components/row-btn';
 import { FilePick } from '@/components/file-pick';
 import { useConfirm } from '@/components/confirm-dialog';
+import { useFileViewer } from '@/components/file-viewer';
 const DIRS = [
   { key: 'IN', label: 'Surat Masuk' },
   { key: 'OUT', label: 'Surat Keluar' },
@@ -33,6 +32,7 @@ const fmtDate = (iso: string) =>
 
 export default function SuratPage() {
   const { confirm, dialog } = useConfirm();
+  const fv = useFileViewer();
   const [dir, setDir] = useState<'IN' | 'OUT'>('IN');
   const [search, setSearch] = useState('');
   const [categoryId, setCategoryId] = useState('');
@@ -188,10 +188,10 @@ export default function SuratPage() {
               <span className="flex justify-end gap-2">
                 {l.fileName ? (
                   <>
-                    <RowBtn type="button" onClick={async () => { try { await previewFile(`/tu/letters/${l.id}/file`); } catch { setError('Gagal membuka lampiran.'); } }}>
+                    <RowBtn type="button" onClick={() => fv.open({ path: `/tu/letters/${l.id}/file`, name: l.fileName ?? 'lampiran', mime: l.mimeType })}>
                       Lihat
                     </RowBtn>
-                    <RowBtn type="button" onClick={async () => { try { await downloadFile(`/tu/letters/${l.id}/file`, l.fileName ?? 'lampiran'); } catch { setError('Gagal mengunduh lampiran.'); } }}>
+                    <RowBtn type="button" onClick={async () => { try { await fv.download({ path: `/tu/letters/${l.id}/file`, name: l.fileName ?? 'lampiran' }); } catch { setError('Gagal mengunduh lampiran.'); } }}>
                       Unduh
                     </RowBtn>
                   </>
@@ -302,6 +302,7 @@ export default function SuratPage() {
         </ul>
       </Modal>
           {dialog}
+      {fv.viewer}
       </Shell>
   );
 }

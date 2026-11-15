@@ -7,7 +7,8 @@ import { PageTitle, Widget } from '@/components/widgets';
 import { DataTable } from '@/components/data-table';
 import { useConfirm } from '@/components/confirm-dialog';
 import { FilePick } from '@/components/file-pick';
-import { createSubmission, listSubmissions, reviewSubmission, submissionFileUrl, type ProgramSubmissionView } from '@/lib/api-ops';
+import { createSubmission, listSubmissions, reviewSubmission, type ProgramSubmissionView } from '@/lib/api-ops';
+import { useFileViewer } from '@/components/file-viewer';
 
 const KINDS = ['RKS', 'PROKER', 'RENCANA', 'REALISASI'];
 const DEPTS = ['KURIKULUM', 'KESISWAAN', 'TATA_USAHA', 'KEUANGAN', 'LAINNYA'];
@@ -16,6 +17,7 @@ const TONE = { PENDING: 'accent', APPROVED: 'primary', REJECTED: 'danger' } as c
 
 export default function PengajuanPage() {
   const { confirm, dialog } = useConfirm();
+  const fv = useFileViewer();
   const [rows, setRows] = useState<ProgramSubmissionView[]>([]);
   const [fDept, setFDept] = useState('');
   const [fStatus, setFStatus] = useState('');
@@ -37,6 +39,7 @@ export default function PengajuanPage() {
       <PageTitle title="Pengajuan Program & RKS" subtitle="RKS, program kerja, rencana & realisasi kegiatan per bidang — menunggu persetujuan Kepala Sekolah."
         actions={<Button size="sm" onClick={() => setModal(true)}>+ Pengajuan Baru</Button>} />
       {dialog}
+      {fv.viewer}
       {error ? <p className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p> : null}
       {notice ? <p className="mb-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{notice}</p> : null}
 
@@ -57,7 +60,7 @@ export default function PengajuanPage() {
               <td className="px-5 py-2.5"><Badge tone="neutral">{s.kind}</Badge></td>
               <td className="px-5 py-2.5 font-medium text-sand-900">
                 {s.title}
-                {s.fileName ? <a href={submissionFileUrl(s.id)} className="ml-2 text-xs font-bold text-primary-700 hover:underline">{s.fileName}</a> : null}
+                {s.fileName ? <button type="button" onClick={() => fv.open({ path: `/ops/submissions/${s.id}/file`, name: s.fileName!, mime: s.mimeType })} className="ml-2 text-xs font-bold text-primary-700 hover:underline">{s.fileName}</button> : null}
                 {s.reviewNote ? <p className="text-xs text-sand-500">Catatan KS: {s.reviewNote}</p> : null}
               </td>
               <td className="px-5 py-2.5 text-right font-semibold">{s.amountTotal ? rp(s.amountTotal) : '—'}</td>

@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@smpmuh3/ui';
 import { ApiError } from '@/lib/api';
 import {
+  fixMediaHtml,
   getPaper,
   getSession,
   saveAnswer,
@@ -13,10 +14,34 @@ import {
   type CbtQuestion,
   type CbtSession,
 } from '@/lib/cbt';
+import { API } from '@/lib/api';
 
 const LETTERS = 'ABCDE';
 const fmt = (sec: number) =>
   `${String(Math.floor(sec / 3600)).padStart(2, '0')}:${String(Math.floor((sec % 3600) / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`;
+
+/** Teks opsional-HTML (impor Word) — plain text dirender apa adanya, HTML lewat sanitize sisi server. */
+function Rich({ text, className }: { text: string; className?: string }) {
+  if (!/<[a-zA-Z]/.test(text)) return <span className={className}>{text}</span>;
+  return (
+    <span
+      className={`rich-html block [&_img]:my-2 [&_img]:max-w-full [&_img]:rounded-lg [&_p]:my-1 [&_table]:my-2 [&_table]:w-full [&_td]:border [&_td]:border-sand-200 [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-sand-200 [&_th]:bg-sand-50 [&_th]:px-2 [&_th]:py-1 ${className ?? ''}`}
+      dangerouslySetInnerHTML={{ __html: fixMediaHtml(text) }}
+    />
+  );
+}
+/** Gambar lampiran soal/bacaan dari impor Word. */
+function MediaImgs({ media }: { media?: { key: string; name: string }[] | null | undefined }) {
+  if (!media?.length) return null;
+  return (
+    <div className="my-3 space-y-2">
+      {media.map((m) => (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img key={m.key} src={`${API}/cbt/media/${m.key}`} alt={m.name} className="max-w-full rounded-xl border border-sand-200" />
+      ))}
+    </div>
+  );
+}
 
 type Ans = Record<string, unknown>;
 
@@ -138,7 +163,7 @@ export default function CbtRunnerPage() {
               <span className={`grid size-7 shrink-0 place-items-center rounded-lg text-xs font-black ${sel === i ? 'bg-primary-600 text-white' : 'bg-sand-100 text-sand-500'}`}>
                 {LETTERS[i]}
               </span>
-              <span className="pt-1">{c}</span>
+              <span className="pt-1"><Rich text={c} /></span>
             </button>
           ))}
         </div>
@@ -168,7 +193,7 @@ export default function CbtRunnerPage() {
                 <span className={`grid size-7 shrink-0 place-items-center rounded-lg text-xs font-black ${on ? 'bg-primary-600 text-white' : 'bg-sand-100 text-sand-500'}`}>
                   {on ? '✓' : LETTERS[i]}
                 </span>
-                <span className="pt-1">{c}</span>
+                <span className="pt-1"><Rich text={c} /></span>
               </button>
             );
           })}
@@ -204,7 +229,7 @@ export default function CbtRunnerPage() {
             <div key={i} className="flex flex-col gap-2 rounded-2xl border border-sand-200 bg-white p-3.5 sm:flex-row sm:items-center">
               <span className="flex-1 text-sm font-medium">
                 <span className="mr-1.5 inline-grid size-6 place-items-center rounded-lg bg-sand-100 text-[11px] font-black text-sand-500">{i + 1}</span>
-                {st}
+                <Rich text={st} />
               </span>
               <div className="flex shrink-0 gap-2">
                 {([['B', true], ['S', false]] as const).map(([lbl, v]) => (
@@ -299,7 +324,18 @@ export default function CbtRunnerPage() {
               {saving === 'saving' ? 'menyimpan…' : saving === 'ok' ? '✓ tersimpan' : ''}
             </p>
           </div>
-          <p className="mb-5 whitespace-pre-line text-[15px] font-medium leading-relaxed text-sand-900">{q.prompt}</p>
+          {q.passageCode ? (() => {
+            const pg = paper.passages?.find((x) => x.code === q.passageCode);
+            return pg ? (
+              <div className="mb-5 rounded-2xl border-l-4 border-primary-400 bg-primary-50/50 p-4">
+                <p className="mb-1 text-[10px] font-black uppercase tracking-wider text-primary-600">Bacaan {pg.code}</p>
+                <Rich text={pg.content} className="text-sm leading-relaxed text-sand-800" />
+                <MediaImgs media={pg.media} />
+              </div>
+            ) : null;
+          })() : null}
+          <Rich text={q.prompt ?? ''} className="mb-5 whitespace-pre-line text-[15px] font-medium leading-relaxed text-sand-900" />
+          <MediaImgs media={q.media} />
           {body(q)}
           <div className="mt-6 flex justify-between">
             <Button variant="outline" disabled={cur === 0} onClick={() => setCur((c) => c - 1)}>← Sebelumnya</Button>

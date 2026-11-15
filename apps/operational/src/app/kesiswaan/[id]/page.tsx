@@ -22,7 +22,6 @@ import {
   enrollStudent,
   me,
   notifyInvoice,
-  openStudentDocument,
   recordBillingPayment,
   removeEkskulMember,
   updateStudent,
@@ -40,6 +39,7 @@ import {
 
 import { RowBtn, rowActionClasses } from '@/components/row-btn';
 import { FilePick } from '@/components/file-pick';
+import { useFileViewer } from '@/components/file-viewer';
 const rupiah = (n: number) => `Rp${n.toLocaleString('id-ID')}`;
 const STATUS_BILL: Record<string, string> = {
   OPEN: 'Belum bayar', PARTIAL: 'Angsuran', PAID: 'Lunas', EXPIRED: 'Kedaluwarsa', CANCELLED: 'Batal',
@@ -147,10 +147,9 @@ export default function StudentDetailPage() {
     return doc.id;
   }
 
-  function openDoc(docId: string) {
-    openStudentDocument(docId)
-      .then((url) => window.open(url, '_blank'))
-      .catch(() => setError('Dokumen tidak dapat dibuka.'));
+  const fv = useFileViewer();
+  function openDoc(doc: { id: string; fileName: string; mimeType?: string | null }) {
+    fv.open({ path: `/students/documents/${doc.id}`, name: doc.fileName, mime: doc.mimeType });
   }
 
   // Bayar/angsur — nominal bisa sebagian (cicilan) maupun lunas.
@@ -358,7 +357,7 @@ export default function StudentDetailPage() {
                             key={d.id}
                             className="flex items-center justify-between gap-3 rounded-xl border border-sand-200 bg-sand-50 px-4 py-2.5 text-sm"
 >
-                            <RowBtn type="button" onClick={() => openDoc(d.id)} className="min-w-0 truncate text-left" title="Buka dokumen">
+                            <RowBtn type="button" onClick={() => openDoc(d)} className="min-w-0 truncate text-left" title="Buka dokumen">
                               {d.fileName}
                             </RowBtn>
                             <span className="flex shrink-0 items-center gap-2 text-xs text-sand-500">
@@ -421,7 +420,7 @@ export default function StudentDetailPage() {
                       {a.evidenceDocument ? (
                         <>
                           {' · '}
-                          <RowBtn type="button" onClick={() => openDoc(a.evidenceDocument!.id)}>
+                          <RowBtn type="button" onClick={() => openDoc(a.evidenceDocument!)}>
                             bukti: {a.evidenceDocument.fileName}
                           </RowBtn>
                         </>
@@ -485,7 +484,7 @@ export default function StudentDetailPage() {
                       {v.evidenceDocument ? (
                         <>
                           {' · '}
-                          <RowBtn type="button" onClick={() => openDoc(v.evidenceDocument!.id)}>
+                          <RowBtn type="button" onClick={() => openDoc(v.evidenceDocument!)}>
                             bukti: {v.evidenceDocument.fileName}
                           </RowBtn>
                         </>
@@ -981,6 +980,7 @@ export default function StudentDetailPage() {
           </form>
         ) : null}
       </Modal>
+      {fv.viewer}
     </Shell>
   );
 }

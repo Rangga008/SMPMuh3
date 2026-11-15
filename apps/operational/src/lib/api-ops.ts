@@ -30,9 +30,12 @@ export const downloadTimetableXlsx = (academicYearId: string, classId?: string) 
   downloadFile(`/ops/timetable.xlsx?academicYearId=${academicYearId}${classId ? `&classId=${classId}` : ''}`, 'jadwal-kelas.xlsx');
 
 export interface AssessmentQuestion {
-  id: string; number: number; type: 'MCQ' | 'MCQ_COMPLEX' | 'TRUE_FALSE' | 'MATCHING';
+  id: string; number: number; type: 'MCQ' | 'MCQ_COMPLEX' | 'TRUE_FALSE' | 'TRUE_FALSE_COMPLEX' | 'MATCHING';
   weight: number; key?: unknown; prompt?: string | null; options?: unknown;
+  passageCode?: string | null; media?: { key: string; name: string }[] | null;
 }
+export interface AssessmentPassage { id: string; code: string; content: string; media?: { key: string; name: string }[] | null }
+export const getExamPassages = (examId: string) => req<AssessmentPassage[]>(`/cbt/exams/${examId}/passages`);
 export const getAssessmentQuestions = (id: string) => req<AssessmentQuestion[]>(`/ops/assessments/${id}/questions`);
 export const setAssessmentQuestions = (id: string, questions: Partial<AssessmentQuestion>[]) =>
   req(`/ops/assessments/${id}/questions`, { method: 'PUT', json: { questions } });
@@ -71,13 +74,64 @@ export interface ClassAttendanceRow {
   id: string; name: string; nis?: string | null; status: string; note?: string | null;
 }
 export const getClassAttendance = (classId: string, date: string) =>
-  req<{ class: ClassView; date: string; taken: boolean; students: ClassAttendanceRow[] }>(
+  req<{ class: ClassView; date: string; taken: boolean; takenBy?: string | null; students: (ClassAttendanceRow & { revised?: boolean })[] }>(
     `/ops/attendance/class?classId=${classId}&date=${date}`);
 export const saveClassAttendance = (dto: { classId: string; date: string; rows: { studentId: string; status: string; note?: string }[] }) =>
   req('/ops/attendance', { method: 'POST', json: dto });
 export const getAttendanceRecap = (classId: string, from: string, to: string) =>
   req<{ class: ClassView; daysTaken: number; students: { id: string; name: string; nis?: string | null; present: number; sick: number; permit: number; absent: number; total: number; presentPct: number | null }[] }>(
     `/ops/attendance/recap?classId=${classId}&from=${from}&to=${to}`);
+
+// ---- Dasbor & laporan absensi siswa (kesiswaan) ----
+export interface DailyOverviewRow {
+  classId: string; name: string; gradeLevel: number; students: number;
+  taken: boolean; takenBy?: string | null; revisedBy?: string | null;
+  present: number; sick: number; permit: number; absent: number; recorded: number;
+}
+export interface DailyOverview {
+  date: string; academicYear: { id: string; name: string };
+  classes: DailyOverviewRow[];
+  summary: { classes: number; takenClasses: number; students: number; recorded: number; present: number; sick: number; permit: number; absent: number };
+}
+export const attendanceDailyOverview = (date: string, academicYearId?: string) =>
+  req<DailyOverview>(`/ops/attendance/daily-overview?date=${date}${academicYearId ? `&academicYearId=${academicYearId}` : ''}`);
+
+export interface StudentHistory {
+  student: { id: string; name: string; nis?: string | null; nisn?: string | null };
+  counts: { present: number; sick: number; permit: number; absent: number; total: number };
+  records: { date: string; status: string; note?: string | null; class: string; revised: boolean }[];
+}
+export const studentAttendanceHistory = (studentId: string, academicYearId?: string) =>
+  req<StudentHistory>(`/ops/attendance/student-history?studentId=${studentId}${academicYearId ? `&academicYearId=${academicYearId}` : ''}`);
+
+export interface ReportCell { date: string; dayName: string; holiday: boolean; holidayName?: string | null; status: string | null; note?: string | null }
+export interface ReportStudent {
+  id: string; name: string; nis?: string | null; nisn?: string | null; gender?: string | null; status: string;
+  cells: ReportCell[]; totals: { present: number; sick: number; permit: number; absent: number };
+}
+export interface AttendanceReport {
+  academicYear: { id: string; name: string };
+  mode: string; from: string; to: string; dates: string[];
+  holidays: { date: string; name: string }[];
+  groups: { gradeLevel: number; classes: { classId: string; name: string; students: ReportStudent[] }[] }[];
+}
+export const attendanceReport = (q: {
+  mode: 'day' | 'range' | 'month' | 'months';
+  academicYearId?: string; studentIds?: string[]; classIds?: string[]; gradeLevels?: number[];
+  date?: string; from?: string; to?: string; year?: number; month?: number;
+}) => {
+  const p = new URLSearchParams({ mode: q.mode });
+  if (q.academicYearId) p.set('academicYearId', q.academicYearId);
+  if (q.studentIds?.length) p.set('studentIds', q.studentIds.join(','));
+  if (q.classIds?.length) p.set('classIds', q.classIds.join(','));
+  if (q.gradeLevels?.length) p.set('gradeLevels', q.gradeLevels.join(','));
+  if (q.date) p.set('date', q.date);
+  if (q.from) p.set('from', q.from);
+  if (q.to) p.set('to', q.to);
+  if (q.year) p.set('year', String(q.year));
+  if (q.month) p.set('month', String(q.month));
+  return req<AttendanceReport>(`/ops/attendance/report?${p}`);
+};
 
 export interface StaffDoc {
   id: string; employeeId: string; category: string; title: string;
@@ -114,7 +168,7 @@ export interface ProgramSubmissionView {
   id: string; department: string; kind: string; title: string; description?: string | null;
   rab?: { name: string; qty: number; unit: string; price: number; amount: number }[] | null;
   amountTotal: number; status: 'PENDING' | 'APPROVED' | 'REJECTED';
-  fileName?: string | null; reviewNote?: string | null; createdAt: string;
+  fileName?: string | null; mimeType?: string | null; reviewNote?: string | null; createdAt: string;
 }
 export const listSubmissions = (q: { department?: string | undefined; status?: string | undefined }) =>
   req<ProgramSubmissionView[]>(`/ops/submissions${qs(q)}`);
@@ -133,7 +187,8 @@ export const submissionFileUrl = (id: string) => `/api/v1/ops/submissions/${id}/
 
 export interface ArchiveItemView {
   id: string; title: string; refNumber?: string | null; date?: string | null;
-  fileName: string; categoryId?: string | null; category?: { id: string; name: string } | null; createdAt: string;
+  fileName: string; mimeType?: string | null;
+  categoryId?: string | null; category?: { id: string; name: string } | null; createdAt: string;
 }
 export const listArchiveCategories = () => req<{ id: string; name: string; _count: { items: number } }[]>('/ops/archives/categories');
 export const createArchiveCategory = (name: string) =>
@@ -177,15 +232,16 @@ export const upsertUniform = (dto: { day: number; name: string; note?: string })
   req('/ops/uniforms', { method: 'PUT', json: dto });
 
 export interface ExamRoomView {
-  id: string; name: string; period: string; capacity: number;
+  id: string; name: string; period: string; capacity: number; examId?: string | null;
+  exam?: { id: string; code: string; title: string; startAt: string; endAt: string } | null;
   seats: { id: string; seatNo?: number | null; code?: string | null; student: { id: string; name: string; nis?: string | null }; class?: { id: string; name: string } | null }[];
   _count: { seats: number };
 }
 export const listExamRooms = (academicYearId: string, period?: string) =>
   req<ExamRoomView[]>(`/ops/exam-rooms?academicYearId=${academicYearId}${period ? `&period=${period}` : ''}`);
-export const createExamRoom = (dto: { name: string; period: string; academicYearId: string; capacity?: number }) =>
+export const createExamRoom = (dto: { name: string; period: string; academicYearId: string; capacity?: number; examId?: string }) =>
   req('/ops/exam-rooms', { method: 'POST', json: dto });
-export const updateExamRoom = (id: string, dto: { name?: string; period?: string; capacity?: number }) =>
+export const updateExamRoom = (id: string, dto: { name?: string; period?: string; capacity?: number; examId?: string | null }) =>
   req(`/ops/exam-rooms/${id}`, { method: 'PATCH', json: dto });
 export const deleteExamRoom = (id: string) => req(`/ops/exam-rooms/${id}`, { method: 'DELETE' });
 export const removeExamSeat = (seatId: string) => req(`/ops/exam-seats/${seatId}`, { method: 'DELETE' });
@@ -193,6 +249,21 @@ export const assignClassToRoom = (roomId: string, classId: string) =>
   req<{ added: number; skipped: number }>(`/ops/exam-rooms/${roomId}/assign-class`, { method: 'POST', json: { classId } });
 export const getExamCards = (roomId: string) =>
   req<{ room: ExamRoomView & { academicYear: AcademicYear }; school: { name: string; logoUrl?: string | null; npsn?: string | null } | null }>(`/ops/exam-rooms/${roomId}/cards`);
+
+// ---- US-1 / US-2: calon peserta ujian ----
+export interface UsCandidate {
+  id: string; name: string; nis?: string | null; nisn?: string | null;
+  gender?: string | null; birthPlace?: string | null; birthDate?: string | null;
+  fatherName?: string | null; motherName?: string | null; status: string;
+  parent?: { name: string } | null;
+}
+export interface UsCandidates {
+  school: { name: string; logoUrl?: string | null; npsn?: string | null; address?: string | null; headmaster?: string | null; headmasterNip?: string | null } | null;
+  academicYear: { id: string; name: string };
+  classes: { id: string; name: string; gradeLevel: number; homeroom?: string | null; students: UsCandidate[]; total: number; male: number; female: number }[];
+}
+export const getUsCandidates = (academicYearId: string, gradeLevel?: number) =>
+  req<UsCandidates>(`/ops/us/candidates?academicYearId=${academicYearId}${gradeLevel ? `&gradeLevel=${gradeLevel}` : ''}`);
 
 export const uploadMutationLetter = (mutationId: string, file: File) => {
   const fd = new FormData(); fd.append('file', file);
@@ -364,22 +435,24 @@ export const updateExamSession = (sid: string, dto: Partial<{ name: string; clas
 export const deleteExamSession = (sid: string) => req(`/cbt/sessions/${sid}`, { method: 'DELETE' });
 
 // ---------- Monitor / hasil / analisis ----------
+export type MonitorFlag = 'SELESAI_CEPAT' | 'TANPA_JAWABAN' | 'MASUK_BERKALI';
 export interface MonitorClass {
   classId: string; className: string; gradeLevel: number;
   session: { name: string; startAt: string; endAt: string } | null;
-  total: number; done: number; working: number;
+  total: number; done: number; working: number; violations: number;
   students: {
     studentId: string; name: string; nis?: string | null;
     status: 'BELUM' | 'MENGERJAKAN' | 'SELESAI';
     answered: number; startedAt?: string | null; submittedAt?: string | null;
     remainingSec?: number | null; score?: number | null; maxScore?: number | null;
+    enterCount?: number; flags: MonitorFlag[];
   }[];
 }
 export const examMonitor = (id: string) =>
   req<{ examId: string; sessions: ExamSessionView[]; classes: MonitorClass[] }>(`/cbt/exams/${id}/monitor`);
 /** Daftar ujian untuk monitor — endpoint cbt.monitor (semua staf: proktor/pengawas/tendik/guru). */
 export const listMonitorExams = (academicYearId?: string) =>
-  req<ExamView[]>(`/cbt/monitor/exams${academicYearId ? `?academicYearId=${academicYearId}` : ''}`);
+  req<(ExamView & { classes: { id: string; name: string; gradeLevel: number }[] })[]>(`/cbt/monitor/exams${academicYearId ? `?academicYearId=${academicYearId}` : ''}`);
 
 export interface ResultsClass {
   classId: string; className: string; gradeLevel: number;
@@ -422,6 +495,7 @@ export const updateExamGrade = (id: string, studentId: string, score: number) =>
 export interface ExamQuestion {
   id: string; number: number; type: 'MCQ' | 'MCQ_COMPLEX' | 'TRUE_FALSE' | 'TRUE_FALSE_COMPLEX' | 'MATCHING';
   weight: number; prompt?: string | null; key?: unknown; options?: unknown;
+  passageCode?: string | null; media?: { key: string; name: string }[] | null;
 }
 export const examQuestions = (id: string) => req<ExamQuestion[]>(`/cbt/exams/${id}/questions`);
 export const setExamQuestions = (id: string, questions: Omit<ExamQuestion, 'id'>[]) =>

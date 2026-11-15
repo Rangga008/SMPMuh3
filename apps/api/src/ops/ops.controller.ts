@@ -141,14 +141,21 @@ export class OpsController {
       ['CONTOH 1 (hapus)', 'PG', 'Ibu kota Indonesia adalah…', 'Surabaya', 'Bandung', 'Jakarta', 'Medan', '', '', 'C', '1'],
       ['CONTOH 2 (hapus)', 'PGK', 'Pilih semua bilangan prima:', '2', '4', '5', '9', '', '', '', 'A,C', '2'],
       ['CONTOH 3 (hapus)', 'BS', 'Indonesia merdeka tahun 1945.', '', '', '', '', '', '', 'B', '1'],
-      ['CONTOH 4 (hapus)', 'BSK', 'Tentukan benar/salah tiap pernyataan:', 'Air mendidih pada 100°C', 'Es lebih padat dari air', 'Bandung di Jawa Barat', '', '', '', 'B,S,B', '2'],
+      ['CONTOH 4 (hapus)', 'BSK', 'Tentukan benar/salah tiap pernyataan:', 'Air mendidih pada 100°C', 'Es lebih padat dari air', 'Bandung di Jawa Barat', '', '', '', 'B,S,B', '2', ''],
+      ['CONTOH 5 (hapus)', 'PG', 'Berdasarkan bacaan B1, tokoh utama cerita adalah…', 'Siti', 'Budi', 'Andi', 'Rina', '', '', 'A', '1', 'B1'],
     ]);
     ws['!cols'] = [
       { wch: 4 }, { wch: 7 }, { wch: 44 }, { wch: 20 }, { wch: 20 },
-      { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 2 }, { wch: 10 }, { wch: 6 },
+      { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 2 }, { wch: 10 }, { wch: 6 }, { wch: 8 },
     ];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Soal');
+    const bacaan = XLSX.utils.aoa_to_sheet([
+      ['Kode', 'Teks'],
+      ['B1', '(contoh — hapus) Siti adalah siswa kelas 9 yang rajin. Setiap pagi ia berangkat ke sekolah naik sepeda. Ia gemar membaca buku cerita di perpustakaan.'],
+    ]);
+    bacaan['!cols'] = [{ wch: 8 }, { wch: 100 }];
+    XLSX.utils.book_append_sheet(wb, bacaan, 'Bacaan');
     const guide = XLSX.utils.json_to_sheet([
       { kolom: 'No', wajib: 'YA', keterangan: 'Nomor urut soal — mulai 1, jangan dobel' },
       { kolom: 'Tipe', wajib: 'YA', keterangan: 'PG / PGK / BS / BSK — juga menerima MCQ / MCQ_COMPLEX / TRUE_FALSE / TRUE_FALSE_COMPLEX' },
@@ -156,6 +163,7 @@ export class OpsController {
       { kolom: 'A–E', wajib: 'PG, PGK & BSK', keterangan: 'PG/PGK: pilihan jawaban (min. 2, maks. 5) · BSK: daftar pernyataan (min. 2, maks. 5)' },
       { kolom: 'Kunci', wajib: 'YA', keterangan: 'PG: satu huruf · PGK: huruf-koma (A,C) · BS: B/S · BSK: B/S per pernyataan, koma (B,S,B)' },
       { kolom: 'Bobot', wajib: 'tidak', keterangan: 'Bobot nilai soal — kosong = 1' },
+      { kolom: 'Bacaan', wajib: 'tidak', keterangan: 'Kode bacaan dari sheet "Bacaan" (mis. B1) — soal menampilkan bacaan di atasnya' },
     ]);
     guide['!cols'] = [{ wch: 12 }, { wch: 12 }, { wch: 90 }];
     XLSX.utils.book_append_sheet(wb, guide, 'Petunjuk');
@@ -165,13 +173,29 @@ export class OpsController {
     res.send(buf);
   }
 
-  /** Import soal dari Excel/CSV — mengganti seluruh butir asesmen. */
+  /** Template Word (.docx) — satu tabel per soal + tabel BACAAN; contoh semua tipe. */
+  @Get('assessments/:id/questions/template.docx')
+  @RequirePermission(PERMISSIONS.ACADEMIC_READ)
+  async questionsTemplateDocx(@Res() res: Response) {
+    const buf = await this.ops.questionTemplateDocx();
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', 'attachment; filename="template-import-soal.docx"');
+    res.send(buf);
+  }
+
+  /** Import soal dari Excel/CSV/Word — mengganti seluruh butir asesmen. */
   @Post('assessments/:id/questions/import')
   @RequirePermission(PERMISSIONS.ACADEMIC_MANAGE)
   @UseInterceptors(FileInterceptor('file'))
   async importQuestions(@Param('id') id: string, @UploadedFile() file: Express.Multer.File) {
     if (!file) throw new BadRequestException('File wajib diunggah.');
-    return this.ops.setQuestions(id, this.ops.parseQuestionWorkbook(file));
+    const name = file.originalname.toLowerCase();
+    if (name.endsWith('.docx')) {
+      const { questions, passages } = await this.ops.parseQuestionDocx(file);
+      return this.ops.setQuestions(id, questions, passages);
+    }
+    const questions = this.ops.parseQuestionWorkbook(file);
+    return this.ops.setQuestions(id, questions, this.ops.parsePassageSheet(file));
   }
 
   @Get('assessments/:id/analysis')
@@ -217,6 +241,35 @@ export class OpsController {
   @RequirePermission(PERMISSIONS.ACADEMIC_READ)
   attendanceRecap(@Query('classId') c: string, @Query('from') f: string, @Query('to') t: string) {
     return this.ops.attendanceRecap(c, f, t);
+  }
+  /** Ikhtisar harian seluruh rombel — dasbor kesiswaan. */
+  @Get('attendance/daily-overview')
+  @RequirePermission(PERMISSIONS.ATTENDANCE_READ)
+  attendanceDailyOverview(@Query('date') d: string, @Query('academicYearId') y?: string) {
+    return this.ops.attendanceDailyOverview(d, y);
+  }
+  /** Riwayat absen satu siswa + rekap jumlah. */
+  @Get('attendance/student-history')
+  @RequirePermission(PERMISSIONS.ATTENDANCE_READ)
+  studentAttendanceHistory(@Query('studentId') s: string, @Query('academicYearId') y?: string) {
+    return this.ops.studentAttendanceHistory(s, y);
+  }
+  /** Laporan absensi fleksibel — siswa/kelas/jenjang × hari/rentang/bulan/multi-bulan. */
+  @Get('attendance/report')
+  @RequirePermission(PERMISSIONS.ATTENDANCE_READ)
+  attendanceReport(
+    @Query('mode') mode: 'day' | 'range' | 'month' | 'months',
+    @Query('academicYearId') y?: string, @Query('studentIds') s?: string,
+    @Query('classIds') c?: string, @Query('gradeLevels') g?: string,
+    @Query('date') d?: string, @Query('from') f?: string, @Query('to') t?: string,
+    @Query('year') yr?: string, @Query('month') mo?: string,
+  ) {
+    const csv = (v?: string) => (v ? v.split(',').map((x) => x.trim()).filter(Boolean) : undefined);
+    return this.ops.attendanceReport({
+      mode, academicYearId: y, studentIds: csv(s), classIds: csv(c),
+      gradeLevels: csv(g)?.map(Number), date: d, from: f, to: t,
+      year: yr ? Number(yr) : undefined, month: mo ? Number(mo) : undefined,
+    });
   }
 
   // ---- StaffDocument ----
@@ -431,6 +484,13 @@ export class OpsController {
   @RequirePermission(PERMISSIONS.TATAUSAHA_READ)
   examCards(@Param('id') id: string) {
     return this.ops.examCards(id);
+  }
+
+  /** Data calon peserta US-1/US-2 — daftar peserta & rekapitulasi per rombel. */
+  @Get('us/candidates')
+  @RequirePermission(PERMISSIONS.TATAUSAHA_READ)
+  usCandidates(@Query('academicYearId') y: string, @Query('gradeLevel') g?: string) {
+    return this.ops.usCandidates(y, g ? Number(g) : undefined);
   }
 
   // ---- Mutasi: surat ----

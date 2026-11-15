@@ -12,15 +12,14 @@ import {
   deleteLetterCategory,
   deleteMutation,
   listLetterCategories,
-  downloadFile,
   listMutations,
   listStudents,
-  previewFile,
   updateMutation,
   type LetterCategory,
   type StudentMutation,
 } from '@/lib/api';
 import { uploadMutationLetter } from '@/lib/api-ops';
+import { useFileViewer } from '@/components/file-viewer';
 
 import { RowBtn } from '@/components/row-btn';
 import { FilePick } from '@/components/file-pick';
@@ -37,6 +36,7 @@ const fmtDate = (iso: string) =>
 /** Register mutasi siswa — dipakai halaman Mutasi Masuk & Mutasi Keluar. */
 export function MutasiView({ direction }: { direction: 'IN' | 'OUT' }) {
   const { confirm, dialog } = useConfirm();
+  const fv = useFileViewer();
   const isIn = direction === 'IN';
   const title = isIn ? 'Mutasi Masuk' : 'Mutasi Keluar';
   const schoolLabel = isIn ? 'Asal Sekolah' : 'Tujuan Sekolah';
@@ -196,10 +196,10 @@ export function MutasiView({ direction }: { direction: 'IN' | 'OUT' }) {
               <span className="flex justify-end gap-2">
                 {m.fileName ? (
                   <>
-                    <RowBtn type="button" onClick={async () => { try { await previewFile(`/ops/mutations/${m.id}/letter`); } catch { setError('Gagal membuka surat.'); } }}>
+                    <RowBtn type="button" onClick={() => fv.open({ path: `/ops/mutations/${m.id}/letter`, name: m.fileName ?? 'surat-mutasi', mime: m.mimeType })}>
                       Lihat
                     </RowBtn>
-                    <RowBtn type="button" onClick={async () => { try { await downloadFile(`/ops/mutations/${m.id}/letter`, m.fileName ?? 'surat-mutasi'); } catch { setError('Gagal mengunduh surat.'); } }}>
+                    <RowBtn type="button" onClick={async () => { try { await fv.download({ path: `/ops/mutations/${m.id}/letter`, name: m.fileName ?? 'surat-mutasi' }); } catch { setError('Gagal mengunduh surat.'); } }}>
                       Unduh
                     </RowBtn>
                   </>
@@ -343,6 +343,7 @@ export function MutasiView({ direction }: { direction: 'IN' | 'OUT' }) {
         </ul>
       </Modal>
           {dialog}
+      {fv.viewer}
       </>
   );
 }

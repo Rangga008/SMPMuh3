@@ -11,10 +11,10 @@ import { RowBtn, rowActionClasses } from '@/components/row-btn';
 import { useConfirm } from '@/components/confirm-dialog';
 import { usePermission } from '@/lib/use-permission';
 import { PERMISSIONS } from '@smpmuh3/types';
-import { ApiError, downloadFile, listClasses, type ClassView } from '@/lib/api';
+import { API, ApiError, downloadFile, listClasses, type ClassView } from '@/lib/api';
 import {
   createExamSession, deleteExamSession, examAnalysis, examAnswersMatrix, examMonitor,
-  examQuestions, examResults, exportExamResults, getExam, importExamQuestions, listMonitorExams, regenerateExamCode,
+  examQuestions, examResults, exportExamResults, getExam, getExamPassages, importExamQuestions, listMonitorExams, regenerateExamCode,
   setExamQuestions, updateExam, updateExamGrade, updateExamSession,
   type ExamQuestion, type ExamView, type ItemAnalysis, type MonitorClass,
 } from '@/lib/api-ops';
@@ -68,6 +68,7 @@ export default function UjianDetailPage() {
   const [tab, setTab] = useState<'monitor' | 'sesi' | 'soal' | 'hasil'>('monitor');
   const [monitor, setMonitor] = useState<{ examId: string; sessions: { id: string; name: string; classIds: string[]; startAt: string; endAt: string }[]; classes: MonitorClass[] } | null>(null);
   const [questions, setQuestions] = useState<ExamQuestion[]>([]);
+  const [passages, setPassages] = useState<{ id: string; code: string; content: string }[]>([]);
   const [results, setResults] = useState<Awaited<ReturnType<typeof examResults>> | null>(null);
   const [analysis, setAnalysis] = useState<{ questions: ItemAnalysis[]; easiest: ItemAnalysis[]; hardest: ItemAnalysis[] } | null>(null);
   const [matrix, setMatrix] = useState<Awaited<ReturnType<typeof examAnswersMatrix>> | null>(null);
@@ -114,6 +115,7 @@ export default function UjianDetailPage() {
       examMonitor(id).then(setMonitor).catch(() => setMonitor(null));
     } else if (tab === 'soal') {
       examQuestions(id).then(setQuestions).catch((e) => setError(e instanceof ApiError ? e.message : 'Gagal memuat soal.'));
+      getExamPassages(id).then(setPassages).catch(() => {});
     } else if (tab === 'hasil') {
       examResults(id, resClass || undefined).then(setResults).catch((e) => setError(e instanceof ApiError ? e.message : 'Gagal memuat hasil.'));
       examAnalysis(id, resClass || undefined).then(setAnalysis).catch(() => setAnalysis(null));
@@ -404,15 +406,29 @@ export default function UjianDetailPage() {
             <Widget title={`Butir Soal — ${questions.length}`}
               subtitle="Tipe: Pilihan Ganda · PG Kompleks · Benar/Salah · B-S Kompleks."
               action={examManage ? (
-                <div className="flex gap-2">
-                  <Button size="sm" variant="outline" onClick={() => downloadFile(`/ops/assessments/${exam.assessment.id}/questions/template`, 'template-soal.xlsx').catch(() => setError('Gagal unduh template.'))}>Template</Button>
-                  <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()} disabled={busy}>Impor Excel</Button>
-                  <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => { void onImport(e.target.files?.[0]); e.target.value = ''; }} />
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" variant="outline" onClick={() => downloadFile(`/ops/assessments/${exam.assessment.id}/questions/template`, 'template-soal.xlsx').catch(() => setError('Gagal unduh template.'))}>Template Excel</Button>
+                  <Button size="sm" variant="outline" onClick={() => downloadFile(`/ops/assessments/${exam.assessment.id}/questions/template.docx`, 'template-import-soal.docx').catch(() => setError('Gagal unduh template.'))}>Template Word</Button>
+                  <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()} disabled={busy}>Impor Soal</Button>
+                  <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv,.docx" className="hidden" onChange={(e) => { void onImport(e.target.files?.[0]); e.target.value = ''; }} />
                   <Button size="sm" onClick={() => { setModalErr(null); setQModal(blankQ(questions.length + 1)); }}>+ Soal</Button>
                 </div>
               ) : undefined}>
+              {passages.length ? (
+                <details className="border-b border-sand-100 bg-primary-50/40 px-5 py-3">
+                  <summary className="cursor-pointer text-xs font-bold text-primary-700">📖 {passages.length} bacaan — {passages.map((p) => p.code).join(', ')}</summary>
+                  <div className="mt-2 space-y-2">
+                    {passages.map((p) => (
+                      <div key={p.id} className="rounded-xl border border-sand-200 bg-white p-3">
+                        <p className="mb-1 text-[10px] font-black uppercase tracking-wider text-primary-600">Bacaan {p.code}</p>
+                        <div className="rich-html text-xs text-sand-700 [&_img]:max-h-40 [&_img]:rounded-lg" dangerouslySetInnerHTML={{ __html: p.content.replace(/src="(\/cbt\/media\/[^"]+)"/g, (_, s: string) => `src="${API}${s}"`) }} />
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              ) : null}
               {!questions.length ? (
-                <p className="p-5 text-sm text-sand-400">Belum ada soal — tambah manual atau impor dari Excel.</p>
+                <p className="p-5 text-sm text-sand-400">Belum ada soal — tambah manual atau impor Excel/Word (foto di Word ikut terbawa).</p>
               ) : (
                 <div className="divide-y divide-sand-100">
                   {questions.map((q) => (
@@ -422,9 +438,14 @@ export default function UjianDetailPage() {
                         <div className="flex flex-wrap items-center gap-2">
                           <Badge tone="neutral">{TYPE_LABEL[q.type] ?? q.type}</Badge>
                           <span className="text-[11px] text-sand-400">bobot {q.weight}</span>
+                          {q.passageCode ? <Badge tone="accent">📖 {q.passageCode}</Badge> : null}
                           <span className="text-[11px] font-semibold text-emerald-700">{keyText(q)}</span>
                         </div>
-                        <p className="mt-1 text-sm text-sand-800">{q.prompt}</p>
+                        {q.prompt && /<[a-zA-Z]/.test(q.prompt) ? (
+                          <div className="rich-html mt-1 text-sm text-sand-800 [&_img]:max-h-40 [&_img]:rounded-lg" dangerouslySetInnerHTML={{ __html: q.prompt.replace(/src="(\/cbt\/media\/[^"]+)"/g, (_, s: string) => `src="${API}${s}"`) }} />
+                        ) : (
+                          <p className="mt-1 text-sm text-sand-800">{q.prompt}</p>
+                        )}
                         {(() => {
                           const o = (q.options ?? {}) as { choices?: string[]; statements?: string[] };
                           if (o.choices?.length) return (

@@ -1868,6 +1868,7 @@ export interface StudentMutation {
   categoryId?: string | null;
   category?: { id: string; name: string } | null;
   fileName?: string | null;
+  mimeType?: string | null;
   status: 'PROCESS' | 'DONE' | 'CANCELLED';
   notes?: string | null;
   createdAt: string;
