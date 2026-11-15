@@ -35,3 +35,6 @@ Thumbs.db
 # Misc
 *.pem
 *.key
+
+# Aturan agen lokal — bukan untuk repo
+AGENTS.md
