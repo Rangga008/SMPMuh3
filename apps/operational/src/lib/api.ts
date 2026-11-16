@@ -1767,7 +1767,8 @@ export interface AssessmentView {
   maxScore: number;
   subject: { code: string; name: string };
   class?: { name: string } | null;
-  _count?: { grades: number };
+  exams?: { id: string; title: string; status: string }[];
+  _count?: { grades: number; questions: number };
 }
 export const listAssessments = (academicYearId?: string, classId?: string) => {
   const p = new URLSearchParams();
@@ -1778,6 +1779,10 @@ export const listAssessments = (academicYearId?: string, classId?: string) => {
 };
 export const createAssessment = (dto: Record<string, unknown>) =>
   req<AssessmentView>('/assessments', { method: 'POST', json: dto });
+export const updateAssessment = (id: string, dto: Record<string, unknown>) =>
+  req<AssessmentView>(`/assessments/${id}`, { method: 'PATCH', json: dto });
+export const deleteAssessment = (id: string) =>
+  req<void>(`/assessments/${id}`, { method: 'DELETE' });
 export const listGrades = (assessmentId: string) =>
   req<{ id: string; score: number; student: { id: string; name: string; nis?: string | null } }[]>(
     `/assessments/${assessmentId}/grades`,

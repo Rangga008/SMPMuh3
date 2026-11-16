@@ -13,7 +13,7 @@ import { PrismaService } from '../core/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { OpsService } from '../ops/ops.service';
 import { StorageService } from '../core/storage/storage.service';
-import type { AnswerDto, CreateExamDto, EnterExamDto, ExamSessionDto, UpdateExamDto } from './dto/cbt.dto';
+import type { AnswerDto, CreateExamDto, EnterExamDto, ExamSessionDto, LoginCbtDto, UpdateExamDto } from './dto/cbt.dto';
 
 /** Alfabet tanpa karakter rancu (0/O/1/I/L) untuk kode ujian. */
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -451,10 +451,22 @@ export class CbtService {
     const existing = await this.prisma.examCredential.findMany({ where: { examId }, select: { studentId: true } });
     const have = new Set(existing.map((e) => e.studentId));
     const missing = enrolled.filter((e) => !have.has(e.studentId));
-    if (!missing.length) return { created: 0 };
-    await this.prisma.examCredential.createMany({
-      data: missing.map((e) => ({ examId, studentId: e.studentId, password: this.genPassword() })),
+    if (missing.length) {
+      await this.prisma.examCredential.createMany({
+        data: missing.map((e) => ({ examId, studentId: e.studentId, password: this.genPassword() })),
+      });
+    }
+    // Password siswa (kartu baru) — isi yang masih kosong agar siap dicetak.
+    const noPw = await this.prisma.student.findMany({
+      where: { id: { in: enrolled.map((e) => e.studentId) }, password: null },
+      select: { id: true },
     });
+    for (const s of noPw) {
+      await this.prisma.student.update({
+        where: { id: s.id },
+        data: { password: this.genPassword() },
+      });
+    }
     return { created: missing.length };
   }
 
@@ -468,6 +480,81 @@ export class CbtService {
         data: { examId, studentId, password: this.genPassword() },
       }))
     );
+  }
+
+  /** Login awal siswa: NIS + password kartu → identitas + daftar ujian aktif.
+   *  Kode ujian TIDAK dikembalikan — siswa memasukkannya nanti dari pengawas.
+   *  Password utama = students.password (kartu baru); kartu lama pakai
+   *  ExamCredential per-ujian — keduanya diterima agar kartu terbit tetap jalan. */
+  async login(dto: LoginCbtDto) {
+    const nis = dto.nis.trim();
+    const password = dto.password.trim().toUpperCase();
+    const fail = new ForbiddenException('NIS atau password salah — cek kartu peserta ujianmu.');
+    const student = await this.prisma.student.findFirst({
+      where: { nis, status: 'ACTIVE', deletedAt: null },
+    });
+    if (!student) throw fail;
+
+    const selfMatch = !!student.password && student.password.toUpperCase() === password;
+    // Credential legacy (kartu lama, password per-ujian) — sekalian menentukan ujiannya.
+    const cred = selfMatch
+      ? null
+      : await this.prisma.examCredential.findFirst({
+          where: { studentId: student.id, password },
+          include: { exam: { select: { id: true, status: true } } },
+          orderBy: { exam: { startAt: 'desc' } },
+        });
+    if (!selfMatch && !cred) throw fail;
+    if (cred?.exam.status === 'DRAFT') throw new ForbiddenException('Ujian belum dibuka pengawas.');
+    if (cred?.exam.status === 'CLOSED') throw new ForbiddenException('Ujian sudah ditutup.');
+
+    const enrollments = await this.prisma.enrollment.findMany({
+      where: { studentId: student.id },
+      include: { class: { select: { id: true, name: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+    const classIds = enrollments.map((e) => e.class.id);
+
+    // Ujian yang bisa diikuti siswa: status OPEN dan rombelnya termasuk peserta.
+    const open = await this.prisma.exam.findMany({
+      where: { status: 'OPEN' },
+      include: {
+        assessment: { include: { subject: { select: { name: true } } } },
+        attempts: { where: { studentId: student.id }, select: { status: true } },
+      },
+      orderBy: { startAt: 'asc' },
+    });
+    const exams = open
+      .filter((e) => (e.classIds as string[]).some((cid) => classIds.includes(cid)))
+      .map((e) => ({
+        title: e.title,
+        subject: e.assessment.subject.name,
+        startAt: e.startAt,
+        endAt: e.endAt,
+        attemptStatus: e.attempts[0]?.status ?? null,
+      }));
+    // Fallback bila login via credential legacy dan ujiannya tak tampil di daftar.
+    if (!exams.length && cred) {
+      const exam = await this.prisma.exam.findUniqueOrThrow({
+        where: { id: cred.exam.id },
+        include: { assessment: { include: { subject: { select: { name: true } } } } },
+      });
+      exams.push({
+        title: exam.title,
+        subject: exam.assessment.subject.name,
+        startAt: exam.startAt,
+        endAt: exam.endAt,
+        attemptStatus: null,
+      });
+    }
+    return {
+      student: {
+        name: student.name,
+        nis: student.nis,
+        className: enrollments[0]?.class.name ?? '—',
+      },
+      exams,
+    };
   }
 
   async enter(dto: EnterExamDto) {
@@ -526,9 +613,16 @@ export class CbtService {
       windowEnd = session.endAt;
     }
 
-    // Password ujian — tercetak di kartu peserta; dibuat malas bila belum ada.
-    const cred = await this.credentialFor(exam.id, student.id);
-    if ((dto.password ?? '').trim().toUpperCase() !== cred.password.toUpperCase()) {
+    // Password ujian — di kartu peserta; terima password siswa (kartu baru)
+    // maupun credential per-ujian (kartu lama).
+    const pw = (dto.password ?? '').trim().toUpperCase();
+    const cred = await this.prisma.examCredential.findUnique({
+      where: { examId_studentId: { examId: exam.id, studentId: student.id } },
+    });
+    const ok =
+      (!!student.password && student.password.toUpperCase() === pw) ||
+      (!!cred && cred.password.toUpperCase() === pw);
+    if (!ok) {
       throw new ForbiddenException('Password ujian salah — cek kartu peserta ujianmu.');
     }
 

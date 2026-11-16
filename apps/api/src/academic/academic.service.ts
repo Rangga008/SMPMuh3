@@ -11,6 +11,7 @@ import { PrismaService } from '../core/prisma/prisma.service';
 import { normalizePhone } from '../identity/users/users.service';
 import type {
   AssessmentDto,
+  AssessmentUpdateDto,
   CalendarEventDto,
   ClassDto,
   CurriculumDto,
@@ -1540,10 +1541,34 @@ export class AcademicService {
       include: {
         subject: { select: { code: true, name: true } },
         class: { select: { name: true } },
-        _count: { select: { grades: true } },
+        exams: { select: { id: true, title: true, status: true } },
+        _count: { select: { grades: true, questions: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  updateAssessment(id: string, dto: AssessmentUpdateDto, _actorId: string) {
+    const data: Prisma.AssessmentUpdateInput = {};
+    if (dto.name !== undefined) data.name = dto.name.trim();
+    if (dto.type !== undefined) data.type = dto.type;
+    if (dto.maxScore !== undefined) data.maxScore = dto.maxScore;
+    if (dto.subjectId !== undefined) data.subject = { connect: { id: dto.subjectId } };
+    if (dto.classId !== undefined) {
+      data.class = dto.classId ? { connect: { id: dto.classId } } : { disconnect: true };
+    }
+    return this.prisma.assessment.update({ where: { id }, data });
+  }
+
+  async deleteAssessment(id: string, _actorId: string) {
+    const exams = await this.prisma.exam.count({ where: { assessmentId: id } });
+    if (exams) {
+      throw new ConflictException(
+        'Asesmen dipakai ujian CBT — hapus/tutup ujiannya dulu, atau biarkan asesmen ini.',
+      );
+    }
+    // Grades, questions, passages ter-cascade dari relasi schema.
+    return this.prisma.assessment.delete({ where: { id } });
   }
 
   async setGrades(assessmentId: string, grades: GradeDto[], actorId: string) {

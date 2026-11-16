@@ -27,6 +27,7 @@ import {
   ExamRoomDto,
   ExamRoomUpdateDto,
   ExamSeatDto,
+  PassageDto,
   PrasaranaDto,
   PrasaranaUpdateDto,
   QuestionDto,
@@ -196,6 +197,40 @@ export class OpsController {
     }
     const questions = this.ops.parseQuestionWorkbook(file);
     return this.ops.setQuestions(id, questions, this.ops.parsePassageSheet(file));
+  }
+
+  /** Preview import — parse file & unggah gambar, hasilnya ditampilkan dulu sebelum disimpan. */
+  @Post('assessments/:id/questions/import-preview')
+  @RequirePermission(PERMISSIONS.ACADEMIC_MANAGE)
+  @UseInterceptors(FileInterceptor('file'))
+  async importPreview(@Param('id') id: string, @UploadedFile() file: Express.Multer.File) {
+    if (!file) throw new BadRequestException('File wajib diunggah.');
+    const name = file.originalname.toLowerCase();
+    if (name.endsWith('.docx')) return this.ops.parseQuestionDocx(file);
+    return { questions: this.ops.parseQuestionWorkbook(file), passages: this.ops.parsePassageSheet(file) };
+  }
+
+  @Get('assessments/:id/passages')
+  @RequirePermission(PERMISSIONS.ACADEMIC_READ)
+  listPassages(@Param('id') id: string) {
+    return this.ops.listPassages(id);
+  }
+
+  /** Simpan seluruh bacaan — tambah/edit/hapus via daftar lengkap. */
+  @Put('assessments/:id/passages')
+  @RequirePermission(PERMISSIONS.ACADEMIC_MANAGE)
+  setPassages(@Param('id') id: string, @Body() body: { passages: PassageDto[] }) {
+    return this.ops.setPassages(id, body.passages ?? []);
+  }
+
+  /** Unggah gambar untuk disisipkan ke soal/opsi/bacaan buatan manual — hasil {key,url}. */
+  @Post('question-media')
+  @RequirePermission(PERMISSIONS.ACADEMIC_MANAGE)
+  @UseInterceptors(FileInterceptor('file'))
+  uploadQuestionMedia(@UploadedFile() file: Express.Multer.File) {
+    if (!file) throw new BadRequestException('File wajib diunggah.');
+    if (!/^image\/(jpeg|png|webp|gif)$/.test(file.mimetype)) throw new BadRequestException('Gambar harus JPG/PNG/WebP/GIF.');
+    return this.ops.uploadQuestionMedia(file);
   }
 
   @Get('assessments/:id/analysis')

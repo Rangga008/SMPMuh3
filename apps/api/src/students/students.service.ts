@@ -42,6 +42,14 @@ const studentSelect = {
   createdAt: true,
 } satisfies Prisma.StudentSelect;
 
+/** Password CBT siswa — "KP" + 4 karakter tanpa ambigu (0/O, 1/I/L). */
+export const genStudentPassword = () => {
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  let s = 'KP';
+  for (let i = 0; i < 4; i++) s += chars[Math.floor(Math.random() * chars.length)];
+  return s;
+};
+
 @Injectable()
 export class StudentsService {
   constructor(
@@ -846,6 +854,10 @@ export class StudentsService {
     if (dto.parentPhone !== undefined) {
       data.parentPhone = dto.parentPhone ? normalizePhone(dto.parentPhone) : null;
     }
+    // Password CBT — kosongkan ⇒ dibuat ulang malas saat kartu dicetak.
+    if (dto.password !== undefined) {
+      data.password = dto.password.trim() ? dto.password.trim().toUpperCase() : null;
+    }
     return data;
   }
 
@@ -863,6 +875,7 @@ export class StudentsService {
       birthDate: dto.birthDate ? new Date(dto.birthDate) : null,
       address: dto.address ?? null,
       parentId: dto.parentId ?? null,
+      password: dto.password?.trim().toUpperCase() || genStudentPassword(),
     };
   }
 }

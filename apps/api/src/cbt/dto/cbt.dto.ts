@@ -98,6 +98,18 @@ export class UpdateExamDto {
   status?: 'DRAFT' | 'OPEN' | 'CLOSED';
 }
 
+export class LoginCbtDto {
+  /** NIS siswa — apa adanya di data siswa. */
+  @IsString()
+  @IsNotEmpty()
+  nis!: string;
+
+  /** Password personal — tercetak di kartu peserta. */
+  @IsString()
+  @IsNotEmpty()
+  password!: string;
+}
+
 export class EnterExamDto {
   /** NIS siswa — apa adanya di data siswa. */
   @IsString()

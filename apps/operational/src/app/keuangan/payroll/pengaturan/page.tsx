@@ -194,7 +194,7 @@ export default function PayrollPengaturanPage() {
                 <Field label="Bendahara / Keuangan">
                   <Input name="treasurer" defaultValue={school.treasurer ?? ''} key={`tr-${school.id}`} placeholder="Nama bendahara" />
                 </Field>
-                <Field label="NIP Bendahara" hint="Opsional">
+                <Field label="NIP/NUPTK Bendahara" hint="Opsional">
                   <Input name="treasurerNip" defaultValue={school.treasurerNip ?? ''} key={`tn-${school.id}`} />
                 </Field>
               </div>

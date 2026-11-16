@@ -153,5 +153,7 @@ export interface StudentDto {
   parentPhone?: string | null | undefined;
   candidateId?: string | undefined;
   parentId?: string | undefined;
+  /** Password CBT siswa (plain — dicetak di kartu ujian). Hanya ada di respons detail. */
+  password?: string | null | undefined;
   createdAt: string;
 }

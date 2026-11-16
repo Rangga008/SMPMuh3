@@ -118,8 +118,8 @@ export default function UsPage() {
               <td>${ttl(s.birthPlace, s.birthDate)}</td><td>${esc(s.fatherName ?? s.parent?.name ?? s.motherName)}</td>
             </tr>`).join('')}
             </tbody></table>`).join('') +
-          `<div class="ttd"><div>Mengetahui,<br>Kepala Sekolah<div class="nm">${school?.headmaster ?? '(………………………)'}</div>NIP. ${school?.headmasterNip ?? '……………'}</div>
-           <div>Bandung, ………………… 20…<br>Panitia Ujian Sekolah<div class="nm">(………………………)</div>NIP. ……………</div></div>`;
+          `<div class="ttd"><div>Mengetahui,<br>Kepala Sekolah<div class="nm">${school?.headmaster ?? '(………………………)'}</div>NIP/NUPTK. ${school?.headmasterNip ?? '……………'}</div>
+           <div>Bandung, ………………… 20…<br>Panitia Ujian Sekolah<div class="nm">(………………………)</div>NIP/NUPTK. ……………</div></div>`;
       } else {
         const tL = d.classes.reduce((a, c) => a + c.male, 0);
         const tP = d.classes.reduce((a, c) => a + c.female, 0);
@@ -138,8 +138,8 @@ export default function UsPage() {
             <td style="text-align:center;font-weight:800">${tP}</td>
             <td style="text-align:center;font-weight:800">${tL + tP}</td></tr>
           </tbody></table>
-          <div class="ttd"><div>Mengetahui,<br>Kepala Sekolah<div class="nm">${school?.headmaster ?? '(………………………)'}</div>NIP. ${school?.headmasterNip ?? '……………'}</div>
-           <div>Bandung, ………………… 20…<br>Panitia Ujian Sekolah<div class="nm">(………………………)</div>NIP. ……………</div></div>`;
+          <div class="ttd"><div>Mengetahui,<br>Kepala Sekolah<div class="nm">${school?.headmaster ?? '(………………………)'}</div>NIP/NUPTK. ${school?.headmasterNip ?? '……………'}</div>
+           <div>Bandung, ………………… 20…<br>Panitia Ujian Sekolah<div class="nm">(………………………)</div>NIP/NUPTK. ……………</div></div>`;
       }
       w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${kind === 'us1' ? 'US-1 Daftar Calon Peserta' : 'US-2 Rekapitulasi'}</title><style>${KOP_CSS}</style></head><body>${kop(school)}${body}<script>window.print()</script></body></html>`);
       w.document.close();

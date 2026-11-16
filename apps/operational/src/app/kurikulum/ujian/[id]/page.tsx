@@ -11,7 +11,8 @@ import { RowBtn, rowActionClasses } from '@/components/row-btn';
 import { useConfirm } from '@/components/confirm-dialog';
 import { usePermission } from '@/lib/use-permission';
 import { PERMISSIONS } from '@smpmuh3/types';
-import { API, ApiError, downloadFile, listClasses, type ClassView } from '@/lib/api';
+import { ApiError, downloadFile, listClasses, type ClassView } from '@/lib/api';
+import { richHtml } from '@/lib/math';
 import {
   createExamSession, deleteExamSession, examAnalysis, examAnswersMatrix, examMonitor,
   examQuestions, examResults, exportExamResults, getExam, getExamPassages, importExamQuestions, listMonitorExams, regenerateExamCode,
@@ -72,7 +73,9 @@ export default function UjianDetailPage() {
   const [results, setResults] = useState<Awaited<ReturnType<typeof examResults>> | null>(null);
   const [analysis, setAnalysis] = useState<{ questions: ItemAnalysis[]; easiest: ItemAnalysis[]; hardest: ItemAnalysis[] } | null>(null);
   const [matrix, setMatrix] = useState<Awaited<ReturnType<typeof examAnswersMatrix>> | null>(null);
+  const [matrices, setMatrices] = useState<Record<string, Awaited<ReturnType<typeof examAnswersMatrix>>>>({});
   const [resClass, setResClass] = useState('');
+  const [resJenjang, setResJenjang] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [modalErr, setModalErr] = useState<string | null>(null);
@@ -119,10 +122,19 @@ export default function UjianDetailPage() {
     } else if (tab === 'hasil') {
       examResults(id, resClass || undefined).then(setResults).catch((e) => setError(e instanceof ApiError ? e.message : 'Gagal memuat hasil.'));
       examAnalysis(id, resClass || undefined).then(setAnalysis).catch(() => setAnalysis(null));
-      if (resClass) examAnswersMatrix(id, resClass).then(setMatrix).catch(() => setMatrix(null));
-      else setMatrix(null);
+      if (resClass) { examAnswersMatrix(id, resClass).then(setMatrix).catch(() => setMatrix(null)); setMatrices({}); }
+      else if (resJenjang) {
+        setMatrix(null);
+        // Matriks jawaban semua rombel pada jenjang terpilih.
+        examResults(id, undefined).then((r) => {
+          const ids = r.classes.filter((c) => c.gradeLevel === Number(resJenjang)).map((c) => c.classId);
+          Promise.all(ids.map((cid) => examAnswersMatrix(id, cid).then((m) => [cid, m] as const).catch(() => null)))
+            .then((xs) => setMatrices(Object.fromEntries(xs.filter((x): x is NonNullable<typeof x> => !!x))));
+        }).catch(() => setMatrices({}));
+      }
+      else { setMatrix(null); setMatrices({}); }
     }
-  }, [id, tab, resClass, canMonitor, canManage]);
+  }, [id, tab, resClass, resJenjang, canMonitor, canManage]);
   useEffect(loadTab, [loadTab]);
 
   // Polling monitor saat ujian dibuka.
@@ -277,7 +289,7 @@ export default function UjianDetailPage() {
         <>
           {/* ---------- Header: kode + status ---------- */}
           <div className="mb-4 grid gap-4 lg:grid-cols-3">
-            <Widget title="Kode Akses" subtitle="Siswa masuk situs CBT dengan NIS + kode ini.">
+            <Widget title="Kode Akses" subtitle="Diumumkan pengawas di ruang — siswa login NIS+password, lalu masukkan kode ini.">
               <div className="space-y-3 p-4">
                 <button type="button" onClick={() => void copy()} title="Klik untuk salin"
                   className="w-full rounded-2xl bg-primary-700 px-4 py-4 text-center font-mono text-2xl font-black tracking-[0.2em] text-white transition hover:bg-primary-800">
@@ -421,7 +433,7 @@ export default function UjianDetailPage() {
                     {passages.map((p) => (
                       <div key={p.id} className="rounded-xl border border-sand-200 bg-white p-3">
                         <p className="mb-1 text-[10px] font-black uppercase tracking-wider text-primary-600">Bacaan {p.code}</p>
-                        <div className="rich-html text-xs text-sand-700 [&_img]:max-h-40 [&_img]:rounded-lg" dangerouslySetInnerHTML={{ __html: p.content.replace(/src="(\/cbt\/media\/[^"]+)"/g, (_, s: string) => `src="${API}${s}"`) }} />
+                        <div className="rich-html text-xs text-sand-700 [&_img]:max-h-40 [&_img]:rounded-lg" dangerouslySetInnerHTML={{ __html: richHtml(p.content) }} />
                       </div>
                     ))}
                   </div>
@@ -441,8 +453,8 @@ export default function UjianDetailPage() {
                           {q.passageCode ? <Badge tone="accent">📖 {q.passageCode}</Badge> : null}
                           <span className="text-[11px] font-semibold text-emerald-700">{keyText(q)}</span>
                         </div>
-                        {q.prompt && /<[a-zA-Z]/.test(q.prompt) ? (
-                          <div className="rich-html mt-1 text-sm text-sand-800 [&_img]:max-h-40 [&_img]:rounded-lg" dangerouslySetInnerHTML={{ __html: q.prompt.replace(/src="(\/cbt\/media\/[^"]+)"/g, (_, s: string) => `src="${API}${s}"`) }} />
+                        {q.prompt && (/<[a-zA-Z]/.test(q.prompt) || /\$[^$\n]+\$/.test(q.prompt)) ? (
+                          <div className="rich-html mt-1 text-sm text-sand-800 [&_img]:max-h-40 [&_img]:rounded-lg" dangerouslySetInnerHTML={{ __html: richHtml(q.prompt) }} />
                         ) : (
                           <p className="mt-1 text-sm text-sand-800">{q.prompt}</p>
                         )}
@@ -452,14 +464,14 @@ export default function UjianDetailPage() {
                             <ul className="mt-1 space-y-0.5 text-xs text-sand-500">
                               {o.choices.map((c, i) => {
                                 const isKey = q.type === 'MCQ' ? q.key === i : Array.isArray(q.key) && (q.key as number[]).includes(i);
-                                return <li key={i} className={isKey ? 'font-bold text-emerald-700' : ''}>{'ABCDE'[i]}. {c}{isKey ? ' ✓' : ''}</li>;
+                                return <li key={i} className={isKey ? 'font-bold text-emerald-700' : ''}>{'ABCDE'[i]}. <span dangerouslySetInnerHTML={{ __html: richHtml(c) }} />{isKey ? ' ✓' : ''}</li>;
                               })}
                             </ul>
                           );
                           if (o.statements?.length) return (
                             <ul className="mt-1 space-y-0.5 text-xs text-sand-500">
                               {o.statements.map((st, i) => (
-                                <li key={i}>• {st} <b className={Array.isArray(q.key) && (q.key as boolean[])[i] ? 'text-emerald-700' : 'text-red-600'}>({Array.isArray(q.key) && (q.key as boolean[])[i] ? 'B' : 'S'})</b></li>
+                                <li key={i}>• <span dangerouslySetInnerHTML={{ __html: richHtml(st) }} /> <b className={Array.isArray(q.key) && (q.key as boolean[])[i] ? 'text-emerald-700' : 'text-red-600'}>({Array.isArray(q.key) && (q.key as boolean[])[i] ? 'B' : 'S'})</b></li>
                               ))}
                             </ul>
                           );
@@ -482,18 +494,25 @@ export default function UjianDetailPage() {
           {/* ---------- HASIL ---------- */}
           {tab === 'hasil' && (
             <div className="space-y-4">
-              <Widget title="Rekap Nilai per Rombel"
+              <Widget title="Rekap Nilai per Jenjang & Rombel"
                 action={
                   <div className="flex items-center gap-2">
+                    <Select value={resJenjang} onChange={(e) => { setResJenjang(e.target.value); setResClass(''); }} className="w-28">
+                      <option value="">Semua jenjang</option>
+                      {[...new Set(results?.classes.map((c) => c.gradeLevel) ?? [])].sort().map((g) => <option key={g} value={g}>Kelas {g}</option>)}
+                    </Select>
                     <Select value={resClass} onChange={(e) => setResClass(e.target.value)} className="w-36">
                       <option value="">Semua rombel</option>
-                      {classes.filter((c) => exam.classIds.includes(c.id)).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      {classes.filter((c) => exam.classIds.includes(c.id) && (!resJenjang || (results?.classes.find((x) => x.classId === c.id)?.gradeLevel ?? c.gradeLevel) === Number(resJenjang))).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </Select>
                     <Button size="sm" variant="outline" onClick={() => void exportExamResults(exam.id, resClass || undefined).catch((e) => err(e, 'Gagal ekspor.'))}>⬇ Excel</Button>
                   </div>
                 }>
-                {!results ? <p className="p-5 text-sm text-sand-400">Memuat…</p> : results.classes.map((c) => (
-                  <div key={c.classId} className="border-b border-sand-100 last:border-0">
+                {!results ? <p className="p-5 text-sm text-sand-400">Memuat…</p> : [...new Set(results.classes.map((c) => c.gradeLevel))].sort().map((g) => (
+                  <div key={g} className="border-b border-sand-100 last:border-0">
+                    <p className="bg-primary-50 px-5 py-2 text-xs font-black uppercase tracking-wider text-primary-800">Jenjang Kelas {g}</p>
+                    {results.classes.filter((c) => c.gradeLevel === g).map((c) => (
+                  <div key={c.classId} className="border-b border-sand-50 last:border-0">
                     <p className="bg-sand-50 px-5 py-2 text-xs font-black uppercase tracking-wider text-sand-600">{c.className}</p>
                     <DataTable head={['NIS', 'Nama', 'Status', 'Skor', 'Nilai Akhir', '']}>
                       {c.students.map((s) => (
@@ -518,6 +537,8 @@ export default function UjianDetailPage() {
                         </tr>
                       ))}
                     </DataTable>
+                  </div>
+                    ))}
                   </div>
                 ))}
               </Widget>
@@ -570,19 +591,19 @@ export default function UjianDetailPage() {
                 </DataTable>
               </Widget>
 
-              {matrix && resClass ? (
-                <Widget title={`Rekap Jawaban — ${classes.find((c) => c.id === resClass)?.name ?? ''}`} subtitle="B = benar · S = salah · · = kosong">
+              {(matrix && resClass ? [{ cid: resClass, m: matrix }] : Object.entries(matrices).map(([cid, m]) => ({ cid, m }))).map(({ cid, m }) => (
+                <Widget key={cid} title={`Rekap Jawaban — ${classes.find((c) => c.id === cid)?.name ?? ''}`} subtitle="B = benar · S = salah · · = kosong">
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="border-b border-sand-200 text-left text-sand-500">
                           <th className="px-4 py-2">NIS</th><th className="px-4 py-2">Nama</th>
-                          {matrix.questions.map((q) => <th key={q.id} className="px-1.5 py-2 text-center" title={q.prompt ?? ''}>{q.number}</th>)}
+                          {m.questions.map((q) => <th key={q.id} className="px-1.5 py-2 text-center" title={q.prompt ?? ''}>{q.number}</th>)}
                           <th className="px-4 py-2 text-right">Skor</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {matrix.students.map((s) => (
+                        {m.students.map((s) => (
                           <tr key={s.studentId} className="border-b border-sand-50">
                             <td className="px-4 py-1.5 text-sand-500">{s.nis ?? '—'}</td>
                             <td className="px-4 py-1.5 font-medium text-sand-800">{s.name}</td>
@@ -598,7 +619,7 @@ export default function UjianDetailPage() {
                     </table>
                   </div>
                 </Widget>
-              ) : null}
+              ))}
             </div>
           )}
         </>

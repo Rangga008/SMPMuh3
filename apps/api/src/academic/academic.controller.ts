@@ -24,6 +24,7 @@ import { RequirePermission } from '../identity/decorators/require-permission.dec
 import { AcademicService } from './academic.service';
 import {
   AssessmentDto,
+  AssessmentUpdateDto,
   CalendarEventDto,
   ClassDto,
   CurriculumDto,
@@ -653,6 +654,22 @@ export class AcademicController {
   @RequirePermission(M)
   createAssessment(@CurrentUser() u: AuthUser, @Body() dto: AssessmentDto) {
     return this.academic.createAssessment(dto, u.id);
+  }
+
+  @Patch('assessments/:id')
+  @RequirePermission(M)
+  updateAssessment(
+    @CurrentUser() u: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AssessmentUpdateDto,
+  ) {
+    return this.academic.updateAssessment(id, dto, u.id);
+  }
+
+  @Delete('assessments/:id')
+  @RequirePermission(M)
+  deleteAssessment(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.academic.deleteAssessment(id, u.id);
   }
 
   @Post('assessments/:id/grades')

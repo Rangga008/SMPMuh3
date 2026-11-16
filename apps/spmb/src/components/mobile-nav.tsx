@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { NAV_LINKS } from './site-header';
@@ -19,8 +20,17 @@ const ICONS: Record<string, string> = {
 /** Menu hamburger → bottom sheet tile-grid (konsisten dgn app, enak di HP). */
 export function MobileNav() {
   const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const pathname = usePathname();
   useEffect(() => setOpen(false), [pathname]);
+  useEffect(() => setMounted(true), []);
+  // Kunci scroll body saat sheet terbuka.
+  useEffect(() => {
+    document.body.style.overflow = open ? 'hidden' : '';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [open]);
 
   return (
     <div className="ml-auto lg:hidden">
@@ -40,18 +50,21 @@ export function MobileNav() {
         </svg>
       </button>
 
-      {open ? (
-        <div className="fixed inset-0 z-[70]">
-          <button
-            type="button"
-            aria-label="Tutup menu"
-            className="absolute inset-0 bg-black/55 backdrop-blur-sm"
-            onClick={() => setOpen(false)}
-          />
-          <nav
-            aria-label="Navigasi seluler"
-            className="absolute inset-x-0 bottom-0 max-h-[80dvh] overflow-y-auto rounded-t-3xl border-t border-sand-200 bg-white shadow-soft"
-          >
+      {/* Portal — header punya backdrop-blur yang mengurung position:fixed
+          ke kotak header; portal ke body agar sheet memenuhi viewport. */}
+      {open && mounted
+        ? createPortal(
+            <div className="fixed inset-0 z-[70]">
+              <button
+                type="button"
+                aria-label="Tutup menu"
+                className="absolute inset-0 bg-black/55 backdrop-blur-sm"
+                onClick={() => setOpen(false)}
+              />
+              <nav
+                aria-label="Navigasi seluler"
+                className="absolute inset-x-0 bottom-0 max-h-[80dvh] overflow-y-auto rounded-t-3xl border-t border-sand-200 bg-white shadow-soft"
+              >
             <div className="flex items-center justify-between px-5 pb-2 pt-4">
               <p className="font-extrabold text-sand-900">Menu</p>
               <button
@@ -78,13 +91,15 @@ export function MobileNav() {
                 </Link>
               ))}
             </div>
-            <div className="border-t border-sand-100 px-5 py-3 pb-8">
-              <ThemeToggle mobile />
-              <HeaderAuth mobile />
-            </div>
-          </nav>
-        </div>
-      ) : null}
+              <div className="border-t border-sand-100 px-5 py-3 pb-8">
+                <ThemeToggle mobile />
+                <HeaderAuth mobile />
+              </div>
+            </nav>
+          </div>,
+          document.body,
+        )
+        : null}
     </div>
   );
 }

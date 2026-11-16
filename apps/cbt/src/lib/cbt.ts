@@ -1,5 +1,6 @@
 'use client';
 
+import katex from 'katex';
 import { API, ApiError } from './api';
 
 /** Endpoint CBT bersifat publik — kredensialnya NIS + kode + token sesi. */
@@ -54,11 +55,43 @@ export const mediaUrl = (src: string) => (src.startsWith('http') ? src : `${API}
 export const fixMediaHtml = (html: string) =>
   html.replace(/src="(\/cbt\/media\/[^"]+)"/g, (_, s: string) => `src="${API}${s}"`);
 
+/** Render "$…$"/"$$…$$" di HTML menjadi rumus KaTeX — dari persamaan Word hasil impor. */
+export const renderMathHtml = (html: string) =>
+  html.replace(/\$\$([^$<]+?)\$\$|\$([^$<\n]+?)\$/g, (whole, disp: string, inl: string) => {
+    const tex = disp ?? inl;
+    try {
+      return katex.renderToString(tex, { throwOnError: false, displayMode: disp !== undefined });
+    } catch {
+      return whole;
+    }
+  });
+
+/** HTML soal siap tampil — media + rumus sekaligus. */
+export const richHtml = (html: string) => renderMathHtml(fixMediaHtml(html));
+
 export interface CbtResult {
   status: string; submittedAt: string | null;
   examTitle: string; subject: string;
   score: number | null; maxScore: number | null;
 }
+
+/** Satu ujian aktif yang bisa diikuti siswa. */
+export interface CbtLoginExam {
+  title: string;
+  subject: string;
+  startAt: string;
+  endAt: string;
+  attemptStatus: string | null;
+}
+
+/** Hasil login NIS + password — identitas & daftar ujian aktif (tanpa kode). */
+export interface CbtLogin {
+  student: { name: string; nis: string | null; className: string };
+  exams: CbtLoginExam[];
+}
+
+export const loginCbt = (nis: string, password: string) =>
+  pub<CbtLogin>('/login', { method: 'POST', json: { nis, password } });
 
 export const enterExam = (nis: string, code: string, password: string) =>
   pub<CbtSession>('/enter', { method: 'POST', json: { nis, code, password } });

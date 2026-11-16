@@ -2,30 +2,20 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
+import { Badge, Button, Field, Select } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { PageTitle, Widget } from '@/components/widgets';
 import {
-  createAssessment,
   listAcademicYears,
   listAssessments,
   listClasses,
   listEnrollments,
   listGrades,
-  listSubjects,
   setGrades,
   type AcademicYear,
   type AssessmentView,
   type ClassView,
-  type SubjectView,
 } from '@/lib/api';
-
-const TYPES = [
-  { key: 'FORMATIF', label: 'Formatif' },
-  { key: 'SUMATIF', label: 'Sumatif' },
-  { key: 'PTS', label: 'PTS' },
-  { key: 'PAS', label: 'PAS' },
-] as const;
 
 interface Row {
   studentId: string;
@@ -39,20 +29,17 @@ export default function PenilaianPage() {
   const [yearId, setYearId] = useState('');
   const [classes, setClasses] = useState<ClassView[]>([]);
   const [classId, setClassId] = useState('');
-  const [subjects, setSubjects] = useState<SubjectView[]>([]);
   const [assessments, setAssessments] = useState<AssessmentView[]>([]);
   const [active, setActive] = useState<AssessmentView | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [showNew, setShowNew] = useState(false);
 
   useEffect(() => {
-    Promise.all([listAcademicYears(), listSubjects()])
-      .then(([ys, subs]) => {
+    listAcademicYears()
+      .then((ys) => {
         setYears(ys);
-        setSubjects(subs);
         const active = ys.find((y) => y.isActive) ?? ys[0];
         if (active) setYearId(active.id);
       })
@@ -138,12 +125,7 @@ export default function PenilaianPage() {
     <Shell>
       <PageTitle
         title="Penilaian"
-        subtitle="Buat asesmen per rombel lalu isi nilai siswa — fondasi rapor"
-        actions={
-          <Button size="sm" onClick={() => setShowNew(true)} disabled={!classId}>
-            + Asesmen Baru
-          </Button>
-        }
+        subtitle="Isi nilai siswa per asesmen — asesmen dibuat di menu Asesmen; nilai ujian CBT masuk lewat Ledger"
       />
       {error ? (
         <p role="alert" className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</p>
@@ -203,7 +185,11 @@ export default function PenilaianPage() {
             ))}
             {assessments.length === 0 ? (
               <li className="py-6 text-center text-sm text-sand-500">
-                Belum ada asesmen untuk rombel ini.
+                Belum ada asesmen untuk rombel ini — buat dulu di{' '}
+                <Link href="/kurikulum/asesmen" className="font-bold text-primary-700 hover:underline">
+                  Bank Asesmen
+                </Link>
+                .
               </li>
             ) : null}
           </ul>
@@ -258,61 +244,6 @@ export default function PenilaianPage() {
           )}
         </Widget>
       </div>
-
-      {/* ---------- Modal asesmen baru ---------- */}
-      <Modal open={showNew} onClose={() => setShowNew(false)} title="Asesmen Baru">
-        <form
-          className="grid gap-4 sm:grid-cols-2"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            const f = new FormData(e.currentTarget);
-            setBusy(true);
-            setError(null);
-            try {
-              await createAssessment({
-                subjectId: String(f.get('subjectId')),
-                classId,
-                academicYearId: yearId,
-                name: String(f.get('name')),
-                type: String(f.get('type')),
-                maxScore: Number(f.get('maxScore')) || 100,
-              });
-              setShowNew(false);
-              setNotice('Asesmen dibuat.');
-              await refreshAssessments();
-            } catch (err) {
-              setError(err instanceof Error ? err.message : 'Gagal membuat asesmen.');
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          <Field label="Nama Asesmen" className="sm:col-span-2">
-            <Input name="name" required minLength={3} placeholder="Sumatif Bab 1 / PTS Ganjil" />
-          </Field>
-          <Field label="Mata Pelajaran">
-            <Select name="subjectId" required>
-              {subjects.map((s) => (
-                <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Jenis">
-            <Select name="type" required>
-              {TYPES.map((t) => (
-                <option key={t.key} value={t.key}>{t.label}</option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Nilai Maksimal">
-            <Input name="maxScore" type="number" min={1} max={1000} defaultValue={100} />
-          </Field>
-          <div className="flex justify-end gap-2 sm:col-span-2">
-            <Button type="button" variant="ghost" onClick={() => setShowNew(false)}>Batal</Button>
-            <Button type="submit" disabled={busy}>Buat</Button>
-          </div>
-        </form>
-      </Modal>
     </Shell>
   );
 }

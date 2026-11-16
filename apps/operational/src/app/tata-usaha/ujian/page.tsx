@@ -81,17 +81,19 @@ export default function UjianPage() {
   }, [yearId]);
   useEffect(load, [load]);
 
-  /** Kartu peserta: NIS + kode ujian + PASSWORD (kredensial CBT) + ruang/no kursi. */
+  /** Kartu peserta: NIS + PASSWORD (kredensial CBT) + ruang/no kursi.
+   *  Kode ujian tidak dicetak — diumumkan pengawas di ruang ujian. */
   const printCards = async (roomId: string, linkId?: string) => {
     const { room, link, credentials, school } = await getExamCards(roomId, linkId);
     const exam = link?.exam ?? room.exam;
     const sessionInfo = link
       ? [link.sessionLabel, fmtDt(link.startsAt), fmtDt(link.endsAt)].filter(Boolean).join(' · ')
       : null;
+    // Kode ujian SENGAJA tidak dicetak — diumumkan pengawas di ruang agar
+    // ujian tidak bisa dikerjakan dari luar sekolah.
     const examLines = exam
-      ? `<tr><td>Ujian</td><td>: ${exam.title}</td></tr>
-         <tr><td>Kode Ujian</td><td>: <b class="kode">${exam.code}</b></td></tr>`
-      : '<tr><td>Kode Ujian</td><td>: <i>sesi belum ditautkan ke ujian CBT</i></td></tr>';
+      ? `<tr><td>Ujian</td><td>: ${exam.title}</td></tr>`
+      : '<tr><td>Ujian</td><td>: <i>sesi belum ditautkan ke ujian CBT</i></td></tr>';
     const cards = room.seats.map((s) => {
       const pw = credentials?.[s.student.id];
       return `
@@ -107,7 +109,7 @@ export default function UjianPage() {
           <tr><td>Kelas</td><td>: ${s.class?.name ?? '—'}</td></tr>
           <tr><td>Ruang</td><td>: <b>${room.name}</b> · No. ${s.seatNo ?? '—'}</td></tr>
         </table>
-        <div class="hint">Login CBT: masukkan <b>NIS</b>, <b>Kode Ujian</b> &amp; <b>Password</b> di atas. Simpan kartu ini.</div>
+        <div class="hint">Login CBT: masukkan <b>NIS</b> &amp; <b>Password</b> di atas. <b>Kode ujian diumumkan pengawas</b> di ruang. Simpan kartu ini.</div>
       </div>`;
     }).join('');
     printHtml(`Kartu ${room.name}${sessionInfo ? ` ${sessionInfo}` : ''}`, `
@@ -127,7 +129,7 @@ export default function UjianPage() {
 
   return (
     <Shell>
-      <PageTitle title="Ruang Ujian & Kartu Peserta" subtitle="Satu ruang bisa host beberapa sesi/ujian di waktu berbeda — tautkan ujian CBT per sesi, tempatkan rombel, cetak kartu (NIS + kode ujian + password)."
+      <PageTitle title="Ruang Ujian & Kartu Peserta" subtitle="Satu ruang bisa host beberapa sesi/ujian di waktu berbeda — tautkan ujian CBT per sesi, tempatkan rombel, cetak kartu (NIS + password — kode ujian dari pengawas)."
         actions={<Button size="sm" onClick={() => setRoomModal(true)}>+ Ruang</Button>} />
       {error ? <p className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p> : null}
       {notice ? <p className="mb-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{notice}</p> : null}

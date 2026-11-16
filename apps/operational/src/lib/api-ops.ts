@@ -46,6 +46,23 @@ export const importQuestions = (id: string, file: File) => {
   fd.append('file', file);
   return req<{ count: number }>(`/ops/assessments/${id}/questions/import`, { method: 'POST', body: fd });
 };
+/** Unggah gambar untuk disisipkan ke soal/opsi/bacaan — hasil {key,url} relatif API. */
+export const uploadQuestionMedia = (file: File) => {
+  const fd = new FormData();
+  fd.append('file', file);
+  return req<{ key: string; url: string }>('/ops/question-media', { method: 'POST', body: fd });
+};
+/** Preview import — hasil parse (soal+bacaan+gambar sudah terunggah) tanpa menyimpan. */
+export const previewImportQuestions = (id: string, file: File) => {
+  const fd = new FormData();
+  fd.append('file', file);
+  return req<{ questions: (Omit<AssessmentQuestion, 'id'> & { id?: string })[]; passages: Omit<AssessmentPassage, 'id'>[] }>(
+    `/ops/assessments/${id}/questions/import-preview`, { method: 'POST', body: fd },
+  );
+};
+export const getAssessmentPassages = (id: string) => req<AssessmentPassage[]>(`/ops/assessments/${id}/passages`);
+export const setAssessmentPassages = (id: string, passages: { code: string; content: string; media?: { key: string; name: string }[] | null }[]) =>
+  req<{ count: number }>(`/ops/assessments/${id}/passages`, { method: 'PUT', json: { passages } });
 export const saveQuestionAnswers = (questionId: string, rows: { studentId: string; score: number; isCorrect?: boolean | null; answer?: unknown }[]) =>
   req(`/ops/questions/${questionId}/answers`, { method: 'POST', json: { rows } });
 export const getQuestionAnalysis = (id: string) =>

@@ -196,13 +196,13 @@ export function SlipView({
           <p style={{ fontWeight: 700, textDecoration: 'underline', marginTop: school?.headmasterSignatureUrl ? 4 : 52 }}>
             {principal || '…………………………'}
           </p>
-          {school?.headmasterNip ? <p style={{ ...muted, marginTop: 2 }}>NBM/NIP. {school.headmasterNip}</p> : null}
+          {school?.headmasterNip ? <p style={{ ...muted, marginTop: 2 }}>NIP/NUPTK. {school.headmasterNip}</p> : null}
         </div>
         <div style={{ flex: 1 }}>
           <p>Bandung, {printDate}</p>
           <p>Bendahara,</p>
           <p style={{ fontWeight: 700, textDecoration: 'underline', marginTop: 56 }}>{treasurer || '…………………………'}</p>
-          {school?.treasurerNip ? <p style={{ ...muted, marginTop: 2 }}>NBM/NIP. {school.treasurerNip}</p> : null}
+          {school?.treasurerNip ? <p style={{ ...muted, marginTop: 2 }}>NIP/NUPTK. {school.treasurerNip}</p> : null}
         </div>
       </div>
     </div>

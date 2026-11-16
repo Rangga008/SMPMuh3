@@ -1,5 +1,6 @@
 import * as mammoth from 'mammoth';
 import { Document, Packer, Paragraph, Table, TableCell, TableRow, TextRun, WidthType } from 'docx';
+import { inlineMathInDocx } from './docx-math';
 
 /** Placeholder gambar di dalam HTML hasil parse — disubstitusi setelah upload ke storage. */
 export const mediaMarker = (key: string) => `{{media:${key}}}`;
@@ -73,9 +74,41 @@ function extractImages(html: string, prefix: string): { html: string; images: Ra
   return { html: out, images };
 }
 
-const tableBlocks = (html: string) => html.match(/<table[\s>][\s\S]*?<\/table>/gi) ?? [];
-const rowBlocks = (tbl: string) => tbl.match(/<tr[\s>][\s\S]*?<\/tr>/gi) ?? [];
-const cellBlocks = (row: string) => row.match(/<t[dh][\s>][\s\S]*?<\/t[dh]>/gi) ?? [];
+/** Blok <table> tingkat atas — tabel bersarang di dalam sel tetap milik selnya. */
+const tableBlocks = (html: string) => {
+  const out: string[] = [];
+  const re = /<(\/?)table[^>]*>/gi;
+  let m: RegExpExecArray | null, depth = 0, start = -1;
+  while ((m = re.exec(html))) {
+    if (m[1] === '/') {
+      if (--depth === 0 && start >= 0) { out.push(html.slice(start, m.index + m[0].length)); start = -1; }
+    } else if (depth++ === 0) start = m.index;
+  }
+  return out;
+};
+
+/** Lepas tag pembungkus pertama/terakhir (<table>/<tr>) dari sebuah blok. */
+const innerOf = (html: string) => html.replace(/^<[a-z]+[^>]*>/i, '').replace(/<\/[a-z]+>\s*$/i, '');
+
+/** Blok <item> tingkat atas — yang ada di dalam <table> bersarang diabaikan. */
+const topLevelBlocks = (html: string, item: string) => {
+  const re = new RegExp(`<(\\/?)(table|${item})[^>]*>`, 'gi');
+  const out: string[] = [];
+  let m: RegExpExecArray | null, depth = 0, start = -1;
+  while ((m = re.exec(html))) {
+    const tag = (m[2] ?? '').toLowerCase();
+    if (tag === 'table') { depth += m[1] === '/' ? -1 : 1; continue; }
+    if (depth !== 0) continue;
+    if (m[1] !== '/') { if (start < 0) start = m.index; }
+    else if (start >= 0) { out.push(html.slice(start, m.index + m[0].length)); start = -1; }
+  }
+  return out;
+};
+
+/** Baris <tr> tingkat atas — <tr> milik tabel data di dalam sel tidak ikut. */
+const rowBlocks = (tbl: string) => topLevelBlocks(innerOf(tbl), 'tr');
+/** Sel <td>/<th> tingkat atas — sel milik tabel bersarang tidak ikut. */
+const cellBlocks = (row: string) => topLevelBlocks(innerOf(row), 'td|th');
 
 function typeOf(v: string): ParsedDocxQuestion['type'] | '' {
   const t = v.toUpperCase().replace(/[\s-]+/g, '_');
@@ -94,7 +127,10 @@ function typeOf(v: string): ParsedDocxQuestion['type'] | '' {
 export async function parseQuestionDocxBuffer(buf: Buffer): Promise<ParsedDocx> {
   let rawHtml: string;
   try {
-    ({ value: rawHtml } = await mammoth.convertToHtml({ buffer: buf }));
+    // Persamaan Word (OMML) → "$latex$" — mammoth membuang oMath, jadi
+    // dokumen diproses dulu agar rumus (x², pecahan, akar, Σ…) ikut terbawa.
+    const pre = await inlineMathInDocx(buf);
+    ({ value: rawHtml } = await mammoth.convertToHtml({ buffer: pre }));
   } catch {
     return { passages: [], questions: [], errors: ['File Word tidak dapat dibaca — pastikan format .docx dari Microsoft Word/Google Docs.'] };
   }
@@ -119,6 +155,99 @@ export async function parseQuestionDocxBuffer(buf: Buffer): Promise<ParsedDocx> 
       if (!content) { errors.push(`Bacaan ${code}: isi kosong.`); continue; }
       const { html, images } = extractImages(content, `p${code}`);
       passages.push({ code, content: html, images });
+      continue;
+    }
+
+    // ---- Tabel GRID — satu baris = satu soal (kolom: No | Tipe | Soal |
+    // Opsi A..E | Kunci | Poin | … | Bacaan). Dipakai template ringkas. ----
+    const header = (rows[0] ?? []).map((c) => stripTags(c).replace(/\s+/g, ' ').toUpperCase());
+    const hIdx = (...names: string[]) =>
+      header.findIndex((h) => names.some((n) => h === n || h.startsWith(n)));
+    const cType = hIdx('TIPE', 'TYPE');
+    const cSoal = hIdx('SOAL', 'PERTANYAAN', 'QUESTION');
+    const cKey = hIdx('KUNCI', 'JAWABAN', 'KEY');
+    if (cType >= 0 && cSoal >= 0 && cKey >= 0) {
+      const cNo = hIdx('NO');
+      const cPoin = hIdx('POIN', 'BOBOT');
+      const cBacaan = hIdx('BACAAN', 'PASSAGE');
+      const optCols = header
+        .map((h, i) => ({ h, i }))
+        .filter(({ h }) => /^(OPSI\s*)?[A-E]$/.test(h));
+      for (const cells of rows.slice(1)) {
+        qIdx++;
+        const get = (i: number) => (i >= 0 ? (cells[i] ?? '') : '');
+        const typeStr = stripTags(get(cType));
+        const label = `Soal baris "${stripTags(get(cNo)) || qIdx}"`;
+        if (/^BACAAN/.test(typeStr.toUpperCase())) {
+          const code = (stripTags(get(cNo)) || `B${passages.length + 1}`).trim().toUpperCase();
+          const content = sanitizeHtml(get(cSoal));
+          if (!content) { errors.push(`Bacaan ${code}: isi kosong.`); continue; }
+          const { html, images } = extractImages(content, `p${code}`);
+          passages.push({ code, content: html, images });
+          continue;
+        }
+        let type = typeOf(typeStr);
+        if (!type) {
+          if (typeStr.trim()) errors.push(`${label}: TIPE "${typeStr}" tidak dikenal (PG/PGK/BS/BSK).`);
+          continue;
+        }
+        const promptHtml = sanitizeHtml(get(cSoal));
+        if (!promptHtml) { errors.push(`${label}: sel SOAL kosong.`); continue; }
+        const weight = Math.max(1, Math.round(Number(stripTags(get(cPoin)))) || 1);
+        const bacaan = stripTags(get(cBacaan)).trim();
+        const passageCode = bacaan && bacaan !== '-' ? bacaan.toUpperCase() : undefined;
+        const keyRaw = stripTags(get(cKey));
+        const choiceMap = new Map<string, string>();
+        for (const { h, i } of optCols) {
+          const letter = h.slice(-1);
+          const html = sanitizeHtml(get(i));
+          if (html) choiceMap.set(letter, html);
+        }
+        const letters = 'ABCDE'.split('').filter((l) => choiceMap.has(l));
+        const kMarks = keyRaw.split(/[,;\s]+/).filter(Boolean).map((m) => m.toUpperCase());
+        const truth = (m: string) => /^(B|BENAR|TRUE)$/.test(m);
+        const letterIdx = (s: string) => 'ABCDE'.indexOf(s);
+        // BS dengan beberapa pernyataan di kolom Opsi (kunci "B,S,…") otomatis jadi BSK.
+        if (type === 'TRUE_FALSE' && (kMarks.length > 1 || letters.length >= 2)) type = 'TRUE_FALSE_COMPLEX';
+        let options: unknown;
+        let key: unknown;
+        if (type === 'MCQ' || type === 'MCQ_COMPLEX') {
+          if (letters.length < 2) { errors.push(`${label}: isi minimal 2 kolom Opsi.`); continue; }
+          options = { choices: letters.map((l) => choiceMap.get(l) ?? '') };
+          const idx = kMarks.map(letterIdx).filter((x) => x >= 0 && x < letters.length);
+          if (type === 'MCQ') {
+            if (idx.length !== 1) { errors.push(`${label}: kunci PG harus satu huruf A–E.`); continue; }
+            key = idx[0];
+          } else {
+            if (!idx.length) { errors.push(`${label}: kunci PGK minimal satu huruf (mis. A,C).`); continue; }
+            key = [...new Set(idx)];
+          }
+        } else if (type === 'TRUE_FALSE') {
+          if (!/^(B|BENAR|S|SALAH|TRUE|FALSE)$/i.test(keyRaw)) { errors.push(`${label}: kunci BS harus B atau S.`); continue; }
+          key = truth(keyRaw);
+        } else {
+          // BSK grid — pernyataan di kolom Opsi A..E, kunci B/S dipisah koma.
+          if (letters.length < 2) { errors.push(`${label}: BSK butuh ≥2 pernyataan di kolom Opsi.`); continue; }
+          options = { statements: letters.map((l) => choiceMap.get(l) ?? '') };
+          if (kMarks.length !== letters.length || kMarks.some((m) => !/^(B|BENAR|S|SALAH|TRUE|FALSE)$/.test(m))) {
+            errors.push(`${label}: kunci BSK = B/S per pernyataan, ${letters.length} buah dipisah koma.`); continue;
+          }
+          key = kMarks.map(truth);
+        }
+        const no = parseInt(stripTags(get(cNo)), 10) || questions.length + 1;
+        const { html: pHtml, images } = extractImages(promptHtml, `q${qIdx}`);
+        if (options && typeof options === 'object') {
+          const o = options as { choices?: string[]; statements?: string[] };
+          const fix = (arr: string[] | undefined) => arr?.map((t, oi) => {
+            const r = extractImages(t, `q${qIdx}o${oi}`);
+            images.push(...r.images);
+            return r.html;
+          });
+          o.choices = fix(o.choices) ?? [];
+          o.statements = fix(o.statements) ?? [];
+        }
+        questions.push({ number: no, type, weight, prompt: pHtml, options, key, images, ...(passageCode ? { passageCode } : {}) });
+      }
       continue;
     }
 
@@ -216,11 +345,11 @@ export async function parseQuestionDocxBuffer(buf: Buffer): Promise<ParsedDocx> 
 
     // Ekstrak gambar dari soal + pilihan — img dipindah ke media soal bila ada di opsi.
     const { html: pHtml, images } = extractImages(promptHtml, `q${qIdx}`);
-    // Opsi juga boleh bergambar — proses per item.
+    // Opsi juga boleh bergambar — proses per item, prefix unik agar marker tidak tabrakan.
     if (options && typeof options === 'object') {
       const o = options as { choices?: string[]; statements?: string[] };
-      const fix = (arr: string[] | undefined) => arr?.map((t) => {
-        const r = extractImages(t, `q${qIdx}o`);
+      const fix = (arr: string[] | undefined) => arr?.map((t, oi) => {
+        const r = extractImages(t, `q${qIdx}o${oi}`);
         images.push(...r.images);
         return r.html;
       });
@@ -287,6 +416,8 @@ export async function buildQuestionTemplateDocx(): Promise<Buffer> {
         note('Satu tabel per soal — salin blok tabel contoh sesuai kebutuhan. Tabel bacaan diawali sel "BACAAN: <kode>". Gambar boleh disisipkan langsung di sel SOAL, opsi, maupun bacaan — ikut terunggah otomatis.'),
         note('TIPE: PG = pilihan ganda (kunci 1 huruf) · PGK = pilihan ganda kompleks (kunci ≥1 huruf, mis. A,C) · BS = benar/salah (kunci B atau S) · BSK = benar/salah kompleks (baris P1–P9, kunci B/S per pernyataan, mis. B,S,B).'),
         note('BACAAN di baris meta mengacu ke kode tabel bacaan — kosongkan/tulis "-" bila tidak pakai. NO & BOBOT boleh dikosongkan (otomatis).'),
+        note('RUMUS/MATEMATIKA: sisipkan persamaan Word (Insert → Equation / Alt+=) langsung di sel — pangkat, pecahan, akar, Σ, matriks otomatis tampil. Alternatif: ketik LaTeX di antara tanda $, mis. $x^2$, $\\frac{a+b}{2}$, $\\sqrt{x^2+9}$.'),
+        note('Format grid juga didukung: satu tabel dengan header kolom No | Tipe | Soal | Opsi A…E | Kunci | (Poin) | (Bacaan) — satu baris per soal.'),
         spacer,
         h('BACAAN (opsional — letakkan di atas soal yang memakainya)'),
         passageTable,

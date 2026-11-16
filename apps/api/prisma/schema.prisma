@@ -1307,6 +1307,7 @@ model Student {
   otherNotes       String?  @map("other_notes") // lain-lain
   recordDetails    Json?    @map("record_details") // kantong detail buku induk (32 item Dapodik)
   photoKey         String?  @map("photo_key") // pas foto buku induk (key storage)
+  password       String?    // password login CBT siswa — tercetak di kartu ujian
   createdAt    DateTime      @default(now()) @map("created_at")
   updatedAt    DateTime      @updatedAt @map("updated_at")
   deletedAt    DateTime?     @map("deleted_at") // soft delete / arsip

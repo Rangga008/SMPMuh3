@@ -28,6 +28,7 @@ import {
   EnterExamDto,
   ExamSessionDto,
   ExamSessionUpdateDto,
+  LoginCbtDto,
   UpdateExamDto,
   UpdateGradeDto,
 } from './dto/cbt.dto';
@@ -189,7 +190,15 @@ export class CbtController {
   // jadi endpoint siswa dikecualikan dari limit 300/menit global — keamanan
   // tetap terjaga karena tiap request wajib token sesi yang tak tertebak.
 
-  /** Masuk: NIS + kode → token sesi + info persiapan. */
+  /** Login: NIS + password kartu → identitas & ujian terkait (tanpa kode). */
+  @Public()
+  @Throttle({ default: { limit: 1200, ttl: 60_000 } })
+  @Post('login')
+  login(@Body() dto: LoginCbtDto) {
+    return this.cbt.login(dto);
+  }
+
+  /** Masuk ujian: NIS + kode (dari pengawas) + password → token sesi. */
   @Public()
   @Throttle({ default: { limit: 1200, ttl: 60_000 } })
   @Post('enter')

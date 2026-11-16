@@ -10,6 +10,7 @@ import { PrismaService } from '../core/prisma/prisma.service';
 import { StorageService } from '../core/storage/storage.service';
 import { randomUUID } from 'node:crypto';
 import { normalizePhone } from '../identity/users/users.service';
+import { genStudentPassword } from '../students/students.service';
 import {
   AttendanceRowDto,
   CollectionDto,
@@ -430,14 +431,30 @@ export class OpsService {
     if (!parsed.questions.length) throw new BadRequestException('Tidak ada soal valid di file Word.');
     const upload = async (imgs: { ref: string; buf: Buffer; ext: string; mime: string }[], html: string) => {
       const media: { key: string; name: string }[] = [];
-      let out = html;
+      const urls = new Map<string, string>();
       for (const img of imgs) {
         const key = `qmedia/${randomUUID()}.${img.ext}`;
         await this.storage.putObject(key, img.buf, img.mime);
         media.push({ key, name: `${img.ref}.${img.ext}` });
-        out = out.split(`{{media:${img.ref}}}`).join(`/cbt/media/${key}`);
+        urls.set(`{{media:${img.ref}}}`, `/cbt/media/${key}`);
       }
-      return { html: out, media };
+      let out = html;
+      for (const [mk, url] of urls) out = out.split(mk).join(url);
+      return { html: out, media, urls };
+    };
+    // Ganti marker {{media:ref}} di seluruh string JSON opsi (jawaban boleh berupa gambar).
+    const fixMarkers = (v: unknown, urls: Map<string, string>): unknown => {
+      if (!urls.size || v === undefined || v === null) return v;
+      if (typeof v === 'string') {
+        let s = v;
+        for (const [mk, url] of urls) s = s.split(mk).join(url);
+        return s;
+      }
+      if (Array.isArray(v)) return v.map((x) => fixMarkers(x, urls));
+      if (typeof v === 'object') {
+        return Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, fixMarkers(x, urls)]));
+      }
+      return v;
     };
     const passages: PassageDto[] = [];
     for (const p of parsed.passages) {
@@ -449,13 +466,22 @@ export class OpsService {
       const r = await upload(q.images, q.prompt);
       questions.push({
         number: q.number, type: q.type, weight: q.weight, prompt: r.html,
-        ...(q.options !== undefined ? { options: q.options } : {}),
+        ...(q.options !== undefined ? { options: fixMarkers(q.options, r.urls) as QuestionDto['options'] } : {}),
         ...(q.key !== undefined ? { key: q.key } : {}),
         ...(q.passageCode ? { passageCode: q.passageCode } : {}),
         ...(r.media.length ? { media: r.media } : {}),
       });
     }
     return { questions, passages };
+  }
+
+  /** Unggah satu gambar untuk disisipkan di soal/opsi/bacaan — hasil: key + url sisip. */
+  async uploadQuestionMedia(file: Express.Multer.File) {
+    const mime = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' }[file.mimetype];
+    if (!mime) throw new BadRequestException('Gambar harus JPG/PNG/WebP/GIF.');
+    const key = `qmedia/${randomUUID()}.${mime}`;
+    await this.storage.putObject(key, file.buffer, file.mimetype);
+    return { key, url: `/cbt/media/${key}` };
   }
 
   async setQuestions(assessmentId: string, questions: QuestionDto[], passages?: PassageDto[]) {
@@ -498,6 +524,23 @@ export class OpsService {
 
   listPassages(assessmentId: string) {
     return this.prisma.assessmentPassage.findMany({ where: { assessmentId }, orderBy: { sortOrder: 'asc' } });
+  }
+
+  /** Simpan daftar bacaan — upsert per kode, yang tidak ada di daftar dihapus. */
+  async setPassages(assessmentId: string, passages: PassageDto[]) {
+    await this.prisma.assessment.findUniqueOrThrow({ where: { id: assessmentId } });
+    const codes = new Set(passages.map((p) => p.code));
+    await this.prisma.$transaction(async (tx) => {
+      await tx.assessmentPassage.deleteMany({ where: { assessmentId, code: { notIn: [...codes] } } });
+      for (const [i, p] of passages.entries()) {
+        await tx.assessmentPassage.upsert({
+          where: { assessmentId_code: { assessmentId, code: p.code } },
+          update: { content: p.content, sortOrder: i, ...(p.media !== undefined ? { media: p.media as Prisma.InputJsonValue } : {}) },
+          create: { assessmentId, code: p.code, content: p.content, sortOrder: i, media: p.media === undefined ? Prisma.JsonNull : (p.media as Prisma.InputJsonValue) },
+        });
+      }
+    });
+    return { count: passages.length };
   }
 
   /** Template Word import soal — tabel per soal + bacaan, contoh semua tipe. */
@@ -1439,29 +1482,25 @@ export class OpsService {
         academicYear: true,
         seats: {
           where: linkId ? { linkId } : { linkId: null },
-          include: { student: { select: { id: true, name: true, nis: true, nisn: true, gender: true } }, class: { select: { name: true } } },
+          include: { student: { select: { id: true, name: true, nis: true, nisn: true, gender: true, password: true } }, class: { select: { name: true } } },
           orderBy: { seatNo: 'asc' },
         },
       },
     });
     const exam = link?.exam ?? null;
+    // Password CBT diambil dari data siswa — dibuat malas saat kartu dicetak
+    // untuk siswa yang belum punya (satu password per siswa, semua ujian).
     const credentials: Record<string, string> = {};
-    if (exam) {
-      // Password CBT per siswa — dibuat malas saat kartu dicetak (mirror ExamCredential di CbtService).
-      const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-      const gen = () => 'KP' + Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-      const creds = await this.prisma.examCredential.findMany({
-        where: { examId: exam.id, studentId: { in: room.seats.map((s) => s.studentId) } },
-      });
-      const byStudent = new Map(creds.map((c) => [c.studentId, c.password]));
-      for (const seat of room.seats) {
-        if (!byStudent.has(seat.studentId)) {
-          const pw = gen();
-          await this.prisma.examCredential.create({ data: { examId: exam.id, studentId: seat.studentId, password: pw } });
-          byStudent.set(seat.studentId, pw);
-        }
+    for (const seat of room.seats) {
+      let pw = seat.student.password;
+      if (!pw) {
+        pw = genStudentPassword();
+        await this.prisma.student.update({
+          where: { id: seat.studentId },
+          data: { password: pw },
+        });
       }
-      for (const s of room.seats) if (byStudent.has(s.studentId)) credentials[s.studentId] = byStudent.get(s.studentId)!;
+      credentials[seat.studentId] = pw;
     }
     const school = await this.prisma.school.findFirst();
     return { room: { ...room, exam }, link, credentials, school };
@@ -1716,7 +1755,7 @@ export class OpsService {
     });
     const header = [
       'nama', 'nis', 'nisn', 'nik', 'jk', 'tempat_lahir', 'tanggal_lahir',
-      'alamat', 'sekolah_asal', 'nama_ayah', 'nama_ibu', 'hp_ortu', 'kelas',
+      'alamat', 'sekolah_asal', 'nama_ayah', 'nama_ibu', 'hp_ortu', 'password', 'kelas',
     ];
     const ws = XLSX.utils.aoa_to_sheet([
       ['TEMPLATE IMPORT SISWA'],
@@ -1724,10 +1763,11 @@ export class OpsService {
       ['• kolom "kelas": isi nama rombel PERSIS seperti di sheet "Rombel" — kosong/salah tulis = siswa masuk tanpa rombel.'],
       ['• kolom "hp_ortu": tulis 08… — otomatis menautkan akun orang tua bila sudah ada (untuk WhatsApp/login ortu).'],
       ['• kolom "nis"/"nisn": opsional — baris dengan NIS/NISN yang sudah terdaftar akan dilewati, bukan ditimpa.'],
+      ['• kolom "password": password CBT siswa (mis. KP7D2X) — kosong = dibuat otomatis. Tercetak di kartu ujian.'],
       [],
       header,
-      ['Ahmad Contoh', '1001', '0012345678', '3201234567890001', 'L', 'Bandung', '2012-05-14', 'Jl. Contoh No. 1', 'SD Muhammadiyah 1', 'Bapak Contoh', 'Ibu Contoh', '081234567890', classes[0]?.name ?? '7A'],
-      ['Siti Contoh', '1002', '0012345679', '3201234567890002', 'P', 'Bandung', '2012-08-21', 'Jl. Contoh No. 2', 'SDN 01 Bandung', 'Bapak Contoh', 'Ibu Contoh', '081234567891', classes[0]?.name ?? '7A'],
+      ['Ahmad Contoh', '1001', '0012345678', '3201234567890001', 'L', 'Bandung', '2012-05-14', 'Jl. Contoh No. 1', 'SD Muhammadiyah 1', 'Bapak Contoh', 'Ibu Contoh', '081234567890', 'KP7D2X', classes[0]?.name ?? '7A'],
+      ['Siti Contoh', '1002', '0012345679', '3201234567890002', 'P', 'Bandung', '2012-08-21', 'Jl. Contoh No. 2', 'SDN 01 Bandung', 'Bapak Contoh', 'Ibu Contoh', '081234567891', '', classes[0]?.name ?? '7A'],
     ]);
     ws['!cols'] = header.map((h) => ({ wch: Math.max(h.length + 4, 14) }));
     const wsGuide = XLSX.utils.aoa_to_sheet([
@@ -1742,6 +1782,7 @@ export class OpsService {
       ['nama_ayah / nama_ibu', 'Boleh juga "nama_ortu" untuk satu nama wali'],
       ['hp_ortu', 'Format 08… — bila cocok akun ortu, siswa otomatis tertaut'],
       ['kelas', 'Harus SAMA dengan nama rombel di sheet "Rombel" — nama lain diabaikan (siswa tetap masuk tanpa rombel)'],
+      ['password', 'Password CBT siswa untuk login ujian — kosong = dibuat otomatis; tercetak di kartu peserta'],
     ]);
     wsGuide['!cols'] = [{ wch: 30 }, { wch: 90 }];
     const wsRombel = XLSX.utils.aoa_to_sheet([
@@ -1844,6 +1885,8 @@ export class OpsService {
               motherName: String(r['nama_ibu'] ?? '').trim() || null,
               parentPhone: hp || null,
               parentId: parent?.id ?? null,
+              // Password CBT dari kolom "password" — kosong = auto-generate.
+              password: String(r['password'] ?? '').trim().toUpperCase() || genStudentPassword(),
             },
           });
           if (classId) {

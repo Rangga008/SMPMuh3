@@ -77,7 +77,7 @@ export const NAV: NavItem[] = [
       {
         key: 'gtk-guru',
         label: 'Guru',
-        icon: '•',
+        icon: '👩‍🏫',
         href: '/kepegawaian/guru',
         permission: PERMISSIONS.EMPLOYEE_READ,
         enabled: true,
@@ -85,7 +85,7 @@ export const NAV: NavItem[] = [
       {
         key: 'gtk-tendik',
         label: 'Tendik',
-        icon: '•',
+        icon: '🧑‍💼',
         href: '/kepegawaian/tendik',
         permission: PERMISSIONS.EMPLOYEE_READ,
         enabled: true,
@@ -103,7 +103,7 @@ export const NAV: NavItem[] = [
       {
         key: 'mapel-kelas',
         label: 'Rombel / Kelas',
-        icon: '•',
+        icon: '🏫',
         href: '/kurikulum',
         permission: PERMISSIONS.ACADEMIC_READ,
         enabled: true,
@@ -111,7 +111,7 @@ export const NAV: NavItem[] = [
       {
         key: 'md-tahun-ajaran',
         label: 'Tahun Ajaran',
-        icon: '•',
+        icon: '🗓',
         href: '/master-data/tahun-ajaran',
         permission: PERMISSIONS.ACADEMIC_YEAR_READ,
         enabled: true,
@@ -119,7 +119,7 @@ export const NAV: NavItem[] = [
       {
         key: 'md-semester',
         label: 'Semester',
-        icon: '•',
+        icon: '📆',
         href: '/master-data/semester',
         permission: PERMISSIONS.ACADEMIC_READ,
         enabled: true,
@@ -127,7 +127,7 @@ export const NAV: NavItem[] = [
       {
         key: 'md-mapel',
         label: 'Mata Pelajaran',
-        icon: '•',
+        icon: '📖',
         href: '/master-data/mapel',
         permission: PERMISSIONS.ACADEMIC_READ,
         enabled: true,
@@ -135,7 +135,7 @@ export const NAV: NavItem[] = [
       {
         key: 'md-kurikulum',
         label: 'Data Kurikulum',
-        icon: '•',
+        icon: '🧾',
         href: '/master-data/kurikulum',
         permission: PERMISSIONS.ACADEMIC_READ,
         enabled: true,
@@ -143,7 +143,7 @@ export const NAV: NavItem[] = [
       {
         key: 'jadwal',
         label: 'Penugasan Guru & Entri Jadwal',
-        icon: '•',
+        icon: '🧑‍🏫',
         href: '/kurikulum/jadwal',
         permission: PERMISSIONS.ACADEMIC_READ,
         enabled: true,
@@ -151,31 +151,39 @@ export const NAV: NavItem[] = [
       {
         key: 'jadwal-kelas',
         label: 'Jadwal Kelas, Blok & Cetak',
-        icon: '•',
+        icon: '🗓',
         href: '/kurikulum/jadwal-kelas',
         permission: PERMISSIONS.ACADEMIC_READ,
         enabled: true,
       },
       {
-        key: 'penilaian',
-        label: 'Penilaian',
-        icon: '•',
-        href: '/kurikulum/penilaian',
+        key: 'asesmen',
+        label: 'Bank Asesmen',
+        icon: '📝',
+        href: '/kurikulum/asesmen',
         permission: PERMISSIONS.ACADEMIC_READ,
         enabled: true,
       },
       {
         key: 'ujian-cbt',
         label: 'Ujian CBT',
-        icon: '•',
+        icon: '💻',
         href: '/kurikulum/ujian',
+        permission: PERMISSIONS.ACADEMIC_READ,
+        enabled: true,
+      },
+      {
+        key: 'penilaian',
+        label: 'Penilaian',
+        icon: '✍️',
+        href: '/kurikulum/penilaian',
         permission: PERMISSIONS.ACADEMIC_READ,
         enabled: true,
       },
       {
         key: 'ledger',
         label: 'Ledger & Rekap',
-        icon: '•',
+        icon: '📊',
         href: '/kurikulum/ledger',
         permission: PERMISSIONS.ACADEMIC_READ,
         enabled: true,
@@ -183,7 +191,7 @@ export const NAV: NavItem[] = [
       {
         key: 'dokumen',
         label: 'Dokumen & Pengumpulan',
-        icon: '•',
+        icon: '📄',
         href: '/kurikulum/dokumen',
         permission: PERMISSIONS.ACADEMIC_READ,
         enabled: true,
@@ -191,7 +199,7 @@ export const NAV: NavItem[] = [
       {
         key: 'jadwal-kerja',
         label: 'Jadwal Kerja & Shift',
-        icon: '•',
+        icon: '⏰',
         href: '/kurikulum/jadwal-kerja',
         permission: PERMISSIONS.ACADEMIC_READ,
         enabled: true,
@@ -199,7 +207,7 @@ export const NAV: NavItem[] = [
       {
         key: 'kurikulum-absensi-pegawai',
         label: 'Absensi Pegawai',
-        icon: '•',
+        icon: '🗂',
         href: '/tata-usaha/absensi',
         permission: PERMISSIONS.TATAUSAHA_READ,
         enabled: true,
@@ -226,7 +234,7 @@ export const NAV: NavItem[] = [
       {
         key: 'siswa',
         label: 'Data Siswa',
-        icon: '•',
+        icon: '🎓',
         href: '/kesiswaan',
         permission: PERMISSIONS.STUDENT_READ,
         enabled: true,
@@ -234,7 +242,7 @@ export const NAV: NavItem[] = [
       {
         key: 'absensi',
         label: 'Absensi',
-        icon: '•',
+        icon: '✅',
         href: '/kesiswaan/absensi',
         permission: PERMISSIONS.ATTENDANCE_READ,
         enabled: true,
@@ -242,7 +250,7 @@ export const NAV: NavItem[] = [
       {
         key: 'prestasi',
         label: 'Prestasi',
-        icon: '•',
+        icon: '🏆',
         href: '/kesiswaan/prestasi',
         permission: PERMISSIONS.STUDENT_READ,
         enabled: true,
@@ -250,7 +258,7 @@ export const NAV: NavItem[] = [
       {
         key: 'ekskul',
         label: 'Ekstrakurikuler',
-        icon: '•',
+        icon: '⚽',
         href: '/kesiswaan/ekskul',
         permission: PERMISSIONS.STUDENT_READ,
         enabled: true,
@@ -267,7 +275,7 @@ export const NAV: NavItem[] = [
       {
         key: 'tu-absensi',
         label: 'Absensi Pegawai',
-        icon: '•',
+        icon: '🗂',
         href: '/tata-usaha/absensi',
         permission: PERMISSIONS.TATAUSAHA_READ,
         enabled: true,
@@ -275,7 +283,7 @@ export const NAV: NavItem[] = [
       {
         key: 'buku-induk',
         label: 'Buku Induk',
-        icon: '•',
+        icon: '📕',
         href: '/tata-usaha/buku-induk',
         permission: PERMISSIONS.STUDENT_READ,
         enabled: true,
@@ -283,7 +291,7 @@ export const NAV: NavItem[] = [
       {
         key: 'surat',
         label: 'Surat Menyurat',
-        icon: '•',
+        icon: '✉️',
         href: '/tata-usaha/surat',
         permission: PERMISSIONS.TATAUSAHA_READ,
         enabled: true,
@@ -291,7 +299,7 @@ export const NAV: NavItem[] = [
       {
         key: 'mutasi',
         label: 'Mutasi Siswa',
-        icon: '•',
+        icon: '🔁',
         href: '/tata-usaha/mutasi',
         permission: PERMISSIONS.TATAUSAHA_READ,
         enabled: true,
@@ -299,7 +307,7 @@ export const NAV: NavItem[] = [
       {
         key: 'us',
         label: 'US 1 & 2',
-        icon: '•',
+        icon: '🧮',
         href: '/tata-usaha/us',
         permission: PERMISSIONS.TATAUSAHA_READ,
         enabled: true,
@@ -307,7 +315,7 @@ export const NAV: NavItem[] = [
       {
         key: 'ujian',
         label: 'Ruang & Kartu Ujian',
-        icon: '•',
+        icon: '🪪',
         href: '/tata-usaha/ujian',
         permission: PERMISSIONS.TATAUSAHA_READ,
         enabled: true,
@@ -315,7 +323,7 @@ export const NAV: NavItem[] = [
       {
         key: 'arsip',
         label: 'Arsip',
-        icon: '•',
+        icon: '🗄',
         href: '/tata-usaha/arsip',
         permission: PERMISSIONS.TATAUSAHA_READ,
         enabled: true,
@@ -323,7 +331,7 @@ export const NAV: NavItem[] = [
       {
         key: 'tu-sarana',
         label: 'Sarana',
-        icon: '•',
+        icon: '🪑',
         href: '/sarpras/sarana',
         permission: PERMISSIONS.SARPRAS_READ,
         enabled: true,
@@ -331,7 +339,7 @@ export const NAV: NavItem[] = [
       {
         key: 'tu-prasarana',
         label: 'Prasarana',
-        icon: '•',
+        icon: '🏢',
         href: '/sarpras/prasarana',
         permission: PERMISSIONS.SARPRAS_READ,
         enabled: true,
@@ -348,7 +356,7 @@ export const NAV: NavItem[] = [
       {
         key: 'spmb-pendaftar',
         label: 'Pendaftar',
-        icon: '•',
+        icon: '📋',
         href: '/spmb',
         permission: PERMISSIONS.SPMB_REGISTRATION_READ,
         enabled: true,
@@ -356,7 +364,7 @@ export const NAV: NavItem[] = [
       {
         key: 'spmb-titipan',
         label: 'Titipan',
-        icon: '•',
+        icon: '🤝',
         href: '/spmb/titipan',
         permission: PERMISSIONS.SPMB_TITIPAN_READ,
         enabled: true,
@@ -364,7 +372,7 @@ export const NAV: NavItem[] = [
       {
         key: 'spmb-akun',
         label: 'Akun Orang Tua',
-        icon: '•',
+        icon: '👪',
         href: '/spmb/akun',
         permission: PERMISSIONS.SPMB_REGISTRATION_READ,
         enabled: true,
@@ -372,7 +380,7 @@ export const NAV: NavItem[] = [
       {
         key: 'spmb-pengaturan',
         label: 'Pengaturan SPMB',
-        icon: '•',
+        icon: '⚙',
         href: '/spmb/pengaturan',
         permission: PERMISSIONS.SPMB_REGISTRATION_MANAGE,
         enabled: true,
@@ -399,7 +407,7 @@ export const NAV: NavItem[] = [
       {
         key: 'keuangan-dashboard',
         label: 'Dashboard',
-        icon: '•',
+        icon: '📈',
         href: '/keuangan',
         permission: PERMISSIONS.FINANCE_READ,
         enabled: true,
@@ -407,7 +415,7 @@ export const NAV: NavItem[] = [
       {
         key: 'keuangan-kas',
         label: 'Kas & Bank',
-        icon: '•',
+        icon: '🏦',
         href: '/keuangan/kas',
         permission: PERMISSIONS.FINANCE_READ,
         enabled: true,
@@ -415,7 +423,7 @@ export const NAV: NavItem[] = [
       {
         key: 'keuangan-harian',
         label: 'Transaksi Harian',
-        icon: '•',
+        icon: '💸',
         href: '/keuangan/harian',
         permission: PERMISSIONS.FINANCE_READ,
         enabled: true,
@@ -423,7 +431,7 @@ export const NAV: NavItem[] = [
       {
         key: 'keuangan-tagihan',
         label: 'Tagihan Siswa',
-        icon: '•',
+        icon: '🧾',
         href: '/keuangan/tagihan',
         permission: PERMISSIONS.FINANCE_READ,
         enabled: true,
@@ -431,7 +439,7 @@ export const NAV: NavItem[] = [
       {
         key: 'keuangan-tabungan',
         label: 'Tabungan Siswa',
-        icon: '•',
+        icon: '🐷',
         href: '/keuangan/tabungan',
         permission: PERMISSIONS.FINANCE_READ,
         enabled: true,
@@ -439,7 +447,7 @@ export const NAV: NavItem[] = [
       {
         key: 'keuangan-pengeluaran',
         label: 'Pengeluaran',
-        icon: '•',
+        icon: '📤',
         href: '/keuangan/pengeluaran',
         permission: PERMISSIONS.FINANCE_READ,
         enabled: true,
@@ -447,7 +455,7 @@ export const NAV: NavItem[] = [
       {
         key: 'keuangan-payroll',
         label: 'Gaji & Honor',
-        icon: '•',
+        icon: '💵',
         href: '/keuangan/payroll',
         permission: PERMISSIONS.PAYROLL_READ,
         enabled: true,
@@ -455,7 +463,7 @@ export const NAV: NavItem[] = [
       {
         key: 'keuangan-payroll-absensi',
         label: 'Data Absensi Pegawai',
-        icon: '•',
+        icon: '🗂',
         href: '/keuangan/payroll/absensi',
         permission: PERMISSIONS.PAYROLL_READ,
         enabled: true,
@@ -463,7 +471,7 @@ export const NAV: NavItem[] = [
       {
         key: 'keuangan-payroll-pengaturan',
         label: 'Pengaturan Gaji',
-        icon: '•',
+        icon: '⚙',
         href: '/keuangan/payroll/pengaturan',
         permission: PERMISSIONS.PAYROLL_READ,
         enabled: true,
@@ -471,7 +479,7 @@ export const NAV: NavItem[] = [
       {
         key: 'keuangan-anggaran',
         label: 'Anggaran',
-        icon: '•',
+        icon: '📊',
         href: '/keuangan/anggaran',
         permission: PERMISSIONS.FINANCE_READ,
         enabled: true,
@@ -479,7 +487,7 @@ export const NAV: NavItem[] = [
       {
         key: 'keuangan-kwitansi',
         label: 'Galeri Kwitansi',
-        icon: '•',
+        icon: '🖼',
         href: '/keuangan/kwitansi',
         permission: PERMISSIONS.FINANCE_READ,
         enabled: true,
@@ -487,7 +495,7 @@ export const NAV: NavItem[] = [
       {
         key: 'keuangan-laporan',
         label: 'Laporan',
-        icon: '•',
+        icon: '📑',
         href: '/keuangan/laporan',
         permission: PERMISSIONS.FINANCE_READ,
         enabled: true,
@@ -495,7 +503,7 @@ export const NAV: NavItem[] = [
       {
         key: 'keuangan-laporan-siswa',
         label: 'Laporan Siswa',
-        icon: '•',
+        icon: '📒',
         href: '/keuangan/laporan-siswa',
         permission: PERMISSIONS.FINANCE_READ,
         enabled: true,
@@ -514,7 +522,7 @@ export const NAV: NavItem[] = [
       {
         key: 'akun-staf',
         label: 'Manajemen Akun',
-        icon: '•',
+        icon: '👤',
         href: '/pengaturan/akun',
         permission: PERMISSIONS.IDENTITY_USER_READ,
         enabled: true,
@@ -522,7 +530,7 @@ export const NAV: NavItem[] = [
       {
         key: 'profil-sekolah',
         label: 'Profil & Kontak',
-        icon: '•',
+        icon: '🏫',
         href: '/pengaturan/profil',
         permission: PERMISSIONS.SCHOOL_READ,
         enabled: true,
@@ -530,7 +538,7 @@ export const NAV: NavItem[] = [
       {
         key: 'roles',
         label: 'Role & Akses',
-        icon: '•',
+        icon: '🔐',
         href: '/pengaturan/roles',
         permission: PERMISSIONS.IDENTITY_ROLE_READ,
         enabled: true,
@@ -538,7 +546,7 @@ export const NAV: NavItem[] = [
       {
         key: 'whatsapp',
         label: 'WhatsApp Gateway',
-        icon: '•',
+        icon: '💬',
         href: '/pengaturan/whatsapp',
         permission: PERMISSIONS.SCHOOL_MANAGE,
         enabled: true,

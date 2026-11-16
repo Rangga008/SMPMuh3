@@ -486,6 +486,32 @@ export class AssessmentDto {
   maxScore?: number;
 }
 
+export class AssessmentUpdateDto {
+  @IsOptional()
+  @IsUUID()
+  subjectId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  classId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(3)
+  @MaxLength(160)
+  name?: string;
+
+  @IsOptional()
+  @IsIn(['FORMATIF', 'SUMATIF', 'PTS', 'PAS'])
+  type?: AssessmentType;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(1000)
+  maxScore?: number;
+}
+
 export class GradeDto {
   @IsUUID()
   studentId!: string;

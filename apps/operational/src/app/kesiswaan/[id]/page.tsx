@@ -670,6 +670,7 @@ export default function StudentDetailPage() {
                     birthPlace: val(f, 'birthPlace'),
                     birthDate: val(f, 'birthDate'),
                     address: val(f, 'address'),
+                    password: val(f, 'password'),
                   }),
                 'Data tersimpan.',
               ).then((ok) => ok && setModal(null));
@@ -692,6 +693,9 @@ export default function StudentDetailPage() {
             <Field label="Tempat Lahir"><Input name="birthPlace" defaultValue={s.birthPlace ?? ''} /></Field>
             <Field label="Tanggal Lahir"><Input name="birthDate" type="date" defaultValue={s.birthDate?.slice(0, 10) ?? ''} /></Field>
             <Field label="Alamat"><Input name="address" defaultValue={s.address ?? ''} /></Field>
+            <Field label="Password CBT" hint="Untuk login ujian — tercetak di kartu ujian. Kosongkan bila tidak diubah.">
+              <Input name="password" defaultValue={s.password ?? ''} placeholder="otomatis dibuat saat kartu dicetak" />
+            </Field>
             <div className="flex justify-end gap-2 sm:col-span-2">
               <Button type="button" variant="ghost" onClick={() => setModal(null)}>Batal</Button>
               <Button type="submit" disabled={busy}>Simpan Perubahan</Button>

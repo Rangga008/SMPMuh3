@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@smpmuh3/ui';
 import { ApiError } from '@/lib/api';
 import {
-  fixMediaHtml,
+  richHtml,
   getPaper,
   getSession,
   saveAnswer,
@@ -22,11 +22,13 @@ const fmt = (sec: number) =>
 
 /** Teks opsional-HTML (impor Word) — plain text dirender apa adanya, HTML lewat sanitize sisi server. */
 function Rich({ text, className }: { text: string; className?: string }) {
-  if (!/<[a-zA-Z]/.test(text)) return <span className={className}>{text}</span>;
+  if (!/<[a-zA-Z]/.test(text) && !/\$[^$\n]+\$/.test(text)) {
+    return <span className={className}>{text}</span>;
+  }
   return (
     <span
       className={`rich-html block [&_img]:my-2 [&_img]:max-w-full [&_img]:rounded-lg [&_p]:my-1 [&_table]:my-2 [&_table]:w-full [&_td]:border [&_td]:border-sand-200 [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-sand-200 [&_th]:bg-sand-50 [&_th]:px-2 [&_th]:py-1 ${className ?? ''}`}
-      dangerouslySetInnerHTML={{ __html: fixMediaHtml(text) }}
+      dangerouslySetInnerHTML={{ __html: richHtml(text) }}
     />
   );
 }

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import '@fontsource-variable/plus-jakarta-sans';
+import 'katex/dist/katex.min.css';
 import { getSchoolPublic } from '@/lib/school';
 import './globals.css';
 

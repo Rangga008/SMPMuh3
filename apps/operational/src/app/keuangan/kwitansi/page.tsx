@@ -59,7 +59,7 @@ export default function KwitansiPage() {
       h1{font-size:21px;margin:0;letter-spacing:2px}.num{font-family:monospace;font-size:13px}
       table{width:100%;border-collapse:collapse;margin:12px 0}td{padding:8px 4px;vertical-align:top}
       .amt{font-size:26px;font-weight:bold;border:2px solid #334155;display:inline-block;padding:8px 18px;margin:12px 0}
-      .sign{margin-top:44px;float:right;text-align:center}.sign .nm{margin-top:70px;border-bottom:1px solid #334155;min-width:180px}
+      .sign{margin-top:44px;float:right;text-align:center}.sign .nm{margin-top:70px;border-bottom:1px solid #334155;min-width:180px}.sign .nmv{font-weight:700}.sign .nip{font-size:11.5px;color:#475569;margin-top:2px}
       .unit{clear:both;font-size:11px;color:#64748b;margin-top:80px}
       @media print{button{display:none}}
     </style></head><body>
@@ -72,7 +72,7 @@ export default function KwitansiPage() {
         <tr><td>Tanggal terbit</td><td>: ${fmtDate(r.createdAt)}</td></tr>
       </table>
       <div class="amt">${r.payment?.amount != null ? rp(r.payment.amount) : '—'}</div>
-      <div class="sign">Bendahara,<div class="nm"></div></div>
+      <div class="sign">Bendahara,<div class="nm">${s?.treasurer ? `<span class="nmv">${s.treasurer}</span>` : '&nbsp;'}</div>${s?.treasurerNip ? `<div class="nip">NIP/NUPTK. ${s.treasurerNip}</div>` : ''}</div>
       <p class="unit">Dicetak oleh Bidang Keuangan ${s?.name ? `— ${s.name}` : ''}</p>
       <script>window.print()</script>
     </body></html>`);

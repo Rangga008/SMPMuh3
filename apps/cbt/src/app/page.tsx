@@ -4,10 +4,10 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button, Field, Input } from '@smpmuh3/ui';
 import { ApiError } from '@/lib/api';
-import { enterExam } from '@/lib/cbt';
+import { loginCbt } from '@/lib/cbt';
 import { ExamShell } from '@/components/exam-shell';
 
-export default function CbtEntryPage() {
+export default function CbtLoginPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -17,16 +17,15 @@ export default function CbtEntryPage() {
     setError(null);
     setBusy(true);
     const f = new FormData(e.currentTarget);
+    const nis = String(f.get('nis')).trim();
+    const password = String(f.get('password')).trim();
     try {
-      const s = await enterExam(
-        String(f.get('nis')).trim(),
-        String(f.get('code')).trim(),
-        String(f.get('password')).trim(),
-      );
-      sessionStorage.setItem('cbt.token', s.token);
-      router.push(`/${s.token}`);
+      const s = await loginCbt(nis, password);
+      // Kredensial disimpan untuk langkah berikutnya (kode ujian dari pengawas).
+      sessionStorage.setItem('cbt.login', JSON.stringify({ nis, password, ...s }));
+      router.push('/dashboard');
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Gagal masuk — periksa NIS, kode & password.');
+      setError(err instanceof ApiError ? err.message : 'Gagal masuk — periksa NIS & password kartumu.');
     } finally {
       setBusy(false);
     }
@@ -35,14 +34,11 @@ export default function CbtEntryPage() {
   return (
     <ExamShell
       title="Ujian CBT"
-      subtitle="Masuk dengan NIS, kode ujian & password dari kartu peserta"
+      subtitle="Masuk dengan NIS & password dari kartu peserta"
     >
       <form onSubmit={onSubmit} className="space-y-4">
         <Field label="NIS (Nomor Induk Siswa)">
           <Input name="nis" required autoComplete="off" inputMode="numeric" placeholder="contoh: 2024001" />
-        </Field>
-        <Field label="Kode Ujian">
-          <Input name="code" required autoComplete="off" placeholder="XXXX-XXXX" className="font-mono tracking-widest uppercase" />
         </Field>
         <Field label="Password (di kartu peserta)">
           <Input name="password" required autoComplete="off" placeholder="KPXXXX" className="font-mono tracking-widest uppercase" />
@@ -53,8 +49,11 @@ export default function CbtEntryPage() {
           </p>
         ) : null}
         <Button type="submit" disabled={busy} className="w-full">
-          {busy ? 'Memeriksa…' : 'Masuk Ujian'}
+          {busy ? 'Memeriksa…' : 'Masuk'}
         </Button>
+        <p className="text-center text-xs text-sand-500">
+          Kode ujian akan diberikan pengawas di ruang ujian.
+        </p>
       </form>
     </ExamShell>
   );

@@ -90,6 +90,12 @@ export class CreateStudentDto {
   @IsOptional()
   @IsBoolean()
   force?: boolean;
+
+  /** Password login CBT — kosong = dibuat otomatis (KPxxxx). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  password?: string;
 }
 
 export class UpdateStudentDto {
@@ -154,6 +160,12 @@ export class UpdateStudentDto {
   @IsString()
   @MaxLength(30)
   parentPhone?: string;
+
+  /** Password login CBT — kosongkan string = hapus (dibuat ulang saat cetak kartu). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  password?: string;
 }
 
 export class AchievementDto {
