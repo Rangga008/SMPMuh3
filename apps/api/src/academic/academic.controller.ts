@@ -577,6 +577,13 @@ export class AcademicController {
     return this.academic.enroll(dto, u.id);
   }
 
+  /** Pindah rombel dalam tahun ajaran yang sama (update/buat enrollment). */
+  @Post('enrollments/move')
+  @RequirePermission(M)
+  moveEnrollment(@CurrentUser() u: AuthUser, @Body() dto: EnrollmentDto) {
+    return this.academic.moveEnrollment(dto, u.id);
+  }
+
   // ---------- Assignments & schedules ----------
   @Get('assignments')
   @RequirePermission(R)

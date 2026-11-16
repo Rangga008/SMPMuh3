@@ -230,7 +230,7 @@ export default function AccountSettingsPage() {
           />
         </Field>
         <Field label="Role" className="!mb-0">
-          <Select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
+          <Select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} searchable>
             <option value="">Semua role</option>
             {roles.map((r) => (
               <option key={r.id} value={r.key}>{r.name}</option>

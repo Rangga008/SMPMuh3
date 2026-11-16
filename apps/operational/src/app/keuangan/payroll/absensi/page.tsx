@@ -243,7 +243,7 @@ export default function AbsensiPage() {
                         [e.id]: { ...r, status: ev.target.value as Row['status'] },
                       }));
                     }}
-                  >
+                   searchable>
                     {STATUSES.map((s) => (
                       <option key={s} value={s}>{s}</option>
                     ))}

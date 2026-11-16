@@ -238,7 +238,7 @@ export default function StudentsPage() {
         </label>
         <label className="flex min-w-40 flex-1 flex-col gap-1.5">
           <span className="text-xs font-bold uppercase tracking-wider text-sand-500">Status</span>
-          <Select value={status} onChange={(e) => setStatus(e.target.value)}>
+          <Select value={status} onChange={(e) => setStatus(e.target.value)} searchable>
             <option value="">Semua</option>
             {Object.entries(STUDENT_STATUS_LABELS).map(([v, l]) => (
               <option key={v} value={v}>{l}</option>
@@ -330,7 +330,7 @@ export default function StudentsPage() {
           </Button>
           <label className="flex min-w-52 flex-col gap-1.5">
             <span className="text-xs font-bold uppercase tracking-wider text-sand-500">Masukkan ke Rombel</span>
-            <Select value={importClassId} onChange={(e) => onPickImportClass(e.target.value)} disabled={!importYear}>
+            <Select value={importClassId} onChange={(e) => onPickImportClass(e.target.value)} disabled={!importYear} searchable>
               <option value="">Ikuti kolom "kelas" di file</option>
               {importClasses.map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>

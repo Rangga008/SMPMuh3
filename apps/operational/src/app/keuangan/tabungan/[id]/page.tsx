@@ -194,7 +194,7 @@ export default function BukuTabunganPage() {
               </Field>
             </div>
             <Field label="Kas">
-              <Select name="cashAccountId" required defaultValue={activeAccounts.find((a) => a.key === 'tunai')?.id ?? activeAccounts[0]?.id ?? ''}>
+              <Select name="cashAccountId" required defaultValue={activeAccounts.find((a) => a.key === 'tunai')?.id ?? activeAccounts[0]?.id ?? ''} searchable>
                 {activeAccounts.map((a) => (
                   <option key={a.id} value={a.id}>{a.name}</option>
                 ))}

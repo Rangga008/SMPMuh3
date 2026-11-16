@@ -91,6 +91,11 @@ export class MutationDto {
   @IsIn(['IN', 'OUT'])
   direction!: 'IN' | 'OUT';
 
+  @emptyToNull()
+  @IsOptional()
+  @IsUUID()
+  studentId?: string | null;
+
   @IsString()
   @MinLength(3)
   @MaxLength(120)
@@ -134,6 +139,11 @@ export class MutationDto {
 }
 
 export class UpdateMutationDto {
+  @emptyToNull()
+  @IsOptional()
+  @IsUUID()
+  studentId?: string | null;
+
   @IsOptional()
   @IsString()
   @MinLength(3)

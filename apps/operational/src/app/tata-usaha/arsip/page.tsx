@@ -73,7 +73,7 @@ export default function ArsipPage() {
       {notice ? <p className="mb-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{notice}</p> : null}
 
       <div className="mb-4 flex flex-wrap gap-2">
-        <Select value={catId} onChange={(e) => setCatId(e.target.value)} className="min-w-44" aria-label="Filter kategori">
+        <Select value={catId} onChange={(e) => setCatId(e.target.value)} className="min-w-44" aria-label="Filter kategori" searchable>
           <option value="">Semua kategori</option>
           {cats.map((c) => <option key={c.id} value={c.id}>{c.name} ({c._count.items})</option>)}
         </Select>
@@ -126,7 +126,7 @@ export default function ArsipPage() {
           <Field label="Judul"><Input name="title" required defaultValue={modal !== 'new' ? modal?.title : ''} placeholder="SK Pengangkatan Guru 2026" /></Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Kategori">
-              <Select name="categoryId" defaultValue={modal !== 'new' ? modal?.categoryId ?? '' : ''}>
+              <Select name="categoryId" defaultValue={modal !== 'new' ? modal?.categoryId ?? '' : ''} searchable>
                 <option value="">— tanpa —</option>
                 {cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </Select>

@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../core/prisma/prisma.service';
 import { StorageService } from '../core/storage/storage.service';
@@ -197,7 +198,10 @@ export class TatausahaService {
 
   listMutations(direction?: 'IN' | 'OUT', search?: string, categoryId?: string) {
     return this.prisma.studentMutation.findMany({
-      include: { category: { select: { id: true, name: true } } },
+      include: {
+        category: { select: { id: true, name: true } },
+        student: { select: { id: true, name: true, nis: true, status: true } },
+      },
       where: {
         ...(direction ? { direction } : {}),
         ...(categoryId ? { categoryId } : {}),
@@ -216,20 +220,52 @@ export class TatausahaService {
     });
   }
 
+  /**
+   * Sinkron mutasi keluar → status siswa. Mutasi OUT yang selesai (DONE)
+   * dan tertaut ke siswa menandai siswa TRANSFERRED (tak bisa lagi login
+   * CBT/absen/ditagih). Bila mutasi dibatalkan/dihapus, siswa TRANSFERRED
+   * dikembalikan ACTIVE — status lain (DROPPED/GRADUATED) tak disentuh.
+   */
+  private async syncMutationStudent(
+    tx: Prisma.TransactionClient,
+    prev: { direction: string; status: string; studentId: string | null } | null,
+    next: { direction: string; status: string; studentId: string | null } | null,
+  ) {
+    const wasDone = prev?.direction === 'OUT' && prev.status === 'DONE' ? prev.studentId : null;
+    const isDone = next?.direction === 'OUT' && next.status === 'DONE' ? next.studentId : null;
+    if (wasDone && wasDone !== isDone) {
+      await tx.student.updateMany({
+        where: { id: wasDone, status: 'TRANSFERRED' },
+        data: { status: 'ACTIVE' },
+      });
+    }
+    if (isDone) {
+      await tx.student.updateMany({
+        where: { id: isDone, status: 'ACTIVE' },
+        data: { status: 'TRANSFERRED' },
+      });
+    }
+  }
+
   async createMutation(dto: MutationDto, actorId: string) {
-    const mut = await this.prisma.studentMutation.create({
-      data: {
-        direction: dto.direction,
-        studentName: dto.studentName,
-        nisn: dto.nisn ?? null,
-        date: new Date(dto.date),
-        school: dto.school ?? null,
-        letterNumber: dto.letterNumber ?? null,
-        categoryId: dto.categoryId ?? null,
-        status: dto.status ?? 'PROCESS',
-        notes: dto.notes ?? null,
-        createdBy: actorId,
-      },
+    const mut = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.studentMutation.create({
+        data: {
+          direction: dto.direction,
+          studentId: dto.studentId ?? null,
+          studentName: dto.studentName,
+          nisn: dto.nisn ?? null,
+          date: new Date(dto.date),
+          school: dto.school ?? null,
+          letterNumber: dto.letterNumber ?? null,
+          categoryId: dto.categoryId ?? null,
+          status: dto.status ?? 'PROCESS',
+          notes: dto.notes ?? null,
+          createdBy: actorId,
+        },
+      });
+      await this.syncMutationStudent(tx, null, created);
+      return created;
     });
     await this.audit.log({
       actorId,
@@ -243,18 +279,23 @@ export class TatausahaService {
   async updateMutation(id: string, dto: UpdateMutationDto, actorId: string) {
     const existing = await this.prisma.studentMutation.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Mutasi tidak ditemukan.');
-    const mut = await this.prisma.studentMutation.update({
-      where: { id },
-      data: {
-        ...(dto.studentName !== undefined ? { studentName: dto.studentName } : {}),
-        ...(dto.nisn !== undefined ? { nisn: dto.nisn } : {}),
-        ...(dto.date !== undefined ? { date: new Date(dto.date) } : {}),
-        ...(dto.school !== undefined ? { school: dto.school } : {}),
-        ...(dto.letterNumber !== undefined ? { letterNumber: dto.letterNumber } : {}),
-        ...(dto.categoryId !== undefined ? { categoryId: dto.categoryId } : {}),
-        ...(dto.status !== undefined ? { status: dto.status } : {}),
-        ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
-      },
+    const mut = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.studentMutation.update({
+        where: { id },
+        data: {
+          ...(dto.studentId !== undefined ? { studentId: dto.studentId } : {}),
+          ...(dto.studentName !== undefined ? { studentName: dto.studentName } : {}),
+          ...(dto.nisn !== undefined ? { nisn: dto.nisn } : {}),
+          ...(dto.date !== undefined ? { date: new Date(dto.date) } : {}),
+          ...(dto.school !== undefined ? { school: dto.school } : {}),
+          ...(dto.letterNumber !== undefined ? { letterNumber: dto.letterNumber } : {}),
+          ...(dto.categoryId !== undefined ? { categoryId: dto.categoryId } : {}),
+          ...(dto.status !== undefined ? { status: dto.status } : {}),
+          ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
+        },
+      });
+      await this.syncMutationStudent(tx, existing, updated);
+      return updated;
     });
     await this.audit.log({
       actorId,
@@ -268,7 +309,10 @@ export class TatausahaService {
   async deleteMutation(id: string, actorId: string) {
     const existing = await this.prisma.studentMutation.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Mutasi tidak ditemukan.');
-    await this.prisma.studentMutation.delete({ where: { id } });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.studentMutation.delete({ where: { id } });
+      await this.syncMutationStudent(tx, existing, null);
+    });
     await this.audit.log({
       actorId,
       action: 'tu.mutation.delete',

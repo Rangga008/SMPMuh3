@@ -270,7 +270,7 @@ function SpmbList() {
               setWaveId('');
             }}
             aria-label="Filter periode"
-          >
+           searchable>
             <option value="">Semua tahun ajaran</option>
             {years.map((y) => (
               <option key={y.id} value={y.id}>
@@ -286,7 +286,7 @@ function SpmbList() {
             value={waveId}
             onChange={(e) => setWaveId(e.target.value)}
             aria-label="Filter gelombang"
-          >
+           searchable>
             <option value="">Semua gelombang</option>
             {wavesInYear.map((w) => (
               <option key={w.id} value={w.id}>{w.name}</option>
@@ -299,7 +299,7 @@ function SpmbList() {
             value={status}
             onChange={(e) => setStatus(e.target.value)}
             aria-label="Filter status"
-          >
+           searchable>
             <option value="">Semua status</option>
             {REGISTRATION_STATUSES.map((s) => (
               <option key={s} value={s}>{REGISTRATION_STATUS_LABELS[s]}</option>
@@ -328,7 +328,7 @@ function SpmbList() {
             onChange={(e) => setBulkStatus(e.target.value as RegistrationStatus)}
             className="w-52"
             aria-label="Status tujuan"
-          >
+           searchable>
             {BULK_TARGETS.map((s) => (
               <option key={s} value={s}>{REGISTRATION_STATUS_LABELS[s]}</option>
             ))}

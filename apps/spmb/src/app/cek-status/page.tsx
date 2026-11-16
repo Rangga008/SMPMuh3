@@ -51,7 +51,7 @@ export default function CheckStatusPage() {
     e.preventDefault();
     setBusy(true);
     const f = new FormData(e.currentTarget);
-    const res = await lookupStatus(String(f.get('number')));
+    const res = await lookupStatus(String(f.get('number')), String(f.get('key') ?? ''));
     setResult(res);
     setSearched(true);
     setBusy(false);
@@ -65,6 +65,9 @@ export default function CheckStatusPage() {
       <form onSubmit={onSubmit} className="space-y-4">
         <Field label="Nomor Pendaftaran" hint="Contoh: SPMB-2027-081864">
           <Input name="number" required placeholder="SPMB-2027-XXXXXX" />
+        </Field>
+        <Field label="Email atau No. HP Orang Tua" hint="Yang dipakai saat mendaftar — bisa juga 4 digit akhir no. HP">
+          <Input name="key" required placeholder="ortu@email.com / 08…" />
         </Field>
         <Button type="submit" disabled={busy} className="w-full">
           {busy ? 'Memeriksa…' : 'Cek Status'}

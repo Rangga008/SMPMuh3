@@ -67,7 +67,7 @@ export default function LaporanSiswaPage() {
           <Field label="Dari bulan"><Input type="month" value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
           <Field label="Sampai bulan"><Input type="month" value={to} onChange={(e) => setTo(e.target.value)} /></Field>
           <Field label="Kelas">
-            <Select value={classId} onChange={(e) => setClassId(e.target.value)}>
+            <Select value={classId} onChange={(e) => setClassId(e.target.value)} searchable>
               <option value="">Semua kelas</option>
               {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </Select>

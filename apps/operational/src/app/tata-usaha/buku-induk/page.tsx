@@ -133,27 +133,27 @@ export default function BukuIndukListPage() {
         </label>
         <label className="flex min-w-36 flex-1 flex-col gap-1.5">
           <span className="text-xs font-bold uppercase tracking-wider text-sand-500">Tahun Ajaran</span>
-          <Select value={yearId} onChange={(e) => setYearId(e.target.value)}>
+          <Select value={yearId} onChange={(e) => setYearId(e.target.value)} searchable>
             {years.map((y) => <option key={y.id} value={y.id}>{y.name}{y.isActive ? ' (aktif)' : ''}</option>)}
           </Select>
         </label>
         <label className="flex min-w-32 flex-1 flex-col gap-1.5">
           <span className="text-xs font-bold uppercase tracking-wider text-sand-500">Kelas</span>
-          <Select value={classId} onChange={(e) => { setClassId(e.target.value); setGrade(''); }}>
+          <Select value={classId} onChange={(e) => { setClassId(e.target.value); setGrade(''); }} searchable>
             <option value="">Semua</option>
             {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </Select>
         </label>
         <label className="flex min-w-28 flex-1 flex-col gap-1.5">
           <span className="text-xs font-bold uppercase tracking-wider text-sand-500">Jenjang</span>
-          <Select value={grade} onChange={(e) => { setGrade(e.target.value); setClassId(''); }}>
+          <Select value={grade} onChange={(e) => { setGrade(e.target.value); setClassId(''); }} searchable>
             <option value="">Semua</option>
             {gradeLevels.map((gl) => <option key={gl} value={gl}>Kelas {gl}</option>)}
           </Select>
         </label>
         <label className="flex min-w-28 flex-1 flex-col gap-1.5">
           <span className="text-xs font-bold uppercase tracking-wider text-sand-500">Status</span>
-          <Select value={status} onChange={(e) => setStatus(e.target.value)}>
+          <Select value={status} onChange={(e) => setStatus(e.target.value)} searchable>
             <option value="">Semua</option>
             {Object.entries(STUDENT_STATUS_LABELS).map(([v, l]) => (
               <option key={v} value={v}>{l}</option>
@@ -219,7 +219,7 @@ export default function BukuIndukListPage() {
           </Field>
           {expModal === 'class' && (
             <Field label="Kelas">
-              <Select value={expClass} onChange={(e) => setExpClass(e.target.value)}>
+              <Select value={expClass} onChange={(e) => setExpClass(e.target.value)} searchable>
                 <option value="">— pilih kelas —</option>
                 {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </Select>
@@ -227,7 +227,7 @@ export default function BukuIndukListPage() {
           )}
           {expModal === 'grade' && (
             <Field label="Jenjang">
-              <Select value={expGrade} onChange={(e) => setExpGrade(e.target.value)}>
+              <Select value={expGrade} onChange={(e) => setExpGrade(e.target.value)} searchable>
                 <option value="">— pilih jenjang —</option>
                 {gradeLevels.map((gl) => <option key={gl} value={gl}>Kelas {gl}</option>)}
               </Select>

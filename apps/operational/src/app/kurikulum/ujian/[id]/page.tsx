@@ -456,11 +456,11 @@ export default function UjianDetailPage() {
               <Widget title="Rekap Nilai per Jenjang & Rombel"
                 action={
                   <div className="flex items-center gap-2">
-                    <Select value={resJenjang} onChange={(e) => { setResJenjang(e.target.value); setResClass(''); }} className="w-28">
+                    <Select value={resJenjang} onChange={(e) => { setResJenjang(e.target.value); setResClass(''); }} className="w-28" searchable>
                       <option value="">Semua jenjang</option>
                       {[...new Set(results?.classes.map((c) => c.gradeLevel) ?? [])].sort().map((g) => <option key={g} value={g}>Kelas {g}</option>)}
                     </Select>
-                    <Select value={resClass} onChange={(e) => setResClass(e.target.value)} className="w-36">
+                    <Select value={resClass} onChange={(e) => setResClass(e.target.value)} className="w-36" searchable>
                       <option value="">Semua rombel</option>
                       {classes.filter((c) => exam.classIds.includes(c.id) && (!resJenjang || (results?.classes.find((x) => x.classId === c.id)?.gradeLevel ?? c.gradeLevel) === Number(resJenjang))).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </Select>

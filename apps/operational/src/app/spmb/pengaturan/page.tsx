@@ -610,7 +610,7 @@ function SpmbSettingsInner() {
             label="Tipe Jawaban"
             hint={FIELD_TYPES.find((t) => t.key === qType)?.desc}
           >
-            <Select name="fieldType" value={qType} onChange={(e) => setQType(e.target.value)}>
+            <Select name="fieldType" value={qType} onChange={(e) => setQType(e.target.value)} searchable>
               {FIELD_TYPES.map((t) => (
                 <option key={t.key} value={t.key}>{t.label}</option>
               ))}
@@ -895,7 +895,7 @@ function SpmbSettingsInner() {
             <Input name="label" required defaultValue={discModal === 'new' ? '' : (discModal as DiscountRuleDto)?.label} />
           </Field>
           <Field label="Kelompok jalur" hint="Di formulir ortu, jenis ini tampil di bawah kelompok yang dipilih.">
-            <Select name="category" defaultValue={(discModal as DiscountRuleDto)?.category ?? 'non_akademik'}>
+            <Select name="category" defaultValue={(discModal as DiscountRuleDto)?.category ?? 'non_akademik'} searchable>
               {DISCOUNT_CATEGORIES.map((c) => (
                 <option key={c.key} value={c.key}>{c.label}</option>
               ))}

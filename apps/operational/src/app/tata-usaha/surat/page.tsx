@@ -159,7 +159,7 @@ export default function SuratPage() {
           placeholder="Cari nomor / perihal / pihak…"
           className="w-64 max-w-full"
         />
-        <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="w-48">
+        <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="w-48" searchable>
           <option value="">Semua kategori</option>
           {categories.map((c) => (
             <option key={c.id} value={c.id}>{c.name}</option>
@@ -234,7 +234,7 @@ export default function SuratPage() {
             <Input name="party" defaultValue={modal !== 'new' ? modal?.party ?? '' : ''} placeholder={dir === 'IN' ? 'Dinas Pendidikan…' : 'Kepada Yth…'} />
           </Field>
           <Field label="Kategori" hint="Kelola lewat tombol ⚙ Kategori">
-            <Select name="categoryId" defaultValue={modal !== 'new' ? modal?.categoryId ?? '' : ''}>
+            <Select name="categoryId" defaultValue={modal !== 'new' ? modal?.categoryId ?? '' : ''} searchable>
               <option value="">— Tanpa kategori —</option>
               {categories.map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>

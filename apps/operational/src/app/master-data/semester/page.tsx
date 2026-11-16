@@ -97,7 +97,7 @@ export default function SemesterPage() {
               setYearId(e.target.value);
               void load(e.target.value);
             }}
->
+ searchable>
             {years.map((y) => (
               <option key={y.id} value={y.id}>{y.name}{y.isActive ? ' (aktif)' : ''}</option>
             ))}

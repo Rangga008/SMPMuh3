@@ -1082,6 +1082,8 @@ export const createClass = (dto: Record<string, unknown>) =>
   req<ClassView>('/classes', { method: 'POST', json: dto });
 export const enrollStudent = (dto: Record<string, unknown>) =>
   req('/enrollments', { method: 'POST', json: dto });
+export const moveEnrollment = (dto: Record<string, unknown>) =>
+  req('/enrollments/move', { method: 'POST', json: dto });
 export const listEnrollments = (classId: string) =>
   req<{ id: string; student: { id: string; name: string; nis?: string | null } }[]>(
     `/classes/${classId}/students`,
@@ -1923,6 +1925,8 @@ export async function downloadLetterFile(id: string) {
 export interface StudentMutation {
   id: string;
   direction: 'IN' | 'OUT';
+  studentId?: string | null;
+  student?: { id: string; name: string; nis: string | null; status: string } | null;
   studentName: string;
   nisn?: string | null;
   date: string;

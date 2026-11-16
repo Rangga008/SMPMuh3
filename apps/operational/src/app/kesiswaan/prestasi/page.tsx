@@ -17,6 +17,7 @@ import {
   me,
   openStudentDocument,
   updateAchievement,
+  uploadStudentDocument,
   type AchievementRow,
 } from '@/lib/api';
 
@@ -36,6 +37,7 @@ export default function PrestasiPage() {
   const [modal, setModal] = useState<'tambah' | 'edit' | null>(null);
   const [editing, setEditing] = useState<AchievementRow | null>(null);
   const [student, setStudent] = useState<StudentDto | null>(null);
+  const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
   const firstRun = useRef(true);
 
   const load = useCallback((q: string, y: string) => {
@@ -68,6 +70,13 @@ export default function PrestasiPage() {
     setBusy(true);
     setError(null);
     try {
+      // Unggah sertifikat/bukti dulu bila dipilih — lampirkan ke prestasi.
+      let evidenceDocumentId: string | undefined;
+      const sid = modal === 'tambah' ? student?.id : editing?.student.id;
+      if (evidenceFile && sid) {
+        const doc = await uploadStudentDocument(sid, evidenceFile, 'sertifikat-prestasi');
+        evidenceDocumentId = doc.id;
+      }
       if (modal === 'tambah') {
         if (!student) {
           setError('Pilih siswa dulu.');
@@ -79,6 +88,7 @@ export default function PrestasiPage() {
           level: val('level'),
           year: val('year') ? Number(val('year')) : undefined,
           description: val('description'),
+          evidenceDocumentId,
         });
         setNotice(`Prestasi ${student.name} ditambahkan.`);
       } else if (editing) {
@@ -87,12 +97,14 @@ export default function PrestasiPage() {
           level: val('level'),
           year: val('year') ? Number(val('year')) : undefined,
           description: val('description'),
+          ...(evidenceDocumentId ? { evidenceDocumentId } : {}),
         });
         setNotice('Prestasi diperbarui.');
       }
       setModal(null);
       setEditing(null);
       setStudent(null);
+      setEvidenceFile(null);
       load(search, year);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Gagal menyimpan.');
@@ -113,6 +125,7 @@ export default function PrestasiPage() {
               onClick={() => {
                 setEditing(null);
                 setStudent(null);
+                setEvidenceFile(null);
                 setModal('tambah');
               }}
             >
@@ -192,6 +205,7 @@ export default function PrestasiPage() {
                     tone="neutral"
                     onClick={() => {
                       setEditing(a);
+                      setEvidenceFile(null);
                       setModal('edit');
                     }}
                   >
@@ -226,6 +240,7 @@ export default function PrestasiPage() {
           setModal(null);
           setEditing(null);
           setStudent(null);
+          setEvidenceFile(null);
         }}
         title={modal === 'edit' ? 'Ubah Prestasi' : 'Tambah Prestasi'}
         size="xl"
@@ -242,7 +257,7 @@ export default function PrestasiPage() {
             <Input name="title" required minLength={3} defaultValue={editing?.title ?? ''} />
           </Field>
           <Field label="Tingkat">
-            <Select name="level" defaultValue={editing?.level ?? ''}>
+            <Select name="level" defaultValue={editing?.level ?? ''} searchable>
               <option value="">— Pilih —</option>
               {LEVELS.map((l) => (
                 <option key={l} value={l}>{l}</option>
@@ -254,6 +269,27 @@ export default function PrestasiPage() {
           </Field>
           <Field label="Keterangan" className="sm:col-span-2" hint="Penyelenggara, tanggal, dsb">
             <Input name="description" defaultValue={editing?.description ?? ''} />
+          </Field>
+          <Field label="Sertifikat / Bukti" className="sm:col-span-2" hint="Foto sertifikat, piagam, atau surat keputusan — maks 5 MB">
+            <input
+              type="file"
+              accept="image/*,application/pdf"
+              className="w-full rounded-xl border border-sand-200 px-3 py-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-primary-50 file:px-3 file:py-1.5 file:text-xs file:font-bold file:text-primary-700"
+              onChange={(e) => setEvidenceFile(e.target.files?.[0] ?? null)}
+            />
+            {evidenceFile ? (
+              <p className="mt-1 text-xs text-emerald-700">📎 {evidenceFile.name}</p>
+            ) : editing?.evidenceDocument ? (
+              <button
+                type="button"
+                className="mt-1 text-xs font-semibold text-primary-700 hover:underline"
+                onClick={() => openStudentDocument(editing.evidenceDocument!.id).then((u) => window.open(u, '_blank')).catch(() => setError('Gagal membuka bukti.'))}
+              >
+                📎 {editing.evidenceDocument.fileName} — pilih file baru untuk mengganti
+              </button>
+            ) : (
+              <p className="mt-1 text-xs text-sand-400">Opsional — tampil di kolom Bukti.</p>
+            )}
           </Field>
           <div className="sm:col-span-2 flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={() => setModal(null)}>Batal</Button>

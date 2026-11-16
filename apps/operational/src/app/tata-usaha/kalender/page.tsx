@@ -321,7 +321,7 @@ export default function KalenderAkademikPage() {
               />
             </Field>
             <Field label="Jenis">
-              <Select name="type" required defaultValue={(evModal as CalendarEventRow)?.type ?? 'KEGIATAN'}>
+              <Select name="type" required defaultValue={(evModal as CalendarEventRow)?.type ?? 'KEGIATAN'} searchable>
                 {EVENT_TYPES.map((t) => (
                   <option key={t} value={t}>{t}</option>
                 ))}
@@ -337,7 +337,7 @@ export default function KalenderAkademikPage() {
             />
           </Field>
           <Field label="Tahun Ajaran" hint="Kosongkan bila berlaku umum">
-            <Select name="academicYearId" defaultValue={(evModal as CalendarEventRow)?.academicYearId ?? ''}>
+            <Select name="academicYearId" defaultValue={(evModal as CalendarEventRow)?.academicYearId ?? ''} searchable>
               <option value="">Semua tahun ajaran</option>
               {years.map((yr) => (
                 <option key={yr.id} value={yr.id}>{yr.name}</option>

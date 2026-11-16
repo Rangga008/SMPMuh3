@@ -446,12 +446,12 @@ export default function LaporanPage() {
       <Widget title="Periode & Ekspor" className="mb-6">
         <div className="flex flex-wrap items-end gap-3">
           <Field label="Tahun Ajaran" className="w-48">
-            <Select value={yearId} onChange={(e) => { setYearId(e.target.value); setSemesterId(''); }}>
+            <Select value={yearId} onChange={(e) => { setYearId(e.target.value); setSemesterId(''); }} searchable>
               {years.map((y) => <option key={y.id} value={y.id}>{y.name}</option>)}
             </Select>
           </Field>
           <Field label="Semester" className="w-40">
-            <Select value={semesterId} onChange={(e) => setSemesterId(e.target.value)} disabled={Boolean(from || to)}>
+            <Select value={semesterId} onChange={(e) => setSemesterId(e.target.value)} disabled={Boolean(from || to)} searchable>
               <option value="">Semua</option>
               {semesters.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </Select>
@@ -465,7 +465,7 @@ export default function LaporanPage() {
               className="w-full rounded-lg border border-current/20 bg-transparent px-3 py-2 text-sm" />
           </Field>
           <Field label="Kas" className="w-44">
-            <Select value={kasFilter} onChange={(e) => setKasFilter(e.target.value)} aria-label="Filter kas">
+            <Select value={kasFilter} onChange={(e) => setKasFilter(e.target.value)} aria-label="Filter kas" searchable>
               <option value="">Semua kas</option>
               {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
             </Select>
@@ -673,7 +673,7 @@ export default function LaporanPage() {
                     <div className="mt-6 border-t border-current/10 pt-4">
                       <div className="mb-3 flex flex-wrap items-center gap-3">
                         <span className="text-sm font-semibold">Rincian transaksi kategori</span>
-                        <Select value={katId} onChange={(e) => setKatId(e.target.value)} className="h-9 w-56 text-xs" aria-label="Pilih kategori">
+                        <Select value={katId} onChange={(e) => setKatId(e.target.value)} className="h-9 w-56 text-xs" aria-label="Pilih kategori" searchable>
                           <option value="">— Pilih kategori —</option>
                           {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                         </Select>
@@ -748,7 +748,7 @@ export default function LaporanPage() {
                     <div className="mt-6 border-t border-current/10 pt-4">
                       <div className="mb-3 flex flex-wrap items-center gap-3">
                         <span className="text-sm font-semibold">Buku kas per akun</span>
-                        <Select value={kasId} onChange={(e) => setKasId(e.target.value)} className="h-9 w-56 text-xs" aria-label="Pilih kas">
+                        <Select value={kasId} onChange={(e) => setKasId(e.target.value)} className="h-9 w-56 text-xs" aria-label="Pilih kas" searchable>
                           <option value="">— Pilih kas —</option>
                           {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
                         </Select>
@@ -790,13 +790,13 @@ export default function LaporanPage() {
                   <>
                     <div className="mb-4 flex flex-wrap items-end gap-3">
                       <Field label="Jenjang" className="w-36">
-                        <Select value={siswaJenjang} onChange={(e) => { setSiswaJenjang(e.target.value); setSiswaKelas(''); }}>
+                        <Select value={siswaJenjang} onChange={(e) => { setSiswaJenjang(e.target.value); setSiswaKelas(''); }} searchable>
                           <option value="">Semua</option>
                           {siswaData.jenjangs.map((g) => <option key={g} value={g}>Jenjang {g}</option>)}
                         </Select>
                       </Field>
                       <Field label="Kelas" className="w-44">
-                        <Select value={siswaKelas} onChange={(e) => setSiswaKelas(e.target.value)}>
+                        <Select value={siswaKelas} onChange={(e) => setSiswaKelas(e.target.value)} searchable>
                           <option value="">Semua kelas</option>
                           {siswaData.kelasNames.map((k) => <option key={k} value={k}>{k}</option>)}
                         </Select>

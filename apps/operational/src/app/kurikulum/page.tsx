@@ -163,7 +163,7 @@ export default function AcademicPage() {
             </Select>
           </Field>
           <Field label="Ruang kelas (Prasarana)">
-            <Select name="prasaranaId" defaultValue="">
+            <Select name="prasaranaId" defaultValue="" searchable>
               <option value="">— belum ditentukan —</option>
               {rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
             </Select>
@@ -210,7 +210,7 @@ export default function AcademicPage() {
               </Select>
             </Field>
             <Field label="Ruang kelas (Prasarana)">
-              <Select name="prasaranaId" defaultValue={editClass.prasaranaId ?? ''}>
+              <Select name="prasaranaId" defaultValue={editClass.prasaranaId ?? ''} searchable>
                 <option value="">— belum ditentukan —</option>
                 {rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
               </Select>

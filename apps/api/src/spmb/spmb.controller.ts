@@ -181,7 +181,7 @@ export class SpmbController {
   @Get('registrations/lookup')
   @Public()
   lookup(@Query() q: StatusLookupDto) {
-    return this.registrations.lookup(q.number);
+    return this.registrations.lookup(q.number, q.key);
   }
 
   @Get('registrations/:id')

@@ -136,14 +136,14 @@ export default function PenilaianPage() {
 
       <div className="mb-5 flex flex-wrap items-end gap-3">
         <Field label="Tahun Ajaran" className="w-44">
-          <Select value={yearId} onChange={(e) => setYearId(e.target.value)}>
+          <Select value={yearId} onChange={(e) => setYearId(e.target.value)} searchable>
             {years.map((y) => (
               <option key={y.id} value={y.id}>{y.name}{y.isActive ? ' (aktif)' : ''}</option>
             ))}
           </Select>
         </Field>
         <Field label="Rombel" className="w-44">
-          <Select value={classId} onChange={(e) => setClassId(e.target.value)}>
+          <Select value={classId} onChange={(e) => setClassId(e.target.value)} searchable>
             {classes.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}

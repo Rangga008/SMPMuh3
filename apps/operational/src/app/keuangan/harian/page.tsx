@@ -195,7 +195,7 @@ export default function HarianPage() {
               </Select>
             </Field>
             <Field label="Kategori">
-              <Select key={qType} name="categoryId" required defaultValue="">
+              <Select key={qType} name="categoryId" required defaultValue="" searchable>
                 <option value="" disabled>Pilih…</option>
                 {quickCats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </Select>
@@ -213,7 +213,7 @@ export default function HarianPage() {
             <Input name="description" placeholder="mis. Pemberian tamu, beli ATK…" />
           </Field>
           <Field label="Kas" hint="Kosong = akun default">
-            <Select name="cashAccountId" defaultValue="">
+            <Select name="cashAccountId" defaultValue="" searchable>
               <option value="">Default</option>
               {accounts.filter((a) => a.isActive).map((a) => (
                 <option key={a.id} value={a.id}>{a.name}</option>
@@ -231,7 +231,7 @@ export default function HarianPage() {
       <div className="mb-5 flex flex-wrap items-end gap-3 rounded-2xl border border-sand-200 bg-white p-4 shadow-card">
         <label className="flex min-w-36 flex-col gap-1.5">
           <span className="text-xs font-bold uppercase tracking-wider text-sand-500">Periode</span>
-          <Select value={yearId} onChange={(e) => setYearId(e.target.value)} aria-label="Filter periode">
+          <Select value={yearId} onChange={(e) => setYearId(e.target.value)} aria-label="Filter periode" searchable>
             <option value="">Semua</option>
             {years.map((y) => (
               <option key={y.id} value={y.id}>{y.name}{y.isActive ? ' (aktif)' : ''}</option>
@@ -248,7 +248,7 @@ export default function HarianPage() {
         </label>
         <label className="flex min-w-36 flex-col gap-1.5">
           <span className="text-xs font-bold uppercase tracking-wider text-sand-500">Kategori</span>
-          <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} aria-label="Filter kategori">
+          <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} aria-label="Filter kategori" searchable>
             <option value="">Semua</option>
             {categories.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
@@ -257,7 +257,7 @@ export default function HarianPage() {
         </label>
         <label className="flex min-w-32 flex-col gap-1.5">
           <span className="text-xs font-bold uppercase tracking-wider text-sand-500">Kas</span>
-          <Select value={accountId} onChange={(e) => setAccountId(e.target.value)} aria-label="Filter kas">
+          <Select value={accountId} onChange={(e) => setAccountId(e.target.value)} aria-label="Filter kas" searchable>
             <option value="">Semua</option>
             {accounts.map((a) => (
               <option key={a.id} value={a.id}>{a.name}</option>
@@ -341,7 +341,7 @@ export default function HarianPage() {
         {txModal ? (
           <form onSubmit={onSaveTx} className="grid gap-4">
             <Field label="Kategori">
-              <Select name="categoryId" required defaultValue={txModal.categoryId ?? ''}>
+              <Select name="categoryId" required defaultValue={txModal.categoryId ?? ''} searchable>
                 <optgroup label="Pemasukan">
                   {incomeCats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </optgroup>
@@ -354,7 +354,7 @@ export default function HarianPage() {
               <RpInput name="amount" defaultValue={txModal.amount} />
             </Field>
             <Field label="Kas / Bank" hint="Kosong = akun default">
-              <Select name="cashAccountId" defaultValue={txModal.cashAccountId ?? ''} aria-label="Akun kas">
+              <Select name="cashAccountId" defaultValue={txModal.cashAccountId ?? ''} aria-label="Akun kas" searchable>
                 <option value="">Otomatis (default)</option>
                 {accounts.map((a) => (
                   <option key={a.id} value={a.id}>{a.name}{a.type === 'BANK' ? ' (bank)' : ''}</option>

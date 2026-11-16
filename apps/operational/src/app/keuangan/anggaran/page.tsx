@@ -121,7 +121,7 @@ export default function AnggaranPage() {
       <Widget
         title="Anggaran vs Realisasi"
         action={
-          <Select value={yearId} onChange={(e) => setYearId(e.target.value)} className="h-9 w-44 text-xs" aria-label="Tahun ajaran">
+          <Select value={yearId} onChange={(e) => setYearId(e.target.value)} className="h-9 w-44 text-xs" aria-label="Tahun ajaran" searchable>
             {years.map((y) => (
               <option key={y.id} value={y.id}>{y.name}{y.isActive ? ' (aktif)' : ''}</option>
             ))}
@@ -190,7 +190,7 @@ export default function AnggaranPage() {
       <Modal open={budgetModal !== null} onClose={() => setBudgetModal(null)} title={bEditing ? 'Ubah Anggaran' : 'Atur Anggaran'}>
         <form onSubmit={onSaveBudget} className="grid gap-4">
           <Field label="Kategori">
-            <Select name="categoryId" required defaultValue={bEditing?.categoryId ?? ''}>
+            <Select name="categoryId" required defaultValue={bEditing?.categoryId ?? ''} searchable>
               <option value="" disabled>Pilih kategori…</option>
               {categories.map((c) => (
                 <option key={c.id} value={c.id}>{c.name} ({c.type === 'INCOME' ? 'masuk' : 'keluar'})</option>

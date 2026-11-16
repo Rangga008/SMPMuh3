@@ -149,7 +149,7 @@ export default function UjianPage() {
         title="Daftar Ujian"
         subtitle="Buka sesi saat jadwal tiba; siswa mengerjakan di situs CBT (NIS + kode dari pengawas)."
         action={
-          <Select value={yearId} onChange={(e) => switchYear(e.target.value)} className="w-44">
+          <Select value={yearId} onChange={(e) => switchYear(e.target.value)} className="w-44" searchable>
             {years.map((y) => <option key={y.id} value={y.id}>{y.name}</option>)}
           </Select>
         }
@@ -197,7 +197,7 @@ export default function UjianPage() {
         <form onSubmit={create} className="space-y-4">
           {modalErr ? <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{modalErr}</p> : null}
           <Field label="Asesmen / Bank Soal">
-            <Select name="assessmentId">
+            <Select name="assessmentId" searchable>
               <option value="">— pilih asesmen —</option>
               {assessments.map((a) => (
                 <option key={a.id} value={a.id}>{a.name} · {a.subject.name}{a.class ? ` · ${a.class.name}` : ''}</option>

@@ -360,7 +360,7 @@ export default function TitipanPage() {
               setYearId(e.target.value);
               setWaveId('');
             }}
-          >
+           searchable>
             <option value="">Semua</option>
             {summary.map((s) => (
               <option key={s.academicYearId} value={s.academicYearId}>
@@ -370,7 +370,7 @@ export default function TitipanPage() {
           </Select>
         </Field>
         <Field label="Gelombang" className="w-44">
-          <Select value={waveId} onChange={(e) => setWaveId(e.target.value)}>
+          <Select value={waveId} onChange={(e) => setWaveId(e.target.value)} searchable>
             <option value="">Semua</option>
             {wavesOfYear.map((w) => (
               <option key={w.id} value={w.id}>
@@ -383,7 +383,7 @@ export default function TitipanPage() {
           <Select
             value={status}
             onChange={(e) => setStatus(e.target.value as TitipanStatus | '')}
-          >
+           searchable>
             {FILTERS.map((f) => (
               <option key={f.key} value={f.key}>
                 {f.label}
@@ -650,7 +650,7 @@ export default function TitipanPage() {
                         );
                       });
                     }}
-                  >
+                   searchable>
                     <option value="">— Tanpa gelombang —</option>
                     {waves
                       .filter((w) => w.academicYearId === m.academicYearId)
@@ -681,7 +681,7 @@ export default function TitipanPage() {
                         setNotice(`${m.candidateName} → ${TITIPAN_STATUS_LABELS[next]}.`);
                       });
                     }}
-                  >
+                   searchable>
                     <option value="" disabled>
                       Pilih status baru…
                     </option>

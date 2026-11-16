@@ -20,7 +20,7 @@ import {
   listCashAccounts,
   listClasses,
   listEkskul,
-  enrollStudent,
+  moveEnrollment,
   me,
   notifyInvoice,
   recordBillingPayment,
@@ -313,8 +313,10 @@ export default function StudentDetailPage() {
             <Widget
               title={`Rombel TA ${year?.name ?? ''}`}
               action={
-                canManage && !s.enrollments.some((e) => e.academicYear.name === year?.name)
-                  ? <Button variant="outline" size="sm" onClick={() => setModal('rombel')}>Tempatkan di Rombel</Button>
+                canManage
+                  ? <Button variant="outline" size="sm" onClick={() => setModal('rombel')}>
+                      {s.enrollments.some((e) => e.academicYear.name === year?.name) ? 'Pindahkan Rombel' : 'Tempatkan di Rombel'}
+                    </Button>
                   : undefined
               }
 >
@@ -743,15 +745,15 @@ export default function StudentDetailPage() {
         ) : null}
       </Modal>
 
-      {/* Tempatkan di rombel */}
-      <Modal open={modal === 'rombel'} onClose={() => setModal(null)} title={`Tempatkan di Rombel — TA ${year?.name ?? ''}`}>
+      {/* Tempatkan / pindahkan rombel */}
+      <Modal open={modal === 'rombel'} onClose={() => setModal(null)} title={`${s?.enrollments.some((e) => e.academicYear.name === year?.name) ? 'Pindahkan' : 'Tempatkan di'} Rombel — TA ${year?.name ?? ''}`}>
         <form
           onSubmit={(e) => {
             e.preventDefault();
             const f = new FormData(e.currentTarget);
             void run(
-              () => enrollStudent({ studentId: id, classId: String(f.get('classId')) }),
-              'Siswa ditempatkan di rombel.',
+              () => moveEnrollment({ studentId: id, classId: String(f.get('classId')), academicYearId: year?.id }),
+              'Rombel siswa diperbarui.',
             ).then((ok) => ok && setModal(null));
           }}
           className="grid gap-4"
@@ -770,7 +772,7 @@ export default function StudentDetailPage() {
           </Field>
           <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={() => setModal(null)}>Batal</Button>
-            <Button type="submit" disabled={busy}>Tempatkan</Button>
+            <Button type="submit" disabled={busy}>Simpan</Button>
           </div>
         </form>
       </Modal>
@@ -840,7 +842,7 @@ export default function StudentDetailPage() {
           className="grid gap-4"
 >
           <Field label="Ekstrakurikuler" hint="Ketik untuk mencari — daftar sama dengan menu Kesiswaan › Ekskul">
-            <Select name="ekskulId" required defaultValue="">
+            <Select name="ekskulId" required defaultValue="" searchable>
               <option value="" disabled>Pilih…</option>
               {ekskulList
                 .filter((x) => x.isActive && !(s?.ekskulMemberships ?? []).some((m) => m.extracurricular.id === x.id))
@@ -927,7 +929,7 @@ export default function StudentDetailPage() {
           className="grid gap-4"
 >
           <Field label="Jenis Dokumen">
-            <Select name="dtype" defaultValue="lainnya">
+            <Select name="dtype" defaultValue="lainnya" searchable>
               {DOC_TYPES.map(([k, l]) => (
                 <option key={k} value={k}>{l}</option>
               ))}
@@ -964,7 +966,7 @@ export default function StudentDetailPage() {
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Kas Tujuan" hint="Kosong = akun default">
-                <Select name="cashAccountId" defaultValue="">
+                <Select name="cashAccountId" defaultValue="" searchable>
                   <option value="">Default</option>
                   {accounts.filter((a) => a.isActive).map((a) => (
                     <option key={a.id} value={a.id}>{a.name}</option>

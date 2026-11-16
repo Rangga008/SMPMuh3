@@ -8,7 +8,7 @@ import {
   PATHWAY_LABELS,
   PRESTASI_SUBTYPE_LABELS,
   REGISTRATION_STATUS_LABELS,
-  REGISTRATION_STATUSES,
+  STAFF_TRANSITIONS,
   type RegistrationStatus,
 } from '@smpmuh3/types';
 import { Badge, Button, Field, Input, Modal, Select, Textarea } from '@smpmuh3/ui';
@@ -60,6 +60,7 @@ export default function AdminRegistrationPage() {
   const [modal, setModal] = useState<'invoice' | 'plan' | null>(null);
   const [questions, setQuestions] = useState<FormQuestionDto[]>([]);
   const { confirm, dialog } = useConfirm();
+  const allowedTargets: RegistrationStatus[] = reg ? [...(STAFF_TRANSITIONS[reg.status] ?? [])] : [];
 
   const refresh = useCallback(async () => {
     setReg(await getAdminRegistration(id));
@@ -69,6 +70,14 @@ export default function AdminRegistrationPage() {
     refresh().catch(() => setError('Pendaftaran tidak ditemukan.'));
     listAdminQuestions().then(setQuestions).catch(() => undefined);
   }, [refresh]);
+
+  // Target mengikuti transisi yang sah dari status saat ini.
+  useEffect(() => {
+    if (allowedTargets.length && !allowedTargets.includes(target)) {
+      setTarget(allowedTargets[0] ?? 'SUBMITTED');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reg?.status]);
 
   async function onTransition(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -548,9 +557,9 @@ export default function AdminRegistrationPage() {
                     <Badge tone={tone(reg.status)}>{REGISTRATION_STATUS_LABELS[reg.status]}</Badge>
                   </p>
                 </Field>
-                <Field label="Ubah Menjadi">
-                  <Select value={target} onChange={(e) => setTarget(e.target.value as RegistrationStatus)}>
-                    {REGISTRATION_STATUSES.filter((s) => s !== reg.status).map((s) => (
+                <Field label="Ubah Menjadi" hint={allowedTargets.length === 0 ? 'Status akhir — tidak ada transisi lanjutan.' : undefined}>
+                  <Select value={target} onChange={(e) => setTarget(e.target.value as RegistrationStatus)} searchable disabled={allowedTargets.length === 0}>
+                    {allowedTargets.map((s) => (
                       <option key={s} value={s}>{REGISTRATION_STATUS_LABELS[s]}</option>
                     ))}
                   </Select>
@@ -558,7 +567,7 @@ export default function AdminRegistrationPage() {
                 <Field label="Catatan" hint={target === 'NEEDS_REVISION' || target === 'REJECTED' ? 'Wajib — diperlihatkan ke pendaftar' : 'Opsional'}>
                   <Textarea name="note" placeholder="Catatan transisi" rows={2} />
                 </Field>
-                <Button type="submit" disabled={busy} className="w-full">
+                <Button type="submit" disabled={busy || allowedTargets.length === 0} className="w-full">
                   Terapkan Transisi
                 </Button>
               </form>

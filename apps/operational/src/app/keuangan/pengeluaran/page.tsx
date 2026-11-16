@@ -91,7 +91,7 @@ function AllocRows({
               emit(rows.map((r, j) => (j === i ? { cashAccountId: e.target.value, amount: r.amount } : r)));
             }}
             required
->
+ searchable>
             <option value="">— Pilih kas —</option>
             {accounts.map((a) => (
               <option key={a.id} value={a.id}>{a.name}</option>
@@ -327,7 +327,7 @@ export default function PengeluaranPage() {
       <div className="mb-5 flex flex-wrap items-end gap-3 rounded-2xl border border-sand-200 bg-white p-4 shadow-card">
         <label className="flex min-w-32 flex-col gap-1.5">
           <span className="text-xs font-bold uppercase tracking-wider text-sand-500">Tahun Ajaran</span>
-          <Select value={yearId} onChange={(e) => setYearId(e.target.value)} aria-label="Filter tahun ajaran">
+          <Select value={yearId} onChange={(e) => setYearId(e.target.value)} aria-label="Filter tahun ajaran" searchable>
             <option value="">Semua</option>
             {years.map((y) => (
               <option key={y.id} value={y.id}>{y.name}{y.isActive ? ' (aktif)' : ''}</option>
@@ -336,7 +336,7 @@ export default function PengeluaranPage() {
         </label>
         <label className="flex min-w-36 flex-col gap-1.5">
           <span className="text-xs font-bold uppercase tracking-wider text-sand-500">Kategori</span>
-          <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} aria-label="Filter kategori">
+          <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} aria-label="Filter kategori" searchable>
             <option value="">Semua</option>
             {expenseCats.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
@@ -345,7 +345,7 @@ export default function PengeluaranPage() {
         </label>
         <label className="flex min-w-36 flex-col gap-1.5">
           <span className="text-xs font-bold uppercase tracking-wider text-sand-500">Standar</span>
-          <Select value={stdGroup} onChange={(e) => setStdGroup(e.target.value)} aria-label="Filter standar">
+          <Select value={stdGroup} onChange={(e) => setStdGroup(e.target.value)} aria-label="Filter standar" searchable>
             <option value="">Semua</option>
             {STANDARDS.map((s) => (
               <option key={s} value={s}>{STD_FULL[s]}</option>
@@ -354,7 +354,7 @@ export default function PengeluaranPage() {
         </label>
         <label className="flex min-w-32 flex-col gap-1.5">
           <span className="text-xs font-bold uppercase tracking-wider text-sand-500">Kas</span>
-          <Select value={accountId} onChange={(e) => setAccountId(e.target.value)} aria-label="Filter kas">
+          <Select value={accountId} onChange={(e) => setAccountId(e.target.value)} aria-label="Filter kas" searchable>
             <option value="">Semua</option>
             {accounts.map((a) => (
               <option key={a.id} value={a.id}>{a.name}</option>
@@ -454,7 +454,7 @@ export default function PengeluaranPage() {
                 name="categoryId"
                 required
                 defaultValue={modal === 'create' ? '' : modal.categoryId}
->
+ searchable>
                 <option value="">— Pilih kategori —</option>
                 {expenseCats
                   .filter((c) => c.isActive !== false)
@@ -488,7 +488,7 @@ export default function PengeluaranPage() {
               </Field>
             </div>
             <Field label="Tahun Ajaran">
-              <Select name="academicYearId" defaultValue={modal === 'create' ? yearId : modal.academicYearId ?? ''}>
+              <Select name="academicYearId" defaultValue={modal === 'create' ? yearId : modal.academicYearId ?? ''} searchable>
                 <option value="">—</option>
                 {years.map((y) => (
                   <option key={y.id} value={y.id}>{y.name}</option>
@@ -581,7 +581,7 @@ export default function PengeluaranPage() {
                       'Standar kategori diperbarui.',
                     )
                   }
->
+ searchable>
                   <option value="">— Tanpa standar —</option>
                   {STANDARDS.map((s) => (
                     <option key={s} value={s}>{STD_FULL[s]}</option>

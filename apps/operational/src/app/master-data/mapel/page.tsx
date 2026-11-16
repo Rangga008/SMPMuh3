@@ -130,7 +130,7 @@ export default function MapelPage() {
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Kurikulum">
-              <Select name="curriculumId" defaultValue="">
+              <Select name="curriculumId" defaultValue="" searchable>
                 <option value="">— Umum —</option>
                 {curricula.map((c) => (
                   <option key={c.id} value={c.id}>{c.name}</option>
@@ -185,7 +185,7 @@ export default function MapelPage() {
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Kurikulum">
-                <Select name="curriculumId" defaultValue={editing.curriculumId ?? ''}>
+                <Select name="curriculumId" defaultValue={editing.curriculumId ?? ''} searchable>
                   <option value="">— Umum —</option>
                   {curricula.map((c) => (
                     <option key={c.id} value={c.id}>{c.name}</option>

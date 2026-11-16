@@ -1373,6 +1373,7 @@ model Student {
   examAttempts ExamAttempt[]
   examCredentials ExamCredential[]
   ekskulMemberships ExtracurricularMember[]
+  mutations    StudentMutation[]
 
   @@index([status, name])
   @@map("students")
@@ -1768,6 +1769,8 @@ model Letter {
 model StudentMutation {
   id           String            @id @default(uuid()) @db.Uuid
   direction    MutationDirection
+  studentId    String?           @map("student_id") @db.Uuid
+  student      Student?          @relation(fields: [studentId], references: [id], onDelete: SetNull)
   studentName  String            @map("student_name")
   nisn         String?
   date         DateTime          @db.Date
@@ -2338,6 +2341,7 @@ model SaranaItem {
   qty       Int        @default(0) // jumlah
   good      Int        @default(0) // laik
   bad       Int        @default(0) // tidak laik
+  photo     String?    // kunci storage foto barang (sarpras/…)
   isActive  Boolean    @default(true) @map("is_active")
   createdAt DateTime   @default(now()) @map("created_at")
   updatedAt DateTime   @updatedAt @map("updated_at")
@@ -2356,6 +2360,7 @@ model Prasarana {
   length    Float?    // panjang (meter)
   width     Float?    // lebar (meter)
   ownership String?   // status kepemilikan — Milik / Sewa / Hibah / dst
+  photo     String?   // kunci storage foto ruangan (sarpras/…)
   isActive  Boolean   @default(true) @map("is_active")
   examRooms    ExamRoom[]
   classes      Class[]         @relation("ClassRoom")

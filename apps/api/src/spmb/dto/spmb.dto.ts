@@ -81,7 +81,68 @@ export class CreateCandidateDto {
   tkaScore?: number;
 }
 
-export class UpdateCandidateDto extends CreateCandidateDto {}
+/** PATCH sejati — semua field opsional; yang dikirim saja yang diperbarui. */
+export class UpdateCandidateDto {
+  @emptyToUndefined()
+  @IsOptional()
+  @IsString()
+  @MinLength(3)
+  @MaxLength(120)
+  name?: string;
+
+  @emptyToUndefined()
+  @IsOptional()
+  @IsIn(['MALE', 'FEMALE'])
+  gender?: 'MALE' | 'FEMALE';
+
+  @emptyToUndefined()
+  @IsOptional()
+  @IsDateString()
+  birthDate?: string;
+
+  @emptyToUndefined()
+  @IsOptional()
+  @IsString()
+  @MinLength(3)
+  @MaxLength(160)
+  previousSchool?: string;
+
+  @emptyToUndefined()
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  @MaxLength(80)
+  birthPlace?: string;
+
+  @emptyToUndefined()
+  @IsOptional()
+  @IsString()
+  @MinLength(3)
+  @MaxLength(120)
+  motherName?: string;
+
+  @emptyToUndefined()
+  @IsOptional()
+  @Matches(/^\d{10}$/, { message: 'nisn harus 10 digit' })
+  nisn?: string;
+
+  @emptyToUndefined()
+  @IsOptional()
+  @Matches(/^\d{16}$/, { message: 'nik harus 16 digit angka' })
+  nik?: string;
+
+  @emptyToUndefined()
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  address?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(1000)
+  tkaScore?: number;
+}
 
 export class CreateRegistrationDto {
   @IsUUID()
@@ -110,6 +171,12 @@ export class StatusLookupDto {
   @IsString()
   @Length(6, 40)
   number!: string;
+
+  /** Email atau digit akhir no. HP ortu — faktor kedua anti-tebak nomor. */
+  @IsOptional()
+  @IsString()
+  @Length(4, 120)
+  key?: string;
 }
 
 export type { RegistrationDocType };

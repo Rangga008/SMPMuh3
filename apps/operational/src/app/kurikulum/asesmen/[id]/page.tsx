@@ -661,7 +661,7 @@ export default function AsesmenDetailPage() {
                         updateD(i, { keyPairs: kp });
                       }}
                       className="w-48"
-                    >
+                     searchable>
                       <option value="">— pilih —</option>
                       {d.rights.map((r, k) =>
                         !r.trim() ? null : <option key={k} value={k}>{`${k + 1} · ${r}`}</option>,
@@ -757,7 +757,7 @@ export default function AsesmenDetailPage() {
                         });
                       }}
                       className="w-44"
-                    >
+                     searchable>
                       {Object.entries(TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                     </Select>
                     <Select
@@ -765,7 +765,7 @@ export default function AsesmenDetailPage() {
                       onChange={(e) => updateD(i, { passageCode: e.target.value })}
                       className="w-36"
                       title="Bacaan untuk soal ini"
-                    >
+                     searchable>
                       <option value="">Tanpa bacaan</option>
                       {passages.map((p) => <option key={p.code} value={p.code}>{p.code}</option>)}
                     </Select>
@@ -884,7 +884,7 @@ export default function AsesmenDetailPage() {
               <>
           <div className="flex flex-wrap items-center gap-2 border-b border-sand-100 px-4 py-3">
             <Input value={jSearch} onChange={(e) => setJSearch(e.target.value)} placeholder="Cari nama / NIS…" className="w-52" />
-            <Select value={jClass} onChange={(e) => setJClass(e.target.value)} className="w-40">
+            <Select value={jClass} onChange={(e) => setJClass(e.target.value)} className="w-40" searchable>
               <option value="">Semua rombel</option>
               {jClasses.map(([cid, cname]) => <option key={cid} value={cid}>{cname}</option>)}
             </Select>
@@ -1003,7 +1003,7 @@ export default function AsesmenDetailPage() {
               return (
                 <>
                   <div className="flex flex-wrap items-center gap-2 border-b border-sand-100 px-4 py-3">
-                    <Select value={jClass} onChange={(e) => setJClass(e.target.value)} className="w-40">
+                    <Select value={jClass} onChange={(e) => setJClass(e.target.value)} className="w-40" searchable>
                       <option value="">Semua rombel</option>
                       {aClasses.map(([cid, cname]) => <option key={cid} value={cid}>{cname}</option>)}
                     </Select>
@@ -1141,14 +1141,14 @@ export default function AsesmenDetailPage() {
           {modalErr ? <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{modalErr}</p> : null}
           <Field label="Nama Asesmen"><Input name="name" defaultValue={matrix?.assessment.name ?? ''} required /></Field>
           <Field label="Mata Pelajaran">
-            <Select name="subjectId" defaultValue="">
+            <Select name="subjectId" defaultValue="" searchable>
               <option value="">— tidak diubah —</option>
               {subjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </Select>
             <p className="mt-1 text-[11px] text-sand-400">Saat ini: {matrix?.assessment.subject ?? '—'}</p>
           </Field>
           <Field label="Kelas (opsional)">
-            <Select name="classId" defaultValue="">
+            <Select name="classId" defaultValue="" searchable>
               <option value="">Semua kelas</option>
               {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </Select>
@@ -1175,7 +1175,7 @@ export default function AsesmenDetailPage() {
                     setUjianModal(ex);
                     setUjianForm({ title: ex.title, startAt: toLocalInput(ex.startAt), endAt: toLocalInput(ex.endAt), durationMin: ex.durationMin, classIds: new Set(ex.classIds), shuffle: ex.shuffle, showScore: ex.showScore });
                   }}
-                >
+                 searchable>
                   {linkedExams.map((x) => <option key={x.id} value={x.id}>{x.title} · {x.status}</option>)}
                 </Select>
               </Field>
@@ -1234,4 +1234,4 @@ export default function AsesmenDetailPage() {
       />
     </Shell>
   );
-}
+}

@@ -433,7 +433,7 @@ export default function JadwalKerjaPage() {
           if (r !== undefined) { setPolModal(false); load(); }
         }}>
           <Field label="Jenis">
-            <Select name="kind">{POLICY_KINDS.map((k) => <option key={k} value={k}>{k.replaceAll('_', ' ')}</option>)}</Select>
+            <Select name="kind" searchable>{POLICY_KINDS.map((k) => <option key={k} value={k}>{k.replaceAll('_', ' ')}</option>)}</Select>
           </Field>
           <Field label="Judul"><Input name="title" placeholder="Tata Tertib Siswa 2026" /></Field>
           <Field label="File"><FilePick name="file" required accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xlsx,.xls" /></Field>

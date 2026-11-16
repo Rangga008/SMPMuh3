@@ -613,7 +613,7 @@ export default function PayrollPengaturanPage() {
             }}
 >
             <Field label="Golongan Masa Kerja" hint="Kosongkan untuk auto dari tanggal mulai kerja">
-              <Select name="payScaleId" defaultValue={empModal.payScaleId ?? ''}>
+              <Select name="payScaleId" defaultValue={empModal.payScaleId ?? ''} searchable>
                 <option value="">— Auto dari masa kerja —</option>
                 {scales.filter((s) => s.isActive).map((s) => (
                   <option key={s.id} value={s.id}>{s.name} ({rupiah(s.hourlyRate)}/jam)</option>
@@ -764,7 +764,7 @@ export default function PayrollPengaturanPage() {
                 <>
                   <Field label="Pegawai"><SearchSelect name="employeeId" required load={loadEmp} label={empLabel} sub={empSub} placeholder="Ketik nama pegawai…" /></Field>
                   <Field label="Tipe Honor">
-                    <Select name="honorTypeId" required value={honorTypeSel} onChange={(e) => setHonorTypeSel(e.target.value)}>
+                    <Select name="honorTypeId" required value={honorTypeSel} onChange={(e) => setHonorTypeSel(e.target.value)} searchable>
                       <option value="">—</option>
                       {honorTypes.filter((t) => t.isActive && t.period !== 'ONE_TIME').map((t) => (
                         <option key={t.id} value={t.id}>{t.name} ({PERIOD_LABEL[t.period]})</option>
@@ -902,7 +902,7 @@ export default function PayrollPengaturanPage() {
                 <>
                   <Field label="Pegawai"><SearchSelect name="employeeId" required load={loadEmp} label={empLabel} sub={empSub} placeholder="Ketik nama pegawai…" /></Field>
                   <Field label="Tipe Potongan">
-                    <Select name="deductionTypeId" required>
+                    <Select name="deductionTypeId" required searchable>
                       <option value="">—</option>
                       {dedTypes.filter((t) => t.isActive).map((t) => (
                         <option key={t.id} value={t.id}>{t.name}{t.method === 'PERCENT' ? ` (${t.percent}% dari ${t.base === 'REST' ? 'bersih' : 'kotor'})` : ''}</option>
@@ -966,7 +966,7 @@ export default function PayrollPengaturanPage() {
               </Select>
             </Field>
             <Field label="Kas sumber (utk kasbon)">
-              <Select name="cashAccountId">
+              <Select name="cashAccountId" searchable>
                 <option value="">—</option>
                 {accounts.filter((a) => a.isActive).map((a) => (
                   <option key={a.id} value={a.id}>{a.name}</option>

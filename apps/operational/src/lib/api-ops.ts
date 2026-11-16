@@ -401,13 +401,14 @@ export interface SaranaType {
 export interface SaranaItem {
   id: string; typeId: string; location?: string | null;
   ownership?: string | null; spec?: string | null;
-  qty: number; good: number; bad: number; isActive: boolean;
+  qty: number; good: number; bad: number;
+  photo?: string | null; isActive: boolean;
   type: SaranaType;
 }
 export interface Prasarana {
   id: string; name: string; note?: string | null;
   length?: number | null; width?: number | null;
-  ownership?: string | null; isActive: boolean;
+  ownership?: string | null; photo?: string | null; isActive: boolean;
 }
 
 export const listSaranaTypes = () => req<SaranaType[]>('/ops/sarana-types');
@@ -419,20 +420,36 @@ export const deleteSaranaType = (id: string) =>
   req(`/ops/sarana-types/${id}`, { method: 'DELETE' });
 
 export const listSaranas = () => req<SaranaItem[]>('/ops/saranas');
-export const createSarana = (dto: { typeId: string; location?: string | undefined; ownership?: string | undefined; spec?: string | undefined; qty?: number | undefined; good?: number | undefined; bad?: number | undefined }) =>
+export const createSarana = (dto: { typeId: string; location?: string | undefined; ownership?: string | undefined; spec?: string | undefined; qty?: number | undefined; good?: number | undefined; bad?: number | undefined; photo?: string | undefined }) =>
   req<SaranaItem>('/ops/saranas', { method: 'POST', json: dto });
-export const updateSarana = (id: string, dto: Partial<{ typeId: string; location: string | null | undefined; ownership: string | null | undefined; spec: string | null | undefined; qty: number; good: number; bad: number; isActive: boolean }>) =>
+export const updateSarana = (id: string, dto: Partial<{ typeId: string; location: string | null | undefined; ownership: string | null | undefined; spec: string | null | undefined; qty: number; good: number; bad: number; photo: string | null; isActive: boolean }>) =>
   req<SaranaItem>(`/ops/saranas/${id}`, { method: 'PATCH', json: dto });
 export const deleteSarana = (id: string) => req(`/ops/saranas/${id}`, { method: 'DELETE' });
 export const saranaXlsxUrl = '/api/v1/ops/saranas.xlsx';
 
 export const listPrasaranas = () => req<Prasarana[]>('/ops/prasaranas');
-export const createPrasarana = (dto: { name: string; note?: string | undefined; length?: number | undefined; width?: number | undefined; ownership?: string | undefined }) =>
+export const createPrasarana = (dto: { name: string; note?: string | undefined; length?: number | undefined; width?: number | undefined; ownership?: string | undefined; photo?: string | undefined }) =>
   req<Prasarana>('/ops/prasaranas', { method: 'POST', json: dto });
-export const updatePrasarana = (id: string, dto: Partial<{ name: string; note: string | null | undefined; length: number | null | undefined; width: number | null | undefined; ownership: string | null | undefined; isActive: boolean }>) =>
+export const updatePrasarana = (id: string, dto: Partial<{ name: string; note: string | null | undefined; length: number | null | undefined; width: number | null | undefined; ownership: string | null | undefined; photo: string | null; isActive: boolean }>) =>
   req<Prasarana>(`/ops/prasaranas/${id}`, { method: 'PATCH', json: dto });
 export const deletePrasarana = (id: string) => req(`/ops/prasaranas/${id}`, { method: 'DELETE' });
 export const prasaranaXlsxUrl = '/api/v1/ops/prasaranas.xlsx';
+
+/** Unggah foto inventaris sarpras — hasil {key,url}; key disimpan di kolom photo. */
+export const uploadSarprasMedia = (file: File) => {
+  const fd = new FormData();
+  fd.append('file', file);
+  return req<{ key: string; url: string }>('/ops/sarpras-media', { method: 'POST', body: fd });
+};
+/** URL img untuk foto sarpras — dilayani API ber-auth, jadi fetch→blob. */
+export async function openSarprasPhoto(key: string) {
+  const t = getTokens();
+  const res = await fetch(`${API}/ops/sarpras-media/${key.split('/')[1]}`, {
+    headers: t?.accessToken ? { Authorization: `Bearer ${t.accessToken}` } : {},
+  });
+  if (!res.ok) throw new Error(`Gagal membuka foto (${res.status})`);
+  return URL.createObjectURL(await res.blob());
+}
 
 // ---- CBT: ujian online siswa ----
 export interface ExamView {

@@ -116,11 +116,11 @@ export default function DokumenPage() {
       {/* Dokumen staf */}
       <Widget title="Dokumen Administrasi Guru / SK" subtitle="Cari dan filter per guru & kategori." className="mt-5">
         <div className="mb-3 flex flex-wrap gap-2 px-5 pt-4">
-          <Select value={fEmp} onChange={(e) => setFEmp(e.target.value)} className="min-w-44" aria-label="Filter guru">
+          <Select value={fEmp} onChange={(e) => setFEmp(e.target.value)} className="min-w-44" aria-label="Filter guru" searchable>
             <option value="">Semua guru</option>
             {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
           </Select>
-          <Select value={fCat} onChange={(e) => setFCat(e.target.value)} className="min-w-36" aria-label="Filter kategori">
+          <Select value={fCat} onChange={(e) => setFCat(e.target.value)} className="min-w-36" aria-label="Filter kategori" searchable>
             <option value="">Semua kategori</option>
             {CATS.map((c) => <option key={c} value={c}>{c}</option>)}
           </Select>
@@ -169,7 +169,7 @@ export default function DokumenPage() {
             />
           </Field>
           <Field label="Kategori">
-            <Select name="category">{CATS.map((c) => <option key={c} value={c}>{c}</option>)}</Select>
+            <Select name="category" searchable>{CATS.map((c) => <option key={c} value={c}>{c}</option>)}</Select>
           </Field>
           <Field label="Judul"><Input name="title" placeholder="SK Pengangkatan 2024" /></Field>
           <Field label="File"><FilePick name="file" required accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xlsx,.xls" /></Field>

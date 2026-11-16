@@ -219,7 +219,7 @@ export default function AbsenKelasPage() {
               </button>
               {otherOpen ? (
                 <div className="mt-2 rounded-2xl border border-sand-200 bg-white p-3">
-                  <Select value={classId} onChange={(e) => pickClass(e.target.value)}>
+                  <Select value={classId} onChange={(e) => pickClass(e.target.value)} searchable>
                     <option value="">— Pilih kelas —</option>
                     {otherClasses.map((c) => (
                       <option key={c.id} value={c.id}>{c.name}</option>

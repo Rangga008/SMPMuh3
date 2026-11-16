@@ -808,6 +808,20 @@ export class OpsService {
 
   async saveAttendance(dto: SaveAttendanceDto, takenById?: string) {
     const date = toDateOnly(dto.date);
+    // Validasi keanggotaan — unik key studentId+date berarti baris liar bisa
+    // menimpa absen siswa rombel LAIN. Tolak studentId yang bukan anggota.
+    const cls = await this.prisma.class.findUniqueOrThrow({ where: { id: dto.classId } });
+    const members = await this.prisma.enrollment.findMany({
+      where: { classId: dto.classId, academicYearId: cls.academicYearId },
+      select: { studentId: true },
+    });
+    const memberSet = new Set(members.map((m) => m.studentId));
+    const stray = dto.rows.filter((r) => !memberSet.has(r.studentId));
+    if (stray.length) {
+      throw new BadRequestException(
+        `${stray.length} siswa bukan anggota rombel ${cls.name} — muat ulang daftar absen.`,
+      );
+    }
     const existing = await this.prisma.attendanceRecord.findMany({
       where: { classId: dto.classId, date },
       select: { studentId: true, status: true },
@@ -1594,6 +1608,11 @@ export class OpsService {
           where: { id: seat.studentId },
           data: { password: pw },
         });
+        // Satu password untuk semua ujian — credential lama ikut disamakan.
+        await this.prisma.examCredential.updateMany({
+          where: { studentId: seat.studentId },
+          data: { password: pw },
+        });
       }
       credentials[seat.studentId] = pw;
     }
@@ -1676,7 +1695,25 @@ export class OpsService {
       data.parentPhone = normalizePhone(data.parentPhone as string);
     }
     if (dto.recordDetails !== undefined) data.recordDetails = dto.recordDetails;
-    return this.prisma.student.update({ where: { id }, data: data as never });
+    const updated = await this.prisma.student.update({ where: { id }, data: data as never });
+    // Sinkron ke akun orang tua yang tertaut — jalur edit di halaman induk
+    // harus sama hasilnya dengan modal "Orang Tua / Wali" di kesiswaan.
+    const parentSync: Record<string, string> = {};
+    if (typeof data.parentPhone === 'string' && data.parentPhone) parentSync.phone = data.parentPhone;
+    if (typeof data.fatherName === 'string' && data.fatherName) parentSync.name = data.fatherName;
+    if (Object.keys(parentSync).length) {
+      const s = await this.prisma.student.findUnique({ where: { id }, select: { parentId: true } });
+      if (s?.parentId) {
+        if (parentSync.phone) {
+          const clash = await this.prisma.user.findUnique({ where: { phone: parentSync.phone }, select: { id: true } });
+          if (clash && clash.id !== s.parentId) delete parentSync.phone; // HP dipakai akun lain — jangan timpa
+        }
+        if (Object.keys(parentSync).length) {
+          await this.prisma.user.update({ where: { id: s.parentId }, data: parentSync });
+        }
+      }
+    }
+    return updated;
   }
 
   async studentRecord(id: string) {
@@ -1750,7 +1787,7 @@ export class OpsService {
       orderBy: [{ type: { sortOrder: 'asc' } }, { location: 'asc' }, { createdAt: 'asc' }],
     });
   }
-  createSarana(dto: { typeId: string; location?: string; ownership?: string; spec?: string; qty?: number; good?: number; bad?: number }) {
+  createSarana(dto: { typeId: string; location?: string; ownership?: string; spec?: string; qty?: number; good?: number; bad?: number; photo?: string }) {
     return this.prisma.saranaItem.create({
       data: {
         typeId: dto.typeId,
@@ -1760,16 +1797,17 @@ export class OpsService {
         qty: dto.qty ?? 0,
         good: dto.good ?? 0,
         bad: dto.bad ?? 0,
+        photo: dto.photo || null,
       },
       include: { type: true },
     });
   }
-  updateSarana(id: string, dto: Partial<{ typeId: string; location: string; ownership: string; spec: string; qty: number; good: number; bad: number; isActive: boolean }>) {
+  updateSarana(id: string, dto: Partial<{ typeId: string; location: string; ownership: string; spec: string; qty: number; good: number; bad: number; photo: string; isActive: boolean }>) {
     const data: Record<string, unknown> = {};
     for (const f of ['typeId', 'qty', 'good', 'bad', 'isActive'] as const) {
       if (dto[f] !== undefined) data[f] = dto[f];
     }
-    for (const f of ['location', 'ownership', 'spec'] as const) {
+    for (const f of ['location', 'ownership', 'spec', 'photo'] as const) {
       if (dto[f] !== undefined) data[f] = dto[f] || null;
     }
     return this.prisma.saranaItem.update({ where: { id }, data, include: { type: true } });
@@ -1782,18 +1820,35 @@ export class OpsService {
   prasaranas() {
     return this.prisma.prasarana.findMany({ where: { isActive: true }, orderBy: { name: 'asc' } });
   }
-  createPrasarana(dto: { name: string; note?: string; length?: number; width?: number; ownership?: string }) {
+  createPrasarana(dto: { name: string; note?: string; length?: number; width?: number; ownership?: string; photo?: string }) {
     return this.prisma.prasarana.create({
-      data: { name: dto.name.trim(), note: dto.note || null, length: dto.length ?? null, width: dto.width ?? null, ownership: dto.ownership || null },
+      data: { name: dto.name.trim(), note: dto.note || null, length: dto.length ?? null, width: dto.width ?? null, ownership: dto.ownership || null, photo: dto.photo || null },
     });
   }
-  updatePrasarana(id: string, dto: Partial<{ name: string; note: string; length: number; width: number; ownership: string; isActive: boolean }>) {
+  updatePrasarana(id: string, dto: Partial<{ name: string; note: string; length: number; width: number; ownership: string; photo: string; isActive: boolean }>) {
     const data: Record<string, unknown> = {};
     if (dto.name !== undefined) data.name = dto.name.trim();
-    for (const f of ['note', 'ownership'] as const) if (dto[f] !== undefined) data[f] = dto[f] || null;
+    for (const f of ['note', 'ownership', 'photo'] as const) if (dto[f] !== undefined) data[f] = dto[f] || null;
     for (const f of ['length', 'width'] as const) if (dto[f] !== undefined) data[f] = dto[f] ?? null;
     if (dto.isActive !== undefined) data.isActive = dto.isActive;
     return this.prisma.prasarana.update({ where: { id }, data });
+  }
+
+  /** Foto sarpras (ruangan/barang) — simpan di prefix sarpras/, layani via /ops/sarpras-media. */
+  async uploadSarprasMedia(file: Express.Multer.File) {
+    const mime = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' }[file.mimetype];
+    if (!mime) throw new BadRequestException('Gambar harus JPG/PNG/WebP/GIF.');
+    const key = `sarpras/${randomUUID()}.${mime}`;
+    await this.storage.putObject(key, file.buffer, file.mimetype);
+    return { key, url: `/ops/sarpras-media/${key.split('/')[1]}` };
+  }
+  /** Baca foto sarpras — auth di controller (SARPRAS_READ). */
+  async sarprasMedia(file: string) {
+    if (!/^[\w.-]+$/.test(file)) throw new BadRequestException('Nama file tidak valid.');
+    const key = `sarpras/${file}`;
+    const buf = await this.storage.getObjectBuffer(key);
+    const mime = file.endsWith('.png') ? 'image/png' : file.endsWith('.webp') ? 'image/webp' : file.endsWith('.gif') ? 'image/gif' : 'image/jpeg';
+    return { buf, mime };
   }
   async deletePrasarana(id: string) {
     await this.prisma.prasarana.update({ where: { id }, data: { isActive: false } });

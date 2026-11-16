@@ -316,10 +316,11 @@ export const checkoutInvoice = (invoiceId: string) =>
 export type { StatusLookupResult };
 export async function lookupStatus(
   number: string,
+  key: string,
 ): Promise<StatusLookupResult | null> {
   try {
     return await req<StatusLookupResult | null>(
-      `/registrations/lookup?number=${encodeURIComponent(number)}`,
+      `/registrations/lookup?number=${encodeURIComponent(number)}&key=${encodeURIComponent(key)}`,
     );
   } catch {
     return null;

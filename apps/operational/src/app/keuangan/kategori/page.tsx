@@ -153,7 +153,7 @@ export default function KategoriPage() {
             </Select>
           </Field>
           <Field label="Standar Nasional" hint="Opsional — untuk kelompok laporan 8 standar">
-            <Select name="standardGroup" defaultValue="">
+            <Select name="standardGroup" defaultValue="" searchable>
               <option value="">—</option>
               {Object.entries(STD).map(([k, v]) => (
                 <option key={k} value={k}>{v}</option>

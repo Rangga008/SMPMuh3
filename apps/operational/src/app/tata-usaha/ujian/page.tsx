@@ -165,7 +165,7 @@ export default function UjianPage() {
 
       <div className="mb-4">
         <Field label="Tahun Ajaran" className="max-w-56">
-          <Select value={yearId} onChange={(e) => setYearId(e.target.value)}>
+          <Select value={yearId} onChange={(e) => setYearId(e.target.value)} searchable>
             {years.map((y) => <option key={y.id} value={y.id}>{y.name}{y.isActive ? ' (aktif)' : ''}</option>)}
           </Select>
         </Field>
@@ -262,7 +262,7 @@ export default function UjianPage() {
           } catch (err) { setError(err instanceof Error ? err.message : 'Gagal.'); } finally { setBusy(false); }
         }}>
           <Field label="Ruangan (Prasarana)">
-            <Select name="prasaranaId" defaultValue="">
+            <Select name="prasaranaId" defaultValue="" searchable>
               <option value="">— ketik nama manual —</option>
               {prasaranas.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </Select>
@@ -293,7 +293,7 @@ export default function UjianPage() {
           <Field label="Periode ujian"><Input name="period" required defaultValue={editRoom?.period ?? ''} /></Field>
           <Field label={`Kapasitas`}><Input name="capacity" type="number" min={1} defaultValue={editRoom?.capacity ?? 24} /></Field>
           <Field label="Ruangan (Prasarana)">
-            <Select name="prasaranaId" defaultValue={editRoom?.prasaranaId ?? ''}>
+            <Select name="prasaranaId" defaultValue={editRoom?.prasaranaId ?? ''} searchable>
               <option value="">— tidak ditautkan —</option>
               {prasaranas.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </Select>
@@ -321,7 +321,7 @@ export default function UjianPage() {
           } catch (err) { setError(err instanceof Error ? err.message : 'Gagal.'); } finally { setBusy(false); }
         }}>
           <Field label="Ujian CBT">
-            <Select name="examId" defaultValue="">
+            <Select name="examId" defaultValue="" searchable>
               <option value="">— pilih ujian —</option>
               {exams.map((x) => <option key={x.id} value={x.id}>{x.title} · {x.code}</option>)}
             </Select>
@@ -339,7 +339,7 @@ export default function UjianPage() {
       <Modal open={!!assignModal} onClose={() => setAssignModal(null)} title={`Masukkan rombel — ${assignModal?.link ? `${assignModal.link.sessionLabel ?? assignModal.link.exam.title}` : assignModal?.room.name ?? ''}`}>
         <div className="grid gap-4">
           <Field label="Kelas">
-            <Select value={assignClassId} onChange={(e) => setAssignClassId(e.target.value)}>
+            <Select value={assignClassId} onChange={(e) => setAssignClassId(e.target.value)} searchable>
               <option value="">— pilih kelas —</option>
               {classes.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.gradeLevel ?? ''}{c._count?.enrollments != null ? ` · ${c._count.enrollments} siswa` : ''})</option>)}
             </Select>

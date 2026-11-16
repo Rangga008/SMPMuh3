@@ -876,7 +876,7 @@ function GtkOptionManager({
                       name="department"
                       value={editing.department}
                       onChange={(e) => setEditing((x) => (x ? { ...x, department: e.target.value } : x))}
-                    >
+                     searchable>
                       <option value="">— Tidak ada —</option>
                       {Object.entries(DEPT_LABEL).map(([k, v]) => (
                         <option key={k} value={k}>{v}</option>
@@ -956,7 +956,7 @@ function GtkOptionManager({
           />
         </Field>
         <Field label="Bidang turunan" hint="Mengikuti role yang dipilih — bisa diubah manual">
-          <Select name="department" value={addDept} onChange={(e) => setAddDept(e.target.value)}>
+          <Select name="department" value={addDept} onChange={(e) => setAddDept(e.target.value)} searchable>
             <option value="">— Tidak ada —</option>
             {Object.entries(DEPT_LABEL).map(([k, v]) => (
               <option key={k} value={k}>{v}</option>

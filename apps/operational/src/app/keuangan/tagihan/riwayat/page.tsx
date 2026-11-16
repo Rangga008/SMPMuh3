@@ -128,7 +128,7 @@ export default function RiwayatTagihanPage() {
             value={yearId}
             onChange={(e) => setYearId(e.target.value)}
             aria-label="Filter tahun ajaran"
-          >
+           searchable>
             <option value="">Semua</option>
             {years.map((y) => (
               <option key={y.id} value={y.id}>
@@ -146,7 +146,7 @@ export default function RiwayatTagihanPage() {
             value={classId}
             onChange={(e) => setClassId(e.target.value)}
             aria-label="Filter kelas"
-          >
+           searchable>
             <option value="">Semua</option>
             {classes.map((c) => (
               <option key={c.id} value={c.id}>
@@ -163,7 +163,7 @@ export default function RiwayatTagihanPage() {
             value={kind}
             onChange={(e) => setKind(e.target.value)}
             aria-label="Filter jenis tagihan"
-          >
+           searchable>
             <option value="">Semua</option>
             {KINDS.map((k) => (
               <option key={k.key} value={k.key}>

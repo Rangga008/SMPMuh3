@@ -151,14 +151,14 @@ export default function KasPage() {
         <div className="mb-4 flex flex-wrap items-end gap-3">
           <label className="flex min-w-36 flex-col gap-1.5">
             <span className="text-xs font-bold uppercase tracking-wider text-sand-500">Kas/Bank</span>
-            <Select value={bankAcc} onChange={(e) => setBankAcc(e.target.value)} aria-label="Filter akun">
+            <Select value={bankAcc} onChange={(e) => setBankAcc(e.target.value)} aria-label="Filter akun" searchable>
               <option value="">Semua</option>
               {banks.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
             </Select>
           </label>
           <label className="flex min-w-40 flex-col gap-1.5">
             <span className="text-xs font-bold uppercase tracking-wider text-sand-500">Kategori</span>
-            <Select value={bankCat} onChange={(e) => setBankCat(e.target.value)} aria-label="Filter kategori">
+            <Select value={bankCat} onChange={(e) => setBankCat(e.target.value)} aria-label="Filter kategori" searchable>
               <option value="">Semua</option>
               {incomeCats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </Select>
@@ -224,14 +224,14 @@ export default function KasPage() {
 >
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Ke Bank">
-              <Select name="cashAccountId" required>
+              <Select name="cashAccountId" required searchable>
                 {banks.map((a) => (
                   <option key={a.id} value={a.id}>{a.name}</option>
                 ))}
               </Select>
             </Field>
             <Field label="Kategori">
-              <Select name="categoryId" required>
+              <Select name="categoryId" required searchable>
                 {incomeCats.map((c) => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}

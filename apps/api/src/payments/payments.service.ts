@@ -105,6 +105,20 @@ const AWAITING_STATUS: Record<string, RegistrationStatus> = {
   registration_fee: 'AWAITING_PAYMENT',
   dsp_dp: 'AWAITING_FINAL_PAYMENT',
 };
+/**
+ * Predecessor sah per transisi — updateMany diguard agar pembayaran yang
+ * telat/out-of-order tidak memundurkan status pendaftaran yang sudah maju
+ * (mis. tagihan ganda yang dikonfirmasi belakangan).
+ */
+const REVIEW_FROM: Record<string, RegistrationStatus> = {
+  registration_fee: 'AWAITING_PAYMENT',
+  dsp_dp: 'AWAITING_FINAL_PAYMENT',
+};
+const PAID_FROM: Record<string, RegistrationStatus[]> = {
+  registration_fee: ['PAYMENT_REVIEW'],
+  dsp_dp: ['FINAL_PAYMENT_REVIEW'],
+  settlement: ['ACCEPTED'],
+};
 
 @Injectable()
 export class PaymentsService {
@@ -453,11 +467,13 @@ export class PaymentsService {
       },
     });
 
-    // Status pendaftaran ikut maju → menunggu verifikasi admin.
+    // Status pendaftaran ikut maju → menunggu verifikasi admin. Guard:
+    // hanya dari status "menunggu bayar" agar tidak mundur.
     const review = REVIEW_STATUS[invoice.kind];
-    if (review && invoice.registrationId) {
+    const reviewFrom = REVIEW_FROM[invoice.kind];
+    if (review && reviewFrom && invoice.registrationId) {
       await this.prisma.registration.updateMany({
-        where: { id: invoice.registrationId },
+        where: { id: invoice.registrationId, status: reviewFrom },
         data: { status: review },
       });
     }
@@ -522,9 +538,12 @@ export class PaymentsService {
         },
       });
       const awaiting = AWAITING_STATUS[payment.invoice.kind];
-      if (awaiting && payment.invoice.registrationId) {
+      const reviewStatus = REVIEW_STATUS[payment.invoice.kind];
+      // Hanya mundurkan bila memang masih di status review tagihan ini —
+      // penolakan pembayaran basi tak boleh mengubah status yang sudah maju.
+      if (awaiting && reviewStatus && payment.invoice.registrationId) {
         await this.prisma.registration.updateMany({
-          where: { id: payment.invoice.registrationId },
+          where: { id: payment.invoice.registrationId, status: reviewStatus },
           data: { status: awaiting },
         });
       }
@@ -574,9 +593,10 @@ export class PaymentsService {
       data: { invoiceId: payment.invoiceId },
     });
     const next = PAID_STATUS[payment.invoice.kind];
-    if (next) {
+    const paidFrom = PAID_FROM[payment.invoice.kind];
+    if (next && paidFrom?.length) {
       await this.prisma.registration.updateMany({
-        where: { id: reg.id },
+        where: { id: reg.id, status: { in: paidFrom } },
         data: { status: next },
       });
       if (next === 'FORM_FILLING') {

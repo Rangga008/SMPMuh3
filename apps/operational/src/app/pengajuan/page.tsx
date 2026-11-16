@@ -44,7 +44,7 @@ export default function PengajuanPage() {
       {notice ? <p className="mb-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{notice}</p> : null}
 
       <div className="mb-4 flex flex-wrap gap-2">
-        <Select value={fDept} onChange={(e) => setFDept(e.target.value)} className="min-w-40" aria-label="Filter bidang">
+        <Select value={fDept} onChange={(e) => setFDept(e.target.value)} className="min-w-40" aria-label="Filter bidang" searchable>
           <option value="">Semua bidang</option>{DEPTS.map((d) => <option key={d} value={d}>{d}</option>)}
         </Select>
         <Select value={fStatus} onChange={(e) => setFStatus(e.target.value)} className="min-w-36" aria-label="Filter status">
@@ -107,10 +107,10 @@ export default function PengajuanPage() {
         }}>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Bidang">
-              <Select name="department">{DEPTS.map((d) => <option key={d} value={d}>{d}</option>)}</Select>
+              <Select name="department" searchable>{DEPTS.map((d) => <option key={d} value={d}>{d}</option>)}</Select>
             </Field>
             <Field label="Jenis">
-              <Select name="kind">{KINDS.map((k) => <option key={k} value={k}>{k}</option>)}</Select>
+              <Select name="kind" searchable>{KINDS.map((k) => <option key={k} value={k}>{k}</option>)}</Select>
             </Field>
           </div>
           <Field label="Judul"><Input name="title" required placeholder="RKS Semester Ganjil 2026" /></Field>

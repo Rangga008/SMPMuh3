@@ -151,14 +151,14 @@ export default function AsesmenPage() {
         {!target ? (
           <>
             <Field label="Mata Pelajaran">
-              <Select name="subjectId" required>
+              <Select name="subjectId" required searchable>
                 {subjects.map((s) => (
                   <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
                 ))}
               </Select>
             </Field>
             <Field label="Rombel" hint="Kosongkan bila untuk semua rombel">
-              <Select name="classId" defaultValue="">
+              <Select name="classId" defaultValue="" searchable>
                 <option value="">— Semua rombel —</option>
                 {classes.map((c) => (
                   <option key={c.id} value={c.id}>{c.name}</option>
@@ -168,7 +168,7 @@ export default function AsesmenPage() {
           </>
         ) : null}
         <Field label="Jenis">
-          <Select name="type" required defaultValue={target?.type ?? 'FORMATIF'}>
+          <Select name="type" required defaultValue={target?.type ?? 'FORMATIF'} searchable>
             {TYPES.map((t) => (
               <option key={t.key} value={t.key}>{t.label}</option>
             ))}
@@ -215,14 +215,14 @@ export default function AsesmenPage() {
 
       <div className="mb-5 flex flex-wrap items-end gap-3">
         <Field label="Tahun Ajaran" className="w-44">
-          <Select value={yearId} onChange={(e) => setYearId(e.target.value)}>
+          <Select value={yearId} onChange={(e) => setYearId(e.target.value)} searchable>
             {years.map((y) => (
               <option key={y.id} value={y.id}>{y.name}{y.isActive ? ' (aktif)' : ''}</option>
             ))}
           </Select>
         </Field>
         <Field label="Rombel" className="w-44">
-          <Select value={classId} onChange={(e) => setClassId(e.target.value)}>
+          <Select value={classId} onChange={(e) => setClassId(e.target.value)} searchable>
             <option value="">Semua</option>
             {classes.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
@@ -230,7 +230,7 @@ export default function AsesmenPage() {
           </Select>
         </Field>
         <Field label="Mata Pelajaran" className="w-52">
-          <Select value={subjectId} onChange={(e) => setSubjectId(e.target.value)}>
+          <Select value={subjectId} onChange={(e) => setSubjectId(e.target.value)} searchable>
             <option value="">Semua</option>
             {subjects.map((s) => (
               <option key={s.id} value={s.id}>{s.name}</option>

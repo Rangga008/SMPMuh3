@@ -105,7 +105,7 @@ export default function AbsensiPegawaiPage() {
           </div>
           <div className="w-56">
             <Field label="Pegawai">
-              <Select value={fEmployee} onChange={(e) => setFEmployee(e.target.value)}>
+              <Select value={fEmployee} onChange={(e) => setFEmployee(e.target.value)} searchable>
                 <option value="">Semua pegawai</option>
                 {employees.map((p) => (
                   <option key={p.id} value={p.id}>{p.name}</option>

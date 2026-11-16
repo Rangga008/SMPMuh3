@@ -91,7 +91,7 @@ export default function KeuanganPage() {
         <>
           <div className="mb-5 flex flex-wrap items-end gap-3 rounded-2xl border border-sand-200 bg-white p-4 shadow-card">
             <Field label="Tahun Ajaran" className="w-48">
-              <Select value={yearId} onChange={(e) => setYearId(e.target.value)} aria-label="Tahun ajaran">
+              <Select value={yearId} onChange={(e) => setYearId(e.target.value)} aria-label="Tahun ajaran" searchable>
                 <option value="">Semua</option>
                 {years.map((y) => (
                   <option key={y.id} value={y.id}>{y.name}{y.isActive ? ' (aktif)' : ''}</option>

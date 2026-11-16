@@ -237,7 +237,7 @@ export default function WhatsappSettingsPage() {
       <Widget title="Antrean & Riwayat Pesan">
           <div className="mb-4 flex flex-wrap items-end gap-3">
             <Field label="Tipe Pesan" className="w-52">
-              <Select value={type} onChange={(e) => setType(e.target.value)}>
+              <Select value={type} onChange={(e) => setType(e.target.value)} searchable>
                 <option value="">Semua tipe</option>
                 {(data?.types ?? []).map((t) => (
                   <option key={t} value={t}>
@@ -250,7 +250,7 @@ export default function WhatsappSettingsPage() {
               <Select
                 value={status}
                 onChange={(e) => setStatus(e.target.value as WaMessageStatus | '')}
->
+ searchable>
                 <option value="">Semua status</option>
                 {WA_MESSAGE_STATUSES.map((s) => (
                   <option key={s} value={s}>

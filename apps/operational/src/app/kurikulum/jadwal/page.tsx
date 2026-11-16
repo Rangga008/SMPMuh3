@@ -150,14 +150,14 @@ export default function JadwalPage() {
 
       <div className="mb-5 flex flex-wrap items-end gap-3">
         <Field label="Tahun Ajaran" className="w-44">
-          <Select value={yearId} onChange={(e) => setYearId(e.target.value)}>
+          <Select value={yearId} onChange={(e) => setYearId(e.target.value)} searchable>
             {years.map((y) => (
               <option key={y.id} value={y.id}>{y.name}{y.isActive ? ' (aktif)' : ''}</option>
             ))}
           </Select>
         </Field>
         <Field label="Rombel" className="w-44">
-          <Select value={classId} onChange={(e) => setClassId(e.target.value)}>
+          <Select value={classId} onChange={(e) => setClassId(e.target.value)} searchable>
             {classes.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
@@ -319,7 +319,7 @@ export default function JadwalPage() {
             />
           </Field>
           <Field label="Mata Pelajaran">
-            <Select name="subjectId" required>
+            <Select name="subjectId" required searchable>
               {subjects.map((s) => (
                 <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
               ))}
@@ -356,7 +356,7 @@ export default function JadwalPage() {
           }}
         >
           <Field label="Penugasan" className="sm:col-span-2">
-            <Select name="assignmentId" required>
+            <Select name="assignmentId" required searchable>
               {classAssignments.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.subject.name} — {a.employee.name}
@@ -365,14 +365,14 @@ export default function JadwalPage() {
             </Select>
           </Field>
           <Field label="Hari">
-            <Select name="day" required defaultValue="1">
+            <Select name="day" required defaultValue="1" searchable>
               {DAYS.slice(1).map((d, i) => (
                 <option key={i + 1} value={i + 1}>{d}</option>
               ))}
             </Select>
           </Field>
           <Field label="Ruangan (Prasarana)">
-            <Select name="prasaranaId" defaultValue="">
+            <Select name="prasaranaId" defaultValue="" searchable>
               <option value="">— pilih ruangan —</option>
               {rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
             </Select>
@@ -438,7 +438,7 @@ export default function JadwalPage() {
               />
             </Field>
             <Field label="Mata Pelajaran">
-              <Select name="subjectId" required defaultValue={editAssign.subject.id}>
+              <Select name="subjectId" required defaultValue={editAssign.subject.id} searchable>
                 {subjects.map((s) => (
                   <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
                 ))}
@@ -485,14 +485,14 @@ export default function JadwalPage() {
               {editEntry.assignment.class.name}
             </p>
             <Field label="Hari">
-              <Select name="day" required defaultValue={String(editEntry.day)}>
+              <Select name="day" required defaultValue={String(editEntry.day)} searchable>
                 {DAYS.slice(1).map((d, i) => (
                   <option key={i + 1} value={i + 1}>{d}</option>
                 ))}
               </Select>
             </Field>
             <Field label="Ruangan (Prasarana)">
-              <Select name="prasaranaId" defaultValue={editEntry.prasaranaId ?? ''}>
+              <Select name="prasaranaId" defaultValue={editEntry.prasaranaId ?? ''} searchable>
                 <option value="">— pilih ruangan —</option>
                 {rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
               </Select>

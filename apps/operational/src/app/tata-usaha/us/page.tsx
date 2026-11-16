@@ -251,7 +251,7 @@ export default function UsPage() {
             </button>
           ))}
         </div>
-        <Select value={yearId} onChange={(e) => setYearId(e.target.value)} className="w-44">
+        <Select value={yearId} onChange={(e) => setYearId(e.target.value)} className="w-44" searchable>
           {years.map((y) => (
             <option key={y.id} value={y.id}>
               {y.name}

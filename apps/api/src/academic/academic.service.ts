@@ -1367,6 +1367,49 @@ export class AcademicService {
     return e;
   }
 
+  /**
+   * Pindah rombel dalam tahun ajaran yang sama — update classId pada
+   * enrollment yang ada (atau buat baru bila belum ada). Credential & seat
+   * ujian tetap valid karena terikat studentId; gate sesi/rombel ujian
+   * membaca enrollment terkini saat siswa masuk.
+   */
+  async moveEnrollment(dto: EnrollmentDto, actorId: string) {
+    const cls = await this.prisma.class.findUnique({ where: { id: dto.classId } });
+    if (!cls || cls.academicYearId !== dto.academicYearId) {
+      throw new BadRequestException('Rombel tujuan tidak ada pada tahun ajaran ini.');
+    }
+    const existing = await this.prisma.enrollment.findUnique({
+      where: {
+        studentId_academicYearId: {
+          studentId: dto.studentId,
+          academicYearId: dto.academicYearId,
+        },
+      },
+      include: { class: { select: { name: true } } },
+    });
+    if (existing?.classId === dto.classId) {
+      throw new ConflictException('Siswa sudah berada di rombel tersebut.');
+    }
+    const e = existing
+      ? await this.prisma.enrollment.update({
+          where: { id: existing.id },
+          data: { classId: dto.classId },
+          include: { student: { select: { name: true } }, class: { select: { name: true } } },
+        })
+      : await this.prisma.enrollment.create({
+          data: dto,
+          include: { student: { select: { name: true } }, class: { select: { name: true } } },
+        });
+    await this.audit.log({
+      actorId,
+      action: existing ? 'enrollment.move' : 'enrollment.create',
+      entity: 'enrollment',
+      entityId: e.id,
+      metadata: existing ? { from: existing.class.name, to: e.class.name } : undefined,
+    });
+    return e;
+  }
+
   listEnrollments(classId: string) {
     return this.prisma.enrollment.findMany({
       where: { classId },

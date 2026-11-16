@@ -203,6 +203,17 @@ export class StudentsService {
       where: { id },
       select: { parentId: true },
     });
+    // NIS/NISN unik — clash check sama seperti create(); tanpa ini edit
+    // ke nomor yang sudah dipakai melempar error DB mentah & bikin login
+    // CBT (findFirst by nis) ambigu.
+    if (dto.nis) {
+      const clash = await this.prisma.student.findUnique({ where: { nis: dto.nis.trim() } });
+      if (clash && clash.id !== id) throw new ConflictException(`NIS ${dto.nis} sudah terdaftar`);
+    }
+    if (dto.nisn) {
+      const clash = await this.prisma.student.findUnique({ where: { nisn: dto.nisn.trim() } });
+      if (clash && clash.id !== id) throw new ConflictException(`NISN ${dto.nisn} sudah terdaftar`);
+    }
     const data: Prisma.StudentUpdateInput = this.toUpdateData(dto);
     // Data ortu/wali — siswa non-SPMB (kelas lanjutan/mutasi) belum punya
     // akun ortu, jadi dibuat bila nama/HP diisi; yang sudah ada diperbarui.
@@ -219,6 +230,15 @@ export class StudentsService {
       data,
       select: studentSelect,
     });
+    // Satu password per siswa untuk semua ujian — saat password CBT diubah
+    // di sini, kredensial per-ujian ikut disamakan agar kartu lama & baru
+    // konsisten (login tetap mengecek students.password lebih dulu).
+    if (dto.password !== undefined && dto.password.trim()) {
+      await this.prisma.examCredential.updateMany({
+        where: { studentId: id },
+        data: { password: dto.password.trim().toUpperCase() },
+      });
+    }
     await this.audit.log({
       actorId,
       action: 'student.update',
@@ -309,7 +329,8 @@ export class StudentsService {
         level: dto.level ?? null,
         year: dto.year ?? null,
         description: dto.description ?? null,
-        evidenceDocumentId: dto.evidenceDocumentId ?? null,
+        // undefined = jangan sentuh bukti lama; null/string = ganti/hapus eksplisit.
+        ...(dto.evidenceDocumentId !== undefined ? { evidenceDocumentId: dto.evidenceDocumentId || null } : {}),
       },
     });
     await this.audit.log({ actorId, action: 'achievement.update', entity: 'achievement', entityId: id });
@@ -838,9 +859,9 @@ export class StudentsService {
   private toUpdateData(dto: UpdateStudentDto): Prisma.StudentUpdateInput {
     const data: Prisma.StudentUpdateInput = {};
     if (dto.name !== undefined) data.name = dto.name.trim();
-    if (dto.nis !== undefined) data.nis = dto.nis || null;
-    if (dto.nisn !== undefined) data.nisn = dto.nisn || null;
-    if (dto.nik !== undefined) data.nik = dto.nik || null;
+    if (dto.nis !== undefined) data.nis = dto.nis.trim() || null;
+    if (dto.nisn !== undefined) data.nisn = dto.nisn.trim() || null;
+    if (dto.nik !== undefined) data.nik = dto.nik.trim() || null;
     if (dto.gender !== undefined) data.gender = dto.gender;
     if (dto.motherName !== undefined) data.motherName = dto.motherName || null;
     if (dto.birthPlace !== undefined) data.birthPlace = dto.birthPlace || null;

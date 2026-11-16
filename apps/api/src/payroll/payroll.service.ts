@@ -812,7 +812,7 @@ export class PayrollService {
         lines.push({
           kind: 'BASE',
           label: prev?.requiredManual
-            ? `Gaji wajib ${Math.round(required / 60)} jam/bulan (dikoreksi)`
+            ? `Gaji wajib ${Math.round(required / 60)} jam/bulan (manual)`
             : `Gaji wajib ${Math.round(emp.monthlyRequiredMinutes / 60)} jam/bulan`,
           amount: basePay,
         });
@@ -821,10 +821,12 @@ export class PayrollService {
           kind: 'TRANSPORT',
           label: `Transport ${Math.round(transportMinutes / 60)} jam${
             manual !== 0
-              ? ` (absen ${Math.round(autoTransport / 60)} j ${manual > 0 ? '+' : '−'} manual ${Math.abs(Math.round(manual / 60))} j)`
+              ? autoTransport > 0
+                ? ` (absen ${Math.round(autoTransport / 60)} j ${manual > 0 ? '+' : '−'} manual ${Math.abs(Math.round(manual / 60))} j)`
+                : ' (manual)'
               : att.length === 0
                 ? ' (penuh — tanpa data absen)'
-                : ' hadir'
+                : ' (absen)'
           }`,
           amount: transportPay,
         });

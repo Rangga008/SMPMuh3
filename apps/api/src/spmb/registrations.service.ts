@@ -11,6 +11,7 @@ import {
   REGISTRATION_EDITABLE,
   REGISTRATION_STATUS_LABELS,
   REQUIRED_DOC_TYPES,
+  STAFF_TRANSITIONS,
 } from '@smpmuh3/types';
 import { randomInt } from 'node:crypto';
 import argon2 from 'argon2';
@@ -438,15 +439,24 @@ export class RegistrationsService {
   /**
    * Cek status publik — nomor pendaftaran + email ATAU nomor HP orang tua.
    */
-  async lookup(number: string) {
+  async lookup(number: string, key?: string) {
     const reg = await this.prisma.registration.findUnique({
       where: { number },
       include: {
         wave: { select: { name: true } },
         candidate: { select: { name: true } },
+        parent: { select: { email: true, phone: true } },
       },
     });
     if (!reg) return null;
+    // Faktor kedua — nomor pendaftaran bisa ditebak; wajib email atau ≥4
+    // digit akhir HP ortu. Salah → disamarkan seperti nomor tak ditemukan.
+    const k = (key ?? '').trim().toLowerCase();
+    const digits = k.replace(/\D/g, '');
+    const ok =
+      (!!reg.parent.email && reg.parent.email.toLowerCase() === k) ||
+      (digits.length >= 4 && !!reg.parent.phone && reg.parent.phone.endsWith(digits));
+    if (!ok) return null;
 
     const note =
       reg.status === 'NEEDS_REVISION'
@@ -556,18 +566,42 @@ export class RegistrationsService {
     actorId: string,
     note?: string | undefined,
   ) {
-    const updated = await this.prisma.registration.update({
+    const current = await this.prisma.registration.findUniqueOrThrow({
       where: { id },
-      data: {
-        status,
-        ...(status === 'NEEDS_REVISION'
-          ? { revisionNote: note ?? null }
-          : {}),
-        ...(status === 'ACCEPTED' || status === 'REJECTED'
-          ? { decisionNote: note ?? null }
-          : {}),
-      },
-      include: { ...include, parent: { select: { id: true } } },
+      select: { status: true },
+    });
+    // Guard transisi legal — status tak boleh lompat/mundur sembarangan.
+    const allowed = STAFF_TRANSITIONS[current.status] ?? [];
+    if (!allowed.includes(status)) {
+      throw new BadRequestException(
+        `Transisi ${REGISTRATION_STATUS_LABELS[current.status]} → ${REGISTRATION_STATUS_LABELS[status]} tidak diizinkan.`,
+      );
+    }
+    if ((status === 'NEEDS_REVISION' || status === 'REJECTED') && !note?.trim()) {
+      throw new BadRequestException('Catatan wajib diisi untuk revisi/penolakan.');
+    }
+    const updated = await this.prisma.$transaction(async (tx) => {
+      // Pendaftaran ditolak → tagihan terbuka dibatalkan agar tak bisa
+      // lagi dibayar (uang tak masuk untuk pendaftar yang sudah ditolak).
+      if (status === 'REJECTED') {
+        await tx.invoice.updateMany({
+          where: { registrationId: id, status: 'OPEN' },
+          data: { status: 'CANCELLED' },
+        });
+      }
+      return tx.registration.update({
+        where: { id },
+        data: {
+          status,
+          ...(status === 'NEEDS_REVISION'
+            ? { revisionNote: note ?? null }
+            : {}),
+          ...(status === 'ACCEPTED' || status === 'REJECTED'
+            ? { decisionNote: note ?? null }
+            : {}),
+        },
+        include: { ...include, parent: { select: { id: true } } },
+      });
     });
     await this.audit.log({
       actorId,
@@ -647,6 +681,12 @@ export class RegistrationsService {
     }
     const cand = reg.candidate;
     if (cand.student) return cand.student; // sudah jadi murid
+    // NISN kandidat bisa bentrok dengan siswa yang sudah terdaftar manual —
+    // cek dulu agar gagalnya jelas, bukan error DB mentah.
+    if (cand.nisn) {
+      const clash = await this.prisma.student.findUnique({ where: { nisn: cand.nisn } });
+      if (clash) throw new ConflictException(`NISN ${cand.nisn} sudah dipakai siswa lain (${clash.name}) — periksa data kandidat.`);
+    }
     // Nama/HP ortu berasal dari akun ortu pendaftar — disalin ke kolom buku
     // induk (fatherName/parentPhone) agar tidak input ulang.
     const parent = reg.parentId
@@ -681,6 +721,11 @@ export class RegistrationsService {
       await tx.invoice.updateMany({
         where: { registrationId: id, studentId: null, status: { notIn: ['PAID', 'CANCELLED', 'EXPIRED'] } },
         data: { studentId: s.id, academicYearId: reg.academicYearId },
+      });
+      // Pendaftaran selesai — calon sudah resmi jadi siswa.
+      await tx.registration.update({
+        where: { id },
+        data: { status: 'COMPLETED' },
       });
       return s;
     });

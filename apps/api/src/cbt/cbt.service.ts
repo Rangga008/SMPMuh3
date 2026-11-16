@@ -324,16 +324,25 @@ export class CbtService {
     return updated;
   }
 
-  /** Acak ulang password satu siswa — bila bocor/hilang, kartu dicetak ulang. */
+  /** Acak ulang password satu siswa — bila bocor/hilang, kartu dicetak ulang.
+   *  Menulis students.password (password master — yang tercetak di kartu)
+   *  lalu menyamakan semua credential per-ujian agar satu password berlaku
+   *  di mana-mana dan password lama benar-benar tak berlaku lagi. */
   async regenCredential(examId: string, studentId: string, actor: AuthUser) {
     await this.scopeOk(actor, examId, true);
-    const cred = await this.prisma.examCredential.upsert({
+    const pw = this.genPassword();
+    await this.prisma.student.update({ where: { id: studentId }, data: { password: pw } });
+    await this.prisma.examCredential.upsert({
       where: { examId_studentId: { examId, studentId } },
-      update: { password: this.genPassword() },
-      create: { examId, studentId, password: this.genPassword() },
+      update: { password: pw },
+      create: { examId, studentId, password: pw },
+    });
+    await this.prisma.examCredential.updateMany({
+      where: { studentId, examId: { not: examId } },
+      data: { password: pw },
     });
     await this.audit.log({ actorId: actor.id, action: 'exam.credential-regen', entity: 'exam', entityId: examId, metadata: { studentId } });
-    return { studentId, password: cred.password };
+    return { studentId, password: pw };
   }
 
   /** Kode baru — bila kode lama bocor, ganti tanpa hapus ujian. */
@@ -451,11 +460,6 @@ export class CbtService {
     const existing = await this.prisma.examCredential.findMany({ where: { examId }, select: { studentId: true } });
     const have = new Set(existing.map((e) => e.studentId));
     const missing = enrolled.filter((e) => !have.has(e.studentId));
-    if (missing.length) {
-      await this.prisma.examCredential.createMany({
-        data: missing.map((e) => ({ examId, studentId: e.studentId, password: this.genPassword() })),
-      });
-    }
     // Password siswa (kartu baru) — isi yang masih kosong agar siap dicetak.
     const noPw = await this.prisma.student.findMany({
       where: { id: { in: enrolled.map((e) => e.studentId) }, password: null },
@@ -467,19 +471,42 @@ export class CbtService {
         data: { password: this.genPassword() },
       });
     }
+    if (missing.length) {
+      // Credential mengikuti students.password — satu password per siswa
+      // untuk semua ujian (baru dibuat di atas bila belum ada).
+      const pwOf = new Map(
+        (
+          await this.prisma.student.findMany({
+            where: { id: { in: missing.map((e) => e.studentId) } },
+            select: { id: true, password: true },
+          })
+        ).map((s) => [s.id, s.password ?? this.genPassword()]),
+      );
+      await this.prisma.examCredential.createMany({
+        data: missing.map((e) => ({ examId, studentId: e.studentId, password: pwOf.get(e.studentId)! })),
+      });
+    }
     return { created: missing.length };
   }
 
-  /** Password siswa untuk satu ujian — dibuat malas bila belum ada. */
+  /** Password siswa untuk satu ujian — dibuat malas bila belum ada, mengikuti
+   *  students.password agar satu password berlaku untuk semua ujian. */
   private async credentialFor(examId: string, studentId: string) {
-    return (
-      (await this.prisma.examCredential.findUnique({
-        where: { examId_studentId: { examId, studentId } },
-      })) ??
-      (await this.prisma.examCredential.create({
-        data: { examId, studentId, password: this.genPassword() },
-      }))
-    );
+    const found = await this.prisma.examCredential.findUnique({
+      where: { examId_studentId: { examId, studentId } },
+    });
+    if (found) return found;
+    const student = await this.prisma.student.findUniqueOrThrow({
+      where: { id: studentId },
+      select: { password: true },
+    });
+    const pw = student.password ?? this.genPassword();
+    if (!student.password) {
+      await this.prisma.student.update({ where: { id: studentId }, data: { password: pw } });
+    }
+    return this.prisma.examCredential.create({
+      data: { examId, studentId, password: pw },
+    });
   }
 
   /** Login awal siswa: NIS + password kartu → identitas + daftar ujian aktif.
@@ -771,10 +798,19 @@ export class CbtService {
     const passages = codes.length
       ? await this.prisma.assessmentPassage.findMany({ where: { assessmentId: exam.assessmentId, code: { in: codes } }, select: { code: true, content: true, media: true } })
       : [];
+    // Anti-bocor kunci: untuk JODOH, `pairs[].right` adalah jawaban benar —
+    // jangan kirim ke siswa. Siswa hanya butuh `left` + pool `rights`.
+    const sanitized = questions.map((q) => {
+      if (q.type !== 'MATCHING') return q;
+      const opts = (q.options ?? {}) as { pairs?: { left: string; right: string }[]; rights?: string[] };
+      const pairs = opts.pairs ?? [];
+      const rights = opts.rights?.length ? opts.rights : [...new Set(pairs.map((p) => p.right))];
+      return { ...q, options: { ...opts, pairs: pairs.map((p) => ({ left: p.left })), rights } };
+    });
     // Acak deterministik per attempt bila diminta — hash sederhana id+token.
     const ordered = exam.shuffle
-      ? [...questions].sort((a, b) => this.seedOf(a.id, token) - this.seedOf(b.id, token))
-      : questions;
+      ? [...sanitized].sort((a, b) => this.seedOf(a.id, token) - this.seedOf(b.id, token))
+      : sanitized;
     return {
       questions: ordered,
       passages,

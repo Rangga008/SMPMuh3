@@ -106,12 +106,12 @@ export default function PenugasanShiftPage() {
       >
         <div className="mb-3 grid gap-2 sm:grid-cols-3">
           <Input placeholder="Cari pegawai (nama/NIP/NUPTK)…" value={q} onChange={(e) => setQ(e.target.value)} />
-          <Select value={fDay} onChange={(e) => setFDay(e.target.value)}>
+          <Select value={fDay} onChange={(e) => setFDay(e.target.value)} searchable>
             <option value="">Semua hari</option>
             <option value="-1">Khusus: tiap hari</option>
             {DOW_LABELS.map((d, i) => <option key={i} value={i}>{d}</option>)}
           </Select>
-          <Select value={fShift} onChange={(e) => setFShift(e.target.value)}>
+          <Select value={fShift} onChange={(e) => setFShift(e.target.value)} searchable>
             <option value="">Semua shift</option>
             {shifts.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </Select>
@@ -162,7 +162,7 @@ export default function PenugasanShiftPage() {
             />
           </Field>
           <Field label="Shift">
-            <Select name="shiftId" required defaultValue="">
+            <Select name="shiftId" required defaultValue="" searchable>
               <option value="" disabled>Pilih shift…</option>
               {shifts.map((s) => (
                 <option key={s.id} value={s.id}>{s.name} ({minToHHMM(s.startMinute)}–{minToHHMM(s.endMinute)})</option>
@@ -170,7 +170,7 @@ export default function PenugasanShiftPage() {
             </Select>
           </Field>
           <Field label="Berlaku hari">
-            <Select name="dayOfWeek" defaultValue="-1">
+            <Select name="dayOfWeek" defaultValue="-1" searchable>
               <option value="-1">Tiap hari</option>
               {DOW_LABELS.map((d, i) => <option key={i} value={i}>{d}</option>)}
             </Select>

@@ -234,7 +234,7 @@ export default function TagihanPage() {
       <div className="mb-5 flex flex-wrap items-end gap-3 rounded-2xl border border-sand-200 bg-white p-4 shadow-card">
         <label className="flex min-w-36 flex-col gap-1.5">
           <span className="text-xs font-bold uppercase tracking-wider text-sand-500">Tahun Ajaran</span>
-          <Select value={yearId} onChange={(e) => setYearId(e.target.value)} aria-label="Filter tahun ajaran">
+          <Select value={yearId} onChange={(e) => setYearId(e.target.value)} aria-label="Filter tahun ajaran" searchable>
             <option value="">Semua</option>
             {years.map((y) => (
               <option key={y.id} value={y.id}>{y.name}{y.isActive ? ' (aktif)' : ''}</option>
@@ -243,7 +243,7 @@ export default function TagihanPage() {
         </label>
         <label className="flex min-w-32 flex-col gap-1.5">
           <span className="text-xs font-bold uppercase tracking-wider text-sand-500">Kelas</span>
-          <Select value={classId} onChange={(e) => setClassId(e.target.value)} aria-label="Filter kelas">
+          <Select value={classId} onChange={(e) => setClassId(e.target.value)} aria-label="Filter kelas" searchable>
             <option value="">Semua</option>
             {classes.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
@@ -252,7 +252,7 @@ export default function TagihanPage() {
         </label>
         <label className="flex min-w-32 flex-col gap-1.5">
           <span className="text-xs font-bold uppercase tracking-wider text-sand-500">Jenis</span>
-          <Select value={kind} onChange={(e) => setKind(e.target.value)} aria-label="Filter jenis tagihan">
+          <Select value={kind} onChange={(e) => setKind(e.target.value)} aria-label="Filter jenis tagihan" searchable>
             <option value="">Semua</option>
             {KINDS.map((k) => (
               <option key={k.key} value={k.key}>{k.label}</option>
@@ -445,7 +445,7 @@ export default function TagihanPage() {
               <Input name="title" required placeholder="SPP November 2026" />
             </Field>
             <Field label="Jenis">
-              <Select name="kind" required>
+              <Select name="kind" required searchable>
                 {KINDS.map((k) => (
                   <option key={k.key} value={k.key}>{k.label}</option>
                 ))}
@@ -454,7 +454,7 @@ export default function TagihanPage() {
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
             <Field label="Tahun Ajaran">
-              <Select name="academicYearId" defaultValue={yearId}>
+              <Select name="academicYearId" defaultValue={yearId} searchable>
                 <option value="">—</option>
                 {years.map((y) => (
                   <option key={y.id} value={y.id}>{y.name}</option>
@@ -462,7 +462,7 @@ export default function TagihanPage() {
               </Select>
             </Field>
             <Field label="Semester">
-              <Select name="semesterId">
+              <Select name="semesterId" searchable>
                 <option value="">—</option>
                 {semesters.map((s) => (
                   <option key={s.id} value={s.id}>{s.name}</option>
@@ -529,14 +529,14 @@ export default function TagihanPage() {
           </p>
           <div className="grid gap-3 sm:grid-cols-3">
             <Field label="Tahun Ajaran">
-              <Select name="academicYearId" required defaultValue={yearId}>
+              <Select name="academicYearId" required defaultValue={yearId} searchable>
                 {years.map((y) => (
                   <option key={y.id} value={y.id}>{y.name}</option>
                 ))}
               </Select>
             </Field>
             <Field label="Semester">
-              <Select name="semesterId">
+              <Select name="semesterId" searchable>
                 <option value="">—</option>
                 {semesters.map((s) => (
                   <option key={s.id} value={s.id}>{s.name}</option>
@@ -549,7 +549,7 @@ export default function TagihanPage() {
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Kelas" hint="kosong = semua kelas">
-              <Select name="classId">
+              <Select name="classId" searchable>
                 <option value="">Semua kelas</option>
                 {classes.map((c) => (
                   <option key={c.id} value={c.id}>{c.name}</option>
@@ -567,7 +567,7 @@ export default function TagihanPage() {
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Jenis Tagihan">
-              <Select name="kind" required>
+              <Select name="kind" required searchable>
                 {KINDS.map((k) => (
                   <option key={k.key} value={k.key}>{k.label}</option>
                 ))}
@@ -636,7 +636,7 @@ function ItemRows() {
             value={r.k}
             onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, k: e.target.value } : x)))}
             aria-label={`Jenis komponen ${i + 1}`}
->
+ searchable>
             {KINDS.map((k) => (
               <option key={k.key} value={k.key}>{k.label}</option>
             ))}
@@ -876,7 +876,7 @@ function PayModal({
         </div>
         <div className="grid gap-3 sm:grid-cols-3">
           <Field label="Masuk ke Kas">
-            <Select name="cashAccountId" required defaultValue={accounts.find((a) => a.key === 'tunai')?.id ?? accounts[0]?.id ?? ''}>
+            <Select name="cashAccountId" required defaultValue={accounts.find((a) => a.key === 'tunai')?.id ?? accounts[0]?.id ?? ''} searchable>
               {accounts.map((a) => (
                 <option key={a.id} value={a.id}>{a.name}</option>
               ))}

@@ -111,12 +111,12 @@ export default function JadwalKelasPage() {
 
       <div className="mb-5 flex flex-wrap items-end gap-3 rounded-2xl border border-sand-200 bg-white p-4 shadow-card">
         <Field label="Tahun Ajaran">
-          <Select value={yearId} onChange={(e) => { setYearId(e.target.value); setClassId(''); }}>
+          <Select value={yearId} onChange={(e) => { setYearId(e.target.value); setClassId(''); }} searchable>
             {years.map((y) => <option key={y.id} value={y.id}>{y.name}{y.isActive ? ' (aktif)' : ''}</option>)}
           </Select>
         </Field>
         <Field label="Kelas" className="min-w-40">
-          <Select value={classId} onChange={(e) => setClassId(e.target.value)}>
+          <Select value={classId} onChange={(e) => setClassId(e.target.value)} searchable>
             {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </Select>
         </Field>
@@ -197,7 +197,7 @@ export default function JadwalKelasPage() {
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Hari (rutin mingguan)">
-              <Select name="day" defaultValue="1">
+              <Select name="day" defaultValue="1" searchable>
                 <option value="">— tanggal spesifik —</option>
                 {[1, 2, 3, 4, 5, 6, 7].map((d) => <option key={d} value={d}>{DAY_NAMES[d]}</option>)}
               </Select>

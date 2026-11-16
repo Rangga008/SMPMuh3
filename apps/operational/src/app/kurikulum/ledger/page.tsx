@@ -88,23 +88,23 @@ export default function LedgerPage() {
 
       <div className="mb-4 flex flex-wrap items-end gap-3 rounded-2xl border border-sand-200 bg-white p-4 shadow-card">
         <Field label="Tahun Ajaran">
-          <Select value={yearId} onChange={(e) => { setYearId(e.target.value); setClassId(''); setExamId(''); }}>
+          <Select value={yearId} onChange={(e) => { setYearId(e.target.value); setClassId(''); setExamId(''); }} searchable>
             {years.map((y) => <option key={y.id} value={y.id}>{y.name}{y.isActive ? ' (aktif)' : ''}</option>)}
           </Select>
         </Field>
         <Field label="Jenjang">
-          <Select value={grade} onChange={(e) => setGrade(e.target.value ? Number(e.target.value) : '')}>
+          <Select value={grade} onChange={(e) => setGrade(e.target.value ? Number(e.target.value) : '')} searchable>
             <option value="">Semua</option>
             {GRADES.map((g) => <option key={g} value={g}>Kelas {g}</option>)}
           </Select>
         </Field>
         <Field label="Kelas">
-          <Select value={classId} onChange={(e) => { setClassId(e.target.value); setExamId(''); }}>
+          <Select value={classId} onChange={(e) => { setClassId(e.target.value); setExamId(''); }} searchable>
             {classOptions.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </Select>
         </Field>
         <Field label="Ujian (khusus tab Nilai Ujian)">
-          <Select value={examId} onChange={(e) => { setExamId(e.target.value); if (e.target.value) setTab('ujian'); }}>
+          <Select value={examId} onChange={(e) => { setExamId(e.target.value); if (e.target.value) setTab('ujian'); }} searchable>
             <option value="">— pilih ujian —</option>
             {examOptions.map((x) => (
               <option key={x.id} value={x.id}>{x.title} · {x.code} · {x.assessment.subject.name}</option>

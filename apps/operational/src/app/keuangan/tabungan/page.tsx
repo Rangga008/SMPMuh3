@@ -70,7 +70,7 @@ export default function TabunganPage() {
       <div className="mb-5 flex flex-wrap items-end gap-3 rounded-2xl border border-sand-200 bg-white p-4 shadow-card">
         <label className="flex min-w-32 flex-col gap-1.5">
           <span className="text-xs font-bold uppercase tracking-wider text-sand-500">Jenjang</span>
-          <Select value={grade} onChange={(e) => { setGrade(e.target.value); setClassId(''); }} aria-label="Filter jenjang">
+          <Select value={grade} onChange={(e) => { setGrade(e.target.value); setClassId(''); }} aria-label="Filter jenjang" searchable>
             <option value="">Semua</option>
             {grades.map((g) => (
               <option key={g} value={g}>Kelas {g}</option>
@@ -79,7 +79,7 @@ export default function TabunganPage() {
         </label>
         <label className="flex min-w-40 flex-col gap-1.5">
           <span className="text-xs font-bold uppercase tracking-wider text-sand-500">Kelas</span>
-          <Select value={classId} onChange={(e) => setClassId(e.target.value)} aria-label="Filter kelas">
+          <Select value={classId} onChange={(e) => setClassId(e.target.value)} aria-label="Filter kelas" searchable>
             <option value="">Semua</option>
             {classes.filter((c) => !grade || c.gradeLevel === Number(grade)).map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>

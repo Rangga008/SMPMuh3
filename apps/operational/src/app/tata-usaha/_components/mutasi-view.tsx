@@ -98,6 +98,7 @@ export function MutasiView({ direction }: { direction: 'IN' | 'OUT' }) {
     const f = new FormData(e.currentTarget);
     const val = (k: string) => String(f.get(k) ?? '').trim() || undefined;
     const dto = {
+      studentId: picked?.id ?? null,
       studentName: picked?.name ?? val('studentName'),
       nisn: val('nisn') ?? picked?.nisn ?? null,
       date: val('date'),
@@ -163,7 +164,7 @@ export function MutasiView({ direction }: { direction: 'IN' | 'OUT' }) {
           <option value="DONE">Selesai</option>
           <option value="CANCELLED">Batal</option>
         </Select>
-        <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="w-44">
+        <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="w-44" searchable>
           <option value="">Semua kategori</option>
           {categories.map((c) => (
             <option key={c.id} value={c.id}>{c.name}</option>
@@ -180,7 +181,14 @@ export function MutasiView({ direction }: { direction: 'IN' | 'OUT' }) {
 >
         {rows.filter((m) => !status || m.status === status).map((m) => (
           <tr key={m.id}>
-            <td className="px-5 py-3 font-semibold text-sand-900">{m.studentName}</td>
+            <td className="px-5 py-3 font-semibold text-sand-900">
+              {m.studentName}
+              {m.student ? (
+                <span className={`mt-0.5 block text-[11px] font-medium ${m.student.status === 'TRANSFERRED' ? 'text-amber-600' : m.student.status === 'ACTIVE' ? 'text-emerald-600' : 'text-sand-400'}`}>
+                  {m.student.status === 'TRANSFERRED' ? '↳ Status siswa: Pindah' : m.student.status === 'ACTIVE' ? '↳ Status siswa: Aktif' : `↳ ${m.student.status}`}
+                </span>
+              ) : null}
+            </td>
             <td className="px-5 py-3 text-sand-600">{m.nisn ?? '—'}</td>
             <td className="whitespace-nowrap px-5 py-3 text-sand-600">{fmtDate(m.date)}</td>
             <td className="px-5 py-3 text-sand-600">{m.school ?? '—'}</td>
@@ -204,7 +212,7 @@ export function MutasiView({ direction }: { direction: 'IN' | 'OUT' }) {
                     </RowBtn>
                   </>
                 ) : null}
-                <RowBtn type="button" onClick={async () => { setModalFile(null); setModal(m); }}>
+                <RowBtn type="button" onClick={async () => { setModalFile(null); setPicked(m.student ? ({ id: m.student.id, name: m.student.name, nis: m.student.nis, nisn: m.nisn } as StudentDto) : null); setModal(m); }}>
                   Ubah
                 </RowBtn>
                 {m.status === 'PROCESS' ? (
@@ -227,8 +235,8 @@ export function MutasiView({ direction }: { direction: 'IN' | 'OUT' }) {
         title={modal === 'new' ? `Catat ${title}` : 'Ubah Mutasi'}
 >
         <form className="grid gap-4 sm:grid-cols-2" onSubmit={onSubmit}>
-          {!isIn && modal === 'new' ? (
-            <Field label="Siswa (cari nama/NIS)" className="sm:col-span-2" hint="Opsional — isi manual bila belum terdata">
+          {!isIn ? (
+            <Field label="Siswa (cari nama/NIS)" className="sm:col-span-2" hint="Tertaut ke data siswa — status ikut berubah saat mutasi selesai">
               <SearchSelect
                 placeholder="Ketik nama atau NIS siswa…"
                 value={picked}
@@ -268,7 +276,7 @@ export function MutasiView({ direction }: { direction: 'IN' | 'OUT' }) {
             <Input name="letterNumber" defaultValue={modal !== 'new' ? modal?.letterNumber ?? '' : ''} />
           </Field>
           <Field label="Kategori" hint="Kelola lewat tombol ⚙ Kategori">
-            <Select name="categoryId" defaultValue={modal !== 'new' ? modal?.categoryId ?? '' : ''}>
+            <Select name="categoryId" defaultValue={modal !== 'new' ? modal?.categoryId ?? '' : ''} searchable>
               <option value="">— Tanpa kategori —</option>
               {categories.map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>

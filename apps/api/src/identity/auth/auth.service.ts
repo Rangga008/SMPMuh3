@@ -312,12 +312,32 @@ export class AuthService {
     data: { name?: string; phone?: string; email?: string },
   ): Promise<AuthUser> {
     if (data.phone !== undefined) data.phone = normalizePhone(data.phone);
+    if (data.phone) {
+      const clash = await this.users.findByPhone(data.phone);
+      if (clash && clash.id !== userId) {
+        throw new ConflictException('Nomor HP sudah dipakai akun lain.');
+      }
+    }
     const email = data.email === '' ? null : data.email;
+    if (email) {
+      const clash = await this.users.findByEmail(email.toLowerCase().trim());
+      if (clash && clash.id !== userId) {
+        throw new ConflictException('Email sudah dipakai akun lain.');
+      }
+    }
     const updated = await this.users.updateUser(userId, {
       ...(data.name !== undefined ? { name: data.name } : {}),
       ...(data.phone !== undefined ? { phone: data.phone } : {}),
       ...(data.email !== undefined ? { email } : {}),
     });
+    // Ortu memperbarui nomor HP di akunnya → nomor kontak di data siswa
+    // ikut sinkron (satu sumber kebenaran, tak perlu diisi dua kali).
+    if (data.phone !== undefined) {
+      await this.prisma.student.updateMany({
+        where: { parentId: userId, deletedAt: null },
+        data: { parentPhone: data.phone || null },
+      });
+    }
     await this.audit.log({
       actorId: userId,
       action: 'auth.update_profile',

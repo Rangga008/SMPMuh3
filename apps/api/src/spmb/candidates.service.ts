@@ -6,7 +6,7 @@ import {
 import type { Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../core/prisma/prisma.service';
-import type { CreateCandidateDto } from './dto/spmb.dto';
+import type { CreateCandidateDto, UpdateCandidateDto } from './dto/spmb.dto';
 
 const select = {
   id: true,
@@ -72,11 +72,11 @@ export class CandidatesService {
     });
   }
 
-  async update(parentId: string, id: string, dto: CreateCandidateDto) {
+  async update(parentId: string, id: string, dto: UpdateCandidateDto) {
     const candidate = await this.owned(parentId, id);
     const updated = await this.prisma.candidate.update({
       where: { id: candidate.id },
-      data: this.toData(parentId, dto),
+      data: this.toUpdateData(dto),
       select,
     });
     await this.audit.log({
@@ -111,6 +111,22 @@ export class CandidatesService {
       previousSchool: dto.previousSchool.trim(),
       address: dto.address ?? null,
       tkaScore: dto.tkaScore ?? null,
+    };
+  }
+
+  /** PATCH — hanya field yang dikirim yang diubah (normalisasi sama seperti create). */
+  private toUpdateData(dto: UpdateCandidateDto) {
+    return {
+      ...(dto.name !== undefined ? { name: dto.name.trim().toUpperCase() } : {}),
+      ...(dto.gender !== undefined ? { gender: dto.gender } : {}),
+      ...(dto.birthPlace !== undefined ? { birthPlace: dto.birthPlace.trim() } : {}),
+      ...(dto.birthDate !== undefined ? { birthDate: new Date(dto.birthDate) } : {}),
+      ...(dto.nisn !== undefined ? { nisn: dto.nisn || null } : {}),
+      ...(dto.nik !== undefined ? { nik: dto.nik } : {}),
+      ...(dto.motherName !== undefined ? { motherName: dto.motherName.trim() } : {}),
+      ...(dto.previousSchool !== undefined ? { previousSchool: dto.previousSchool.trim() } : {}),
+      ...(dto.address !== undefined ? { address: dto.address || null } : {}),
+      ...(dto.tkaScore !== undefined ? { tkaScore: dto.tkaScore } : {}),
     };
   }
 }

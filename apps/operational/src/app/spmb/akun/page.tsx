@@ -159,7 +159,7 @@ export default function AkunOrtuPage() {
               setFilterYear(e.target.value);
               setFilterWave('');
             }}
-          >
+           searchable>
             <option value="">Semua tahun ajaran</option>
             {years.map((y) => (
               <option key={y.id} value={y.id}>
@@ -169,7 +169,7 @@ export default function AkunOrtuPage() {
           </Select>
         </Field>
         <Field label="Gelombang">
-          <Select value={filterWave} onChange={(e) => setFilterWave(e.target.value)}>
+          <Select value={filterWave} onChange={(e) => setFilterWave(e.target.value)} searchable>
             <option value="">Semua gelombang</option>
             {wavesOfYear.map((w) => (
               <option key={w.id} value={w.id}>

@@ -145,6 +145,8 @@ export class SaranaItemDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) qty?: number;
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) good?: number;
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) bad?: number;
+  /** Kunci storage foto barang — dari POST /ops/sarpras-media. */
+  @IsOptional() @IsString() @MaxLength(300) photo?: string;
   @IsOptional() @IsBoolean() isActive?: boolean;
 }
 export class SaranaItemUpdateDto {
@@ -155,6 +157,7 @@ export class SaranaItemUpdateDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) qty?: number;
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) good?: number;
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) bad?: number;
+  @IsOptional() @IsString() @MaxLength(300) photo?: string;
   @IsOptional() @IsBoolean() isActive?: boolean;
 }
 
@@ -164,6 +167,7 @@ export class PrasaranaDto {
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) length?: number;
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) width?: number;
   @IsOptional() @IsString() @MaxLength(60) ownership?: string;
+  @IsOptional() @IsString() @MaxLength(300) photo?: string;
   @IsOptional() @IsBoolean() isActive?: boolean;
 }
 export class PrasaranaUpdateDto {
@@ -172,5 +176,6 @@ export class PrasaranaUpdateDto {
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) length?: number;
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) width?: number;
   @IsOptional() @IsString() @MaxLength(60) ownership?: string;
+  @IsOptional() @IsString() @MaxLength(300) photo?: string;
   @IsOptional() @IsBoolean() isActive?: boolean;
 }

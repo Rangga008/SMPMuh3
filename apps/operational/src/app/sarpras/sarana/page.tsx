@@ -16,14 +16,36 @@ import {
   deleteSaranaType,
   listSaranas,
   listSaranaTypes,
+  openSarprasPhoto,
   saranaXlsxUrl,
   updateSarana,
   updateSaranaType,
+  uploadSarprasMedia,
   type SaranaItem,
   type SaranaType,
 } from '@/lib/api-ops';
 
 const OWNERSHIPS = ['Milik', 'Bukan Milik', 'Sewa', 'Hibah'];
+
+/** Thumbnail foto inventaris — fetch ber-auth → blob URL; klik buka ukuran penuh. */
+function PhotoThumb({ kkey }: { kkey?: string | null | undefined }) {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!kkey) return;
+    let alive = true;
+    let u: string | undefined;
+    openSarprasPhoto(kkey)
+      .then((x) => { u = x; if (alive) setUrl(x); })
+      .catch(() => undefined);
+    return () => { alive = false; if (u) URL.revokeObjectURL(u); };
+  }, [kkey]);
+  if (!kkey) return <span className="text-sand-300">—</span>;
+  if (!url) return <span className="text-xs text-sand-400">…</span>;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={url} alt="Foto" className="size-10 cursor-zoom-in rounded-lg border border-sand-200 object-cover" onClick={() => window.open(url, '_blank')} />
+  );
+}
 
 /** Kelola jenis sarana — dibuka lewat tombol, isinya daftar + form tambah. */
 function JenisModal({
@@ -214,6 +236,7 @@ function SaranaForm({
 }) {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
   const activeTypes = types.filter((t) => t.isActive || t.id === item?.typeId);
 
   const submit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -221,16 +244,19 @@ function SaranaForm({
     setErr('');
     setBusy(true);
     const fd = new FormData(e.currentTarget);
-    const dto = {
-      typeId: String(fd.get('typeId')),
-      location: String(fd.get('location') ?? '').trim() || undefined,
-      ownership: String(fd.get('ownership') ?? '').trim() || undefined,
-      spec: String(fd.get('spec') ?? '').trim() || undefined,
-      qty: Number(fd.get('qty') ?? 0),
-      good: Number(fd.get('good') ?? 0),
-      bad: Number(fd.get('bad') ?? 0),
-    };
     try {
+      let photo: string | undefined;
+      if (photoFile) photo = (await uploadSarprasMedia(photoFile)).key;
+      const dto = {
+        typeId: String(fd.get('typeId')),
+        location: String(fd.get('location') ?? '').trim() || undefined,
+        ownership: String(fd.get('ownership') ?? '').trim() || undefined,
+        spec: String(fd.get('spec') ?? '').trim() || undefined,
+        qty: Number(fd.get('qty') ?? 0),
+        good: Number(fd.get('good') ?? 0),
+        bad: Number(fd.get('bad') ?? 0),
+        ...(photo ? { photo } : {}),
+      };
       if (item) {
         await updateSarana(item.id, dto);
       } else {
@@ -249,7 +275,7 @@ function SaranaForm({
         {err ? <p role="alert" className="rounded-xl bg-red-50 px-3 py-2 text-sm font-medium text-red-700">{err}</p> : null}
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Jenis sarana">
-            <Select name="typeId" defaultValue={item?.typeId ?? ''}>
+            <Select name="typeId" defaultValue={item?.typeId ?? ''} searchable>
               <option value="" disabled>Pilih jenis…</option>
               {activeTypes.map((t) => (
                 <option key={t.id} value={t.id}>{t.label}{!t.isActive ? ' (nonaktif)' : ''}</option>
@@ -257,7 +283,7 @@ function SaranaForm({
             </Select>
           </Field>
           <Field label="Letak / ruang" hint="Pilih rombel dari data kelas atau lokasi lain.">
-            <Select name="location" defaultValue={item?.location ?? ''}>
+            <Select name="location" defaultValue={item?.location ?? ''} searchable>
               <option value="">— Tidak spesifik —</option>
               {classes.map((c) => (
                 <option key={c.id} value={c.name}>Rombel {c.name}</option>
@@ -270,7 +296,7 @@ function SaranaForm({
             </Select>
           </Field>
           <Field label="Kepemilikan">
-            <Select name="ownership" defaultValue={item?.ownership ?? ''}>
+            <Select name="ownership" defaultValue={item?.ownership ?? ''} searchable>
               <option value="">—</option>
               {OWNERSHIPS.map((o) => (
                 <option key={o} value={o}>{o}</option>
@@ -292,6 +318,19 @@ function SaranaForm({
             <Input name="bad" type="number" min={0} defaultValue={item?.bad ?? 0} />
           </Field>
         </div>
+        <Field label="Foto barang" hint="JPG/PNG/WebP — printer, kamera, infokus, meja, kursi, dst.">
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            className="w-full rounded-xl border border-sand-200 px-3 py-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-primary-50 file:px-3 file:py-1.5 file:text-xs file:font-bold file:text-primary-700"
+            onChange={(e) => setPhotoFile(e.target.files?.[0] ?? null)}
+          />
+          {photoFile ? (
+            <p className="mt-1 text-xs text-emerald-700">📷 {photoFile.name}</p>
+          ) : item?.photo ? (
+            <span className="mt-1 flex items-center gap-2 text-xs text-sand-500"><PhotoThumb kkey={item.photo} /> Pilih file baru untuk mengganti.</span>
+          ) : null}
+        </Field>
         <div className="flex justify-end gap-2">
           <Button type="button" variant="ghost" onClick={onClose}>Batal</Button>
           <Button type="submit" disabled={busy}>{busy ? 'Menyimpan…' : 'Simpan'}</Button>
@@ -368,7 +407,7 @@ export default function SaranaPage() {
         </label>
         <label className="flex min-w-40 flex-1 flex-col gap-1.5">
           <span className="text-xs font-bold uppercase tracking-wider text-sand-500">Jenis</span>
-          <Select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+          <Select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} searchable>
             <option value="">Semua jenis</option>
             {types.map((t) => (
               <option key={t.id} value={t.id}>{t.label}</option>
@@ -383,13 +422,14 @@ export default function SaranaPage() {
       </div>
 
       <DataTable
-        head={['Jenis', 'Letak', 'Kepemilikan', 'Spesifikasi', 'Jumlah', 'Laik', 'Tidak Laik', manage ? '' : ''].filter((h, i) => h !== '' || i < 7)}
+        head={['Foto', 'Jenis', 'Letak', 'Kepemilikan', 'Spesifikasi', 'Jumlah', 'Laik', 'Tidak Laik', ...(manage ? [''] : [])]}
         loading={loading}
         error={error}
         empty={filtered.length === 0 ? 'Tidak ada sarana cocok.' : undefined}
       >
         {filtered.map((r) => (
           <tr key={r.id}>
+            <td className="px-5 py-3.5"><PhotoThumb kkey={r.photo} /></td>
             <td className="px-5 py-3.5 font-semibold text-sand-900">{r.type.label}</td>
             <td className="px-5 py-3.5 text-sand-600">{r.location ?? '—'}</td>
             <td className="px-5 py-3.5 text-sand-600">{r.ownership ?? '—'}</td>

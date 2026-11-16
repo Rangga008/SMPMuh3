@@ -677,6 +677,24 @@ export class OpsController {
   @RequirePermission(PERMISSIONS.SARPRAS_MANAGE)
   deleteSarana(@Param('id') id: string) { return this.ops.deleteSarana(id); }
 
+  /** Foto inventaris sarpras — unggah (manage) & layani (read). */
+  @Post('sarpras-media')
+  @RequirePermission(PERMISSIONS.SARPRAS_MANAGE)
+  @UseInterceptors(FileInterceptor('file'))
+  uploadSarprasMedia(@UploadedFile() file: Express.Multer.File) {
+    if (!file) throw new BadRequestException('File wajib diunggah.');
+    if (!/^image\/(jpeg|png|webp|gif)$/.test(file.mimetype)) throw new BadRequestException('Gambar harus JPG/PNG/WebP/GIF.');
+    return this.ops.uploadSarprasMedia(file);
+  }
+  @Get('sarpras-media/:file')
+  @RequirePermission(PERMISSIONS.SARPRAS_READ)
+  async sarprasMedia(@Param('file') file: string, @Res() res: Response) {
+    const f = await this.ops.sarprasMedia(file);
+    res.setHeader('Content-Type', f.mime);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.send(f.buf);
+  }
+
   @Get('prasaranas')
   @RequirePermission(PERMISSIONS.SARPRAS_READ)
   prasaranas() { return this.ops.prasaranas(); }

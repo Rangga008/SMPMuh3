@@ -46,6 +46,30 @@ export const REGISTRATION_EDITABLE: readonly RegistrationStatus[] = [
   'NEEDS_REVISION',
 ];
 
+/**
+ * Transisi status yang boleh dilakukan staf — status pembayaran/pengisian
+ * formulir digerakkan otomatis oleh sistem (bayar, submit), staf hanya
+ * berwenang pada titik tinjau/keputusan. Dipakai backend (guard) dan
+ * frontend (filter dropdown) agar selalu konsisten.
+ */
+export const STAFF_TRANSITIONS: Record<RegistrationStatus, readonly RegistrationStatus[]> = {
+  DRAFT: [],
+  AWAITING_PAYMENT: ['REJECTED'],
+  PAYMENT_REVIEW: ['REJECTED'],
+  FORM_FILLING: ['REJECTED'],
+  SUBMITTED: ['DOCUMENT_REVIEW', 'NEEDS_REVISION', 'VERIFIED', 'REJECTED'],
+  DOCUMENT_REVIEW: ['NEEDS_REVISION', 'VERIFIED', 'REJECTED'],
+  NEEDS_REVISION: ['VERIFIED', 'REJECTED'],
+  VERIFIED: ['AWAITING_FINAL_PAYMENT', 'SELECTION', 'ACCEPTED', 'REJECTED'],
+  AWAITING_FINAL_PAYMENT: ['SELECTION', 'REJECTED'],
+  FINAL_PAYMENT_REVIEW: ['AWAITING_FINAL_PAYMENT', 'SELECTION', 'REJECTED'],
+  SELECTION: ['ACCEPTED', 'REJECTED'],
+  ACCEPTED: ['RE_REGISTRATION'],
+  REJECTED: [],
+  RE_REGISTRATION: ['COMPLETED'],
+  COMPLETED: [],
+};
+
 // ---------- Jalur pendaftaran ----------
 
 export const PATHWAYS = ['reguler', 'afirmasi', 'prestasi'] as const;
