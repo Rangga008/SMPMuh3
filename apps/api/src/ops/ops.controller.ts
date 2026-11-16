@@ -128,23 +128,37 @@ export class OpsController {
   saveAnswers(@Param('id') id: string, @Body() dto: SaveAnswersDto) {
     return this.ops.saveAnswers(id, dto);
   }
-  /** Template Excel import soal — kolom sesuai parser di parseQuestionWorkbook. */
+  /** Template Excel import soal — kolom sesuai parser di parseQuestionWorkbook.
+   *  ?pg=10&pgk=0&bs=5&bsk=3 → baris kosong bernomor per tipe (generator). */
   @Get('assessments/:id/questions/template')
   @RequirePermission(PERMISSIONS.ACADEMIC_READ)
-  questionsTemplate(@Res() res: Response) {
-    const ws = XLSX.utils.aoa_to_sheet([
-      ['TEMPLATE IMPORT SOAL — isi mulai BARIS 6 (baris keterangan & contoh jangan diubah)'],
+  questionsTemplate(@Res() res: Response, @Query('pg') pgQ?: string, @Query('pgk') pgkQ?: string, @Query('bs') bsQ?: string, @Query('bsk') bskQ?: string) {
+    const gen = pgQ !== undefined || pgkQ !== undefined || bsQ !== undefined || bskQ !== undefined;
+    const n = (v?: string) => Math.min(200, Math.max(0, Math.floor(Number(v) || 0)));
+    const rows: string[][] = [
+      ['TEMPLATE IMPORT SOAL — isi kolom Soal, A–E, Kunci mulai BARIS 6 (baris keterangan jangan diubah)'],
       ['Tipe : PG = pilihan ganda · PGK = pilihan ganda kompleks (centang ≥1) · BS = benar/salah · BSK = benar/salah kompleks (beberapa pernyataan)'],
       ['Kunci: PG → satu huruf (C) · PGK → huruf dipisah koma (A,C) · BS → B atau S · BSK → B/S per pernyataan dipisah koma (B,S,B)'],
       ['Kolom A–E: PG/PGK = pilihan jawaban · BSK = daftar pernyataan'],
       [],
       ['No', 'Tipe', 'Soal', 'A', 'B', 'C', 'D', 'E', '', 'Kunci', 'Bobot'],
-      ['CONTOH 1 (hapus)', 'PG', 'Ibu kota Indonesia adalah…', 'Surabaya', 'Bandung', 'Jakarta', 'Medan', '', '', 'C', '1'],
-      ['CONTOH 2 (hapus)', 'PGK', 'Pilih semua bilangan prima:', '2', '4', '5', '9', '', '', '', 'A,C', '2'],
-      ['CONTOH 3 (hapus)', 'BS', 'Indonesia merdeka tahun 1945.', '', '', '', '', '', '', 'B', '1'],
-      ['CONTOH 4 (hapus)', 'BSK', 'Tentukan benar/salah tiap pernyataan:', 'Air mendidih pada 100°C', 'Es lebih padat dari air', 'Bandung di Jawa Barat', '', '', '', 'B,S,B', '2', ''],
-      ['CONTOH 5 (hapus)', 'PG', 'Berdasarkan bacaan B1, tokoh utama cerita adalah…', 'Siti', 'Budi', 'Andi', 'Rina', '', '', 'A', '1', 'B1'],
-    ]);
+    ];
+    let no = 1;
+    if (gen) {
+      for (const [tipe, cnt] of [['PG', n(pgQ)], ['PGK', n(pgkQ)], ['BS', n(bsQ)], ['BSK', n(bskQ)]] as const) {
+        for (let i = 0; i < cnt; i++) rows.push([String(no++), tipe, '', '', '', '', '', '', '', '', '1']);
+      }
+      if (no === 1) rows.push(['1', 'PG', '', '', '', '', '', '', '', '', '', '1']);
+    } else {
+      rows.push(
+        ['CONTOH 1 (hapus)', 'PG', 'Ibu kota Indonesia adalah…', 'Surabaya', 'Bandung', 'Jakarta', 'Medan', '', '', 'C', '1'],
+        ['CONTOH 2 (hapus)', 'PGK', 'Pilih semua bilangan prima:', '2', '4', '5', '9', '', '', '', 'A,C', '2'],
+        ['CONTOH 3 (hapus)', 'BS', 'Indonesia merdeka tahun 1945.', '', '', '', '', '', '', 'B', '1'],
+        ['CONTOH 4 (hapus)', 'BSK', 'Tentukan benar/salah tiap pernyataan:', 'Air mendidih pada 100°C', 'Es lebih padat dari air', 'Bandung di Jawa Barat', '', '', '', 'B,S,B', '2', ''],
+        ['CONTOH 5 (hapus)', 'PG', 'Berdasarkan bacaan B1, tokoh utama cerita adalah…', 'Siti', 'Budi', 'Andi', 'Rina', '', '', 'A', '1', 'B1'],
+      );
+    }
+    const ws = XLSX.utils.aoa_to_sheet(rows);
     ws['!cols'] = [
       { wch: 4 }, { wch: 7 }, { wch: 44 }, { wch: 20 }, { wch: 20 },
       { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 2 }, { wch: 10 }, { wch: 6 }, { wch: 8 },

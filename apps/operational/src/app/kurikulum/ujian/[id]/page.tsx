@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
@@ -54,6 +54,7 @@ export default function UjianDetailPage() {
   const [matrices, setMatrices] = useState<Record<string, Awaited<ReturnType<typeof examAnswersMatrix>>>>({});
   const [resClass, setResClass] = useState('');
   const [resJenjang, setResJenjang] = useState('');
+  const [qSearch, setQSearch] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [modalErr, setModalErr] = useState<string | null>(null);
@@ -380,9 +381,23 @@ export default function UjianDetailPage() {
               ) : null}
               {!questions.length ? (
                 <p className="p-5 text-sm text-sand-400">Belum ada soal — klik <b>Kelola Soal</b> di atas untuk menambah/mengimpor di halaman asesmen (gambar &amp; rumus ikut terbawa).</p>
-              ) : (
+              ) : (() => {
+                const q = qSearch.toLowerCase();
+                const shown = questions.filter((x) =>
+                  !q || String(x.number) === qSearch.trim() ||
+                  (x.prompt ?? '').toLowerCase().includes(q) ||
+                  (TYPE_LABEL[x.type] ?? x.type).toLowerCase().includes(q));
+                return (
+                <>
+                <div className="flex items-center gap-2 border-b border-sand-100 px-4 py-3">
+                  <Input value={qSearch} onChange={(e) => setQSearch(e.target.value)} placeholder="Cari no / teks / tipe soal…" className="w-64" />
+                  <p className="ml-auto text-xs text-sand-500">{shown.length} soal{qSearch ? ` (dari ${questions.length})` : ''}</p>
+                </div>
+                {!shown.length ? (
+                  <p className="p-5 text-sm text-sand-400">Tidak ada soal yang cocok dengan pencarian.</p>
+                ) : (
                 <div className="divide-y divide-sand-100">
-                  {questions.map((q) => (
+                  {shown.map((q) => (
                     <div key={q.id} className="flex items-start gap-3 px-5 py-3.5">
                       <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-xs font-black text-primary-700">{q.number}</span>
                       <div className="min-w-0 flex-1">
@@ -428,7 +443,10 @@ export default function UjianDetailPage() {
                     </div>
                   ))}
                 </div>
-              )}
+                )}
+                </>
+                );
+              })()}
             </Widget>
           )}
 

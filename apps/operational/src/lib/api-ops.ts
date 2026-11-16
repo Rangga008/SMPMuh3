@@ -41,6 +41,11 @@ export const setAssessmentQuestions = (id: string, questions: Partial<Assessment
   req(`/ops/assessments/${id}/questions`, { method: 'PUT', json: { questions } });
 export const downloadQuestionTemplate = (id: string) =>
   downloadFile(`/ops/assessments/${id}/questions/template`, 'template-soal.xlsx');
+export const downloadGenTemplate = (id: string, counts: { pg: number; pgk: number; bs: number; bsk: number }) =>
+  downloadFile(
+    `/ops/assessments/${id}/questions/template?pg=${counts.pg}&pgk=${counts.pgk}&bs=${counts.bs}&bsk=${counts.bsk}`,
+    `template-soal-${counts.pg}pg-${counts.pgk}pgk-${counts.bs}bs-${counts.bsk}bsk.xlsx`,
+  );
 export const importQuestions = (id: string, file: File) => {
   const fd = new FormData();
   fd.append('file', file);
@@ -71,7 +76,7 @@ export const getAnswerMatrix = (id: string) =>
   req<{
     assessment: { id: string; name: string; subject: string; class?: string };
     questions: AssessmentQuestion[];
-    students: { id: string; name: string; nis?: string | null; cells: ({ score: number; isCorrect?: boolean | null; answer?: unknown } | null)[]; total: number }[];
+    students: { id: string; name: string; nis?: string | null; classId?: string | null; className?: string | null; cells: ({ score: number; isCorrect?: boolean | null; answer?: unknown } | null)[]; total: number }[];
   }>(`/ops/assessments/${id}/answers`);
 
 export const getGradeLedger = (classId: string, academicYearId: string) =>

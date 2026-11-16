@@ -642,22 +642,29 @@ export class OpsService {
       where: { assessmentId }, orderBy: { number: 'asc' },
     });
     const qIds = questions.map((q) => q.id);
-    const [students, answers] = await Promise.all([
+    const [students, answers, enrolls] = await Promise.all([
       assessment.classId
         ? this.prisma.enrollment.findMany({
             where: { classId: assessment.classId, academicYearId: assessment.academicYearId, student: { status: 'ACTIVE' } },
             include: { student: { select: { id: true, name: true, nis: true } } },
             orderBy: { student: { name: 'asc' } },
           }).then((es) => es.map((e) => e.student))
-        : this.prisma.student.findMany({ where: { status: 'ACTIVE' }, orderBy: { name: 'asc' }, take: 200 }),
+        : this.prisma.student.findMany({ where: { status: 'ACTIVE' }, orderBy: { name: 'asc' }, take: 500 }),
       this.prisma.studentAnswer.findMany({ where: { questionId: { in: qIds } } }),
+      this.prisma.enrollment.findMany({
+        where: { academicYearId: assessment.academicYearId },
+        select: { studentId: true, class: { select: { id: true, name: true, gradeLevel: true } } },
+      }),
     ]);
+    const clsOf = new Map(enrolls.map((e) => [e.studentId, e.class]));
     const map = new Map(answers.map((a) => [`${a.questionId}:${a.studentId}`, a]));
     return {
       assessment: { id: assessment.id, name: assessment.name, subject: assessment.subject.name, class: assessment.class?.name },
       questions: questions.map((q) => ({ id: q.id, number: q.number, type: q.type, weight: q.weight, key: q.key })),
       students: students.map((s) => ({
         id: s.id, name: s.name, nis: s.nis,
+        classId: clsOf.get(s.id)?.id ?? null,
+        className: clsOf.get(s.id)?.name ?? null,
         cells: questions.map((q) => {
           const a = map.get(`${q.id}:${s.id}`);
           return a ? { score: a.score, isCorrect: a.isCorrect, answer: a.answer } : null;

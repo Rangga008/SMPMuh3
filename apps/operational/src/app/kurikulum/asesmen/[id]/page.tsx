@@ -10,8 +10,7 @@ import { DataTable } from '@/components/data-table';
 import { API, ApiError, listClasses, listSubjects, updateAssessment, type ClassView } from '@/lib/api';
 import { richHtml } from '@/lib/math';
 import {
-  createExamSession,
-  deleteExamSession,
+  downloadGenTemplate,
   downloadQuestionTemplate,
   getAnswerMatrix,
   getAssessmentPassages,
@@ -23,7 +22,6 @@ import {
   setAssessmentPassages,
   setAssessmentQuestions,
   updateExam,
-  updateExamSession,
   uploadQuestionMedia,
   type AssessmentPassage,
   type AssessmentQuestion,
@@ -117,7 +115,6 @@ function toApi(d: QDraft): Partial<AssessmentQuestion> {
 
 type Matrix = Awaited<ReturnType<typeof getAnswerMatrix>>;
 type PassageDraft = { code: string; content: string; media?: { key: string; name: string }[] | null };
-type SesiDraft = { id?: string; name: string; classIds: Set<string>; startAt: string; endAt: string };
 const toLocalInput = (iso: string) => {
   const d = new Date(iso);
   d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
@@ -151,6 +148,7 @@ export default function AsesmenDetailPage() {
   const [importModal, setImportModal] = useState(false);
   const [preview, setPreview] = useState<{ questions: (Omit<AssessmentQuestion, 'id'> & { id?: string })[]; passages: Omit<AssessmentPassage, 'id'>[] } | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
+  const [tplCount, setTplCount] = useState({ pg: 10, pgk: 0, bs: 0, bsk: 0 });
 
   // ---- Modal edit asesmen & ujian terkait ----
   const [editAsm, setEditAsm] = useState(false);
@@ -159,8 +157,11 @@ export default function AsesmenDetailPage() {
   const [linkedExams, setLinkedExams] = useState<ExamView[]>([]);
   const [ujianModal, setUjianModal] = useState<ExamView | null>(null);
   const [ujianForm, setUjianForm] = useState<{ title: string; startAt: string; endAt: string; durationMin: number; classIds: Set<string>; shuffle: boolean; showScore: boolean } | null>(null);
-  const [sesiDraft, setSesiDraft] = useState<SesiDraft | null>(null);
   const [modalErr, setModalErr] = useState<string | null>(null);
+
+  // ---- Filter rekap jawaban ----
+  const [jSearch, setJSearch] = useState('');
+  const [jClass, setJClass] = useState('');
 
   const load = useCallback(() => {
     Promise.all([getAssessmentQuestions(id), getAnswerMatrix(id), getQuestionAnalysis(id), getAssessmentPassages(id)])
@@ -395,34 +396,6 @@ export default function AsesmenDetailPage() {
     } catch (e) {
       setModalErr(e instanceof ApiError ? e.message : 'Gagal menyimpan ujian.');
     } finally {
-      setBusy(false);
-    }
-  };
-  const saveSesi = async () => {
-    if (!ujianModal || !sesiDraft) return;
-    if (!sesiDraft.classIds.size) { setModalErr('Pilih minimal satu rombel untuk sesi.'); return; }
-    setBusy(true);
-    setModalErr(null);
-    try {
-      const dto = { name: sesiDraft.name, classIds: [...sesiDraft.classIds], startAt: new Date(sesiDraft.startAt).toISOString(), endAt: new Date(sesiDraft.endAt).toISOString() };
-      const s = sesiDraft.id ? await updateExamSession(sesiDraft.id, dto) : await createExamSession(ujianModal.id, dto);
-      setUjianModal((x) => x && ({
-        ...x,
-        sessions: sesiDraft.id ? (x.sessions ?? []).map((y) => (y.id === s.id ? s : y)) : [...(x.sessions ?? []), s],
-      }));
-      setSesiDraft(null);
-    } catch (e) {
-      setModalErr(e instanceof ApiError ? e.message : 'Gagal menyimpan sesi.');
-    } finally {
-      setBusy(false);
-    }
-  };
-  const delSesi = async (sid: string) => {
-    setBusy(true);
-    try {
-      await deleteExamSession(sid);
-      setUjianModal((x) => x && ({ ...x, sessions: (x.sessions ?? []).filter((s) => s.id !== sid) }));
-    } catch { /* abaikan */ } finally {
       setBusy(false);
     }
   };
@@ -900,6 +873,26 @@ export default function AsesmenDetailPage() {
           subtitle="Klik sel untuk tandai Benar / Salah / kosong. Simpan untuk merekap."
           action={<Button size="sm" onClick={saveAnswers} disabled={busy}>{busy ? 'Menyimpan…' : 'Simpan Semua Jawaban'}</Button>}
         >
+          {(() => {
+            const jClasses = [...new Map(matrix.students.filter((s) => s.classId).map((s) => [s.classId!, s.className ?? '—'])).entries()]
+              .sort((a, b) => a[1].localeCompare(b[1]));
+            const jq = jSearch.toLowerCase();
+            const jStudents = matrix.students.filter((s) =>
+              (!jClass || s.classId === jClass) &&
+              (!jq || s.name.toLowerCase().includes(jq) || (s.nis ?? '').includes(jq)));
+            return (
+              <>
+          <div className="flex flex-wrap items-center gap-2 border-b border-sand-100 px-4 py-3">
+            <Input value={jSearch} onChange={(e) => setJSearch(e.target.value)} placeholder="Cari nama / NIS…" className="w-52" />
+            <Select value={jClass} onChange={(e) => setJClass(e.target.value)} className="w-40">
+              <option value="">Semua rombel</option>
+              {jClasses.map(([cid, cname]) => <option key={cid} value={cid}>{cname}</option>)}
+            </Select>
+            <p className="ml-auto text-xs text-sand-500">{jStudents.length} siswa{jSearch || jClass ? ` (dari ${matrix.students.length})` : ''}</p>
+          </div>
+          {!jStudents.length ? (
+            <p className="px-5 py-8 text-center text-sm text-sand-400">Tidak ada siswa yang cocok dengan filter.</p>
+          ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
@@ -914,11 +907,12 @@ export default function AsesmenDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {matrix.students.map((s) => (
+                {jStudents.map((s) => (
                   <tr key={s.id} className="border-b border-sand-50 hover:bg-sand-50">
                     <td className="whitespace-nowrap px-3 py-2 font-medium text-sand-900">
                       {s.name}
                       <span className="ml-1 text-[10px] text-sand-400">{s.nis ?? ''}</span>
+                      {s.className ? <span className="ml-1 rounded bg-sand-100 px-1 py-0.5 text-[9px] font-bold text-sand-500">{s.className}</span> : null}
                     </td>
                     {matrix.questions.map((q, qi) => {
                       const c = s.cells[qi];
@@ -954,10 +948,15 @@ export default function AsesmenDetailPage() {
               </tbody>
             </table>
           </div>
+          )}
+              </>
+            );
+          })()}
         </Widget>
       )}
 
       {tab === 'analisis' && (
+        <div className="space-y-4">
         <Widget title="Analisis Butir Soal" subtitle="Ketepatan & tingkat kesukaran per nomor.">
           <DataTable head={['No', 'Tipe', 'Bobot', 'Terjawab', 'Benar', '% Benar', 'Rata-rata Skor', 'Kategori']}
             empty={!analysis.length ? 'Belum ada butir/jawaban.' : undefined}>
@@ -986,6 +985,56 @@ export default function AsesmenDetailPage() {
             ))}
           </DataTable>
         </Widget>
+
+        <Widget title="Analisis per Siswa" subtitle="Rekap capaian tiap siswa — cari nama, urutkan kolom, saring rombel.">
+          {matrix ? (
+            (() => {
+              const aClasses = [...new Map(matrix.students.filter((s) => s.classId).map((s) => [s.classId!, s.className ?? '—'])).entries()]
+                .sort((a, b) => a[1].localeCompare(b[1]));
+              const aStudents = matrix.students
+                .filter((s) => !jClass || s.classId === jClass)
+                .map((s) => {
+                  const answered = s.cells.filter((c) => c !== null).length;
+                  const correct = s.cells.filter((c) => c?.isCorrect === true).length;
+                  const score = s.cells.reduce((a, c) => a + (c?.score ?? 0), 0);
+                  const maxScore = matrix.questions.reduce((a, q) => a + q.weight, 0);
+                  return { ...s, answered, correct, score, pct: maxScore ? Math.round((score / maxScore) * 100) : 0 };
+                });
+              return (
+                <>
+                  <div className="flex flex-wrap items-center gap-2 border-b border-sand-100 px-4 py-3">
+                    <Select value={jClass} onChange={(e) => setJClass(e.target.value)} className="w-40">
+                      <option value="">Semua rombel</option>
+                      {aClasses.map(([cid, cname]) => <option key={cid} value={cid}>{cname}</option>)}
+                    </Select>
+                    <p className="ml-auto text-xs text-sand-500">{aStudents.length} siswa</p>
+                  </div>
+                  <DataTable head={['Siswa', 'Rombel', 'Terjawab', 'Benar', '% Benar', 'Total Skor']}
+                    empty={!aStudents.length ? 'Belum ada siswa/jawaban.' : undefined}>
+                    {aStudents.map((s) => (
+                      <tr key={s.id}>
+                        <td className="px-5 py-2.5 font-medium text-sand-900">{s.name} <span className="text-[10px] text-sand-400">{s.nis ?? ''}</span></td>
+                        <td className="px-5 py-2.5 text-sand-600">{s.className ?? '—'}</td>
+                        <td className="px-5 py-2.5 text-sand-600">{s.answered}/{matrix.questions.length}</td>
+                        <td className="px-5 py-2.5 text-sand-600">{s.correct}</td>
+                        <td className="px-5 py-2.5">
+                          <div className="flex items-center gap-2">
+                            <div className="h-1.5 w-16 overflow-hidden rounded-full bg-sand-100">
+                              <div className={`h-full ${s.pct >= 75 ? 'bg-emerald-500' : s.pct >= 40 ? 'bg-amber-500' : 'bg-red-400'}`} style={{ width: `${s.pct}%` }} />
+                            </div>
+                            <span className="text-xs font-bold">{s.pct}%</span>
+                          </div>
+                        </td>
+                        <td className="px-5 py-2.5 font-bold text-sand-900">{s.score}</td>
+                      </tr>
+                    ))}
+                  </DataTable>
+                </>
+              );
+            })()
+          ) : <p className="p-5 text-sm text-sand-400">Memuat…</p>}
+        </Widget>
+        </div>
       )}
 
       {/* ---------- Modal Import + Preview ---------- */}
@@ -993,12 +1042,37 @@ export default function AsesmenDetailPage() {
         <div className="space-y-4">
           {modalErr ? <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{modalErr}</p> : null}
           {!preview ? (
-            <div className="rounded-2xl border-2 border-dashed border-sand-200 p-8 text-center">
-              <p className="text-sm font-bold text-sand-700">Pilih file Excel (.xlsx) atau Word (.docx)</p>
-              <p className="mt-1 text-xs text-sand-500">Rumus Word & gambar ikut terbawa · BS multi-pernyataan otomatis jadi BSK</p>
-              <Button size="sm" className="mt-4" onClick={() => fileRef.current?.click()} disabled={previewBusy}>
-                {previewBusy ? 'Membaca…' : 'Pilih File'}
-              </Button>
+            <div className="space-y-4">
+              <div className="rounded-2xl border-2 border-dashed border-sand-200 p-8 text-center">
+                <p className="text-sm font-bold text-sand-700">Pilih file Excel (.xlsx) atau Word (.docx)</p>
+                <p className="mt-1 text-xs text-sand-500">Rumus Word & gambar ikut terbawa · BS multi-pernyataan otomatis jadi BSK · hasil ditinjau dulu sebelum disimpan</p>
+                <Button size="sm" className="mt-4" onClick={() => fileRef.current?.click()} disabled={previewBusy}>
+                  {previewBusy ? 'Membaca…' : 'Pilih File'}
+                </Button>
+              </div>
+              <div className="rounded-2xl border border-sand-200 p-4">
+                <p className="text-xs font-black uppercase tracking-wide text-sand-500">Buat template sesuai kebutuhan</p>
+                <p className="mt-0.5 text-[11px] text-sand-400">Isi jumlah soal per tipe — template Excel berisi baris kosong bernomor siap diisi.</p>
+                <div className="mt-2.5 flex flex-wrap items-end gap-2">
+                  {([['pg', 'Pilihan Ganda'], ['pgk', 'PG Kompleks'], ['bs', 'Benar/Salah'], ['bsk', 'B-S Kompleks']] as const).map(([k, label]) => (
+                    <Field key={k} label={label} className="!mb-0">
+                      <Input
+                        type="number" min={0} max={200}
+                        value={tplCount[k]}
+                        onChange={(e) => setTplCount({ ...tplCount, [k]: Number(e.target.value) || 0 })}
+                        className="w-20"
+                      />
+                    </Field>
+                  ))}
+                  <Button
+                    size="sm" variant="outline"
+                    disabled={!tplCount.pg && !tplCount.pgk && !tplCount.bs && !tplCount.bsk}
+                    onClick={() => void downloadGenTemplate(id, tplCount).then(() => flash('Template diunduh.')).catch((e) => setModalErr(e instanceof ApiError ? e.message : 'Gagal unduh template.'))}
+                  >
+                    ⬇ Unduh Template
+                  </Button>
+                </div>
+              </div>
             </div>
           ) : (
             <>
@@ -1086,8 +1160,8 @@ export default function AsesmenDetailPage() {
         </form>
       </Modal>
 
-      {/* ---------- Modal Edit Ujian (jadwal + sesi + rombel) ---------- */}
-      <Modal open={!!ujianModal} onClose={() => { setUjianModal(null); setSesiDraft(null); }} title={`Edit Ujian — ${ujianModal?.assessment.subject.name ?? ''}`} size="xl">
+      {/* ---------- Modal Edit Ujian (jadwal + rombel) ---------- */}
+      <Modal open={!!ujianModal} onClose={() => setUjianModal(null)} title={`Edit Ujian — ${ujianModal?.assessment.subject.name ?? ''}`} size="xl">
         {ujianModal && ujianForm ? (
           <div className="space-y-4">
             {modalErr ? <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{modalErr}</p> : null}
@@ -1135,69 +1209,15 @@ export default function AsesmenDetailPage() {
               <label className="flex items-center gap-1.5 text-xs font-medium"><input type="checkbox" checked={ujianForm.showScore} onChange={(e) => setUjianForm({ ...ujianForm, showScore: e.target.checked })} /> Tampilkan skor ke siswa</label>
             </div>
 
-            <div className="rounded-xl border border-sand-200">
-              <div className="flex items-center justify-between border-b border-sand-100 px-4 py-2.5">
-                <p className="text-xs font-black uppercase tracking-wide text-sand-500">Sesi per kelompok rombel</p>
-                <button type="button" className="text-xs font-bold text-primary-700 hover:underline"
-                  onClick={() => setSesiDraft({ name: `Sesi ${(ujianModal.sessions?.length ?? 0) + 1}`, classIds: new Set(), startAt: ujianForm.startAt, endAt: ujianForm.endAt })}>
-                  + Sesi
-                </button>
-              </div>
-              {!(ujianModal.sessions?.length) && !sesiDraft ? (
-                <p className="px-4 py-3 text-xs text-sand-400">Belum ada sesi — semua rombel ikut jendela ujian utama.</p>
-              ) : (
-                <ul className="divide-y divide-sand-50">
-                  {(ujianModal.sessions ?? []).map((s) => (
-                    <li key={s.id} className="flex flex-wrap items-center gap-2 px-4 py-2.5 text-xs">
-                      <b className="text-sand-800">{s.name}</b>
-                      <span className="text-sand-500">{s.classIds.map((cid) => classes.find((c) => c.id === cid)?.name ?? '?').join(', ')}</span>
-                      <span className="text-sand-400">{dt(s.startAt)} – {dt(s.endAt)}</span>
-                      <span className="ml-auto flex gap-2">
-                        <button type="button" className="font-bold text-primary-700 hover:underline"
-                          onClick={() => setSesiDraft({ id: s.id, name: s.name, classIds: new Set(s.classIds), startAt: toLocalInput(s.startAt), endAt: toLocalInput(s.endAt) })}>Edit</button>
-                        <button type="button" className="font-bold text-red-500 hover:underline" onClick={() => void delSesi(s.id)}>Hapus</button>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {sesiDraft ? (
-                <div className="space-y-2 border-t border-sand-100 bg-sand-50 px-4 py-3">
-                  <div className="grid grid-cols-3 gap-2">
-                    <Field label="Nama sesi" className="!mb-0"><Input value={sesiDraft.name} onChange={(e) => setSesiDraft({ ...sesiDraft, name: e.target.value })} /></Field>
-                    <Field label="Mulai" className="!mb-0"><Input type="datetime-local" value={sesiDraft.startAt} onChange={(e) => setSesiDraft({ ...sesiDraft, startAt: e.target.value })} /></Field>
-                    <Field label="Selesai" className="!mb-0"><Input type="datetime-local" value={sesiDraft.endAt} onChange={(e) => setSesiDraft({ ...sesiDraft, endAt: e.target.value })} /></Field>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {classes.filter((c) => ujianForm.classIds.has(c.id)).map((c) => (
-                      <label key={c.id} className="flex items-center gap-1 rounded-lg bg-white px-2 py-1 text-[11px] font-medium">
-                        <input
-                          type="checkbox"
-                          checked={sesiDraft.classIds.has(c.id)}
-                          onChange={(e) => {
-                            const next = new Set(sesiDraft.classIds);
-                            if (e.target.checked) next.add(c.id); else next.delete(c.id);
-                            setSesiDraft({ ...sesiDraft, classIds: next });
-                          }}
-                        />
-                        {c.name}
-                      </label>
-                    ))}
-                  </div>
-                  <div className="flex gap-2">
-                    <Button size="sm" onClick={() => void saveSesi()} disabled={busy}>Simpan Sesi</Button>
-                    <Button size="sm" variant="outline" onClick={() => setSesiDraft(null)}>Batal</Button>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-
+            <p className="rounded-xl bg-sky-50 px-4 py-2.5 text-xs text-sky-800">
+              Sesi per kelompok rombel, kode akses, monitor &amp; hasil diatur di <b>halaman ujian</b> — gunakan tautan di bawah.
+            </p>
             <div className="flex items-center justify-between gap-2">
               <Link href={`/kurikulum/ujian/${ujianModal.id}`} className="text-xs font-bold text-primary-700 hover:underline">
                 Buka halaman ujian penuh →
               </Link>
               <div className="flex gap-2">
-                <Button variant="outline" onClick={() => { setUjianModal(null); setSesiDraft(null); }}>Tutup</Button>
+                <Button variant="outline" onClick={() => setUjianModal(null)}>Tutup</Button>
                 <Button onClick={() => void saveUjian()} disabled={busy}>{busy ? 'Menyimpan…' : 'Simpan Ujian'}</Button>
               </div>
             </div>
