@@ -45,6 +45,29 @@ export class ResetPasswordDto {
   password!: string;
 }
 
+export class RequestPasswordOtpDto {
+  /** Email atau nomor HP akun — OTP dikirim ke nomor HP akun bila ditemukan. */
+  @IsString()
+  @Length(3, 160)
+  identifier!: string;
+}
+
+export class ResetPasswordOtpDto {
+  @IsString()
+  @Length(3, 160)
+  identifier!: string;
+
+  /** OTP 6 digit dari WhatsApp. */
+  @IsString()
+  @Length(6, 6)
+  @Matches(/^\d{6}$/, { message: 'code harus 6 digit angka' })
+  code!: string;
+
+  @IsString()
+  @MinLength(8)
+  password!: string;
+}
+
 /** Profil mandiri — pengguna mengubah data akunnya sendiri. */
 export class UpdateMeDto {
   @IsOptional()

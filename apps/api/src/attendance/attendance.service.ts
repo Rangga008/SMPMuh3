@@ -343,11 +343,37 @@ export class AttendanceService {
     const specific = rows.find((r) => r.dayOfWeek === dow)?.shift;
     const fallback = rows.find((r) => r.dayOfWeek === -1)?.shift;
     const shift = specific ?? fallback ?? null;
+    // Sinkron jadwal mengajar: guru yang jadwalnya mulai siang (mis. jam pelajaran
+    // kedua) dinilai telat dari jam mengajar pertamanya, bukan jam masuk umum.
+    // Shift spesifik-hari tetap menang; jadwal mengajar menang atas shift umum/global.
+    const sched = specific ? null : await this.dayScheduleBounds(employeeId, day);
     return {
-      workStartMin: shift?.startMinute ?? hhmmToMin(settings.workStart),
+      workStartMin: sched?.startMin ?? shift?.startMinute ?? hhmmToMin(settings.workStart),
       lateAfterMin: shift?.lateAfter ?? settings.lateAfter,
-      checkOutFromMin: shift?.checkOutFrom ?? hhmmToMin(settings.checkOutFrom),
-      shiftName: shift?.name ?? null,
+      checkOutFromMin: sched?.endMin ?? shift?.checkOutFrom ?? hhmmToMin(settings.checkOutFrom),
+      shiftName: shift?.name ?? (sched ? 'Jadwal mengajar' : null),
+    };
+  }
+
+  /** Batas jam hari itu dari jadwal mengajar (ScheduleEntry) — null bila tak mengajar. */
+  private async dayScheduleBounds(employeeId: string, day: Date) {
+    const dow = day.getUTCDay(); // day = tengah malam UTC dari tanggal WIB; 0=Minggu
+    if (dow === 0) return null;
+    const year =
+      (await this.prisma.academicYear.findFirst({
+        where: { startDate: { lte: day }, endDate: { gte: day } },
+        select: { id: true },
+      })) ??
+      (await this.prisma.academicYear.findFirst({ where: { isActive: true }, select: { id: true } }));
+    if (!year) return null;
+    const entries = await this.prisma.scheduleEntry.findMany({
+      where: { day: dow, assignment: { employeeId, academicYearId: year.id } },
+      select: { startMinute: true, endMinute: true },
+    });
+    if (!entries.length) return null;
+    return {
+      startMin: Math.min(...entries.map((e) => e.startMinute)),
+      endMin: Math.max(...entries.map((e) => e.endMinute)),
     };
   }
 
@@ -744,6 +770,55 @@ export class AttendanceService {
         },
       })),
     };
+  }
+
+  /** Pegawai setor izin sendiri (sakit/dinas/workshop/lainnya) dari Absen Saya.
+      Status: SAKIT→SAKIT, lainnya→IZIN; tidak menimpa hari yang sudah HADIR/TELAT. */
+  async submitLeave(userId: string, dto: { date: string; category: 'SAKIT' | 'DINAS' | 'WORKSHOP' | 'LAINNYA'; note?: string }) {
+    const emp = await this.employeeOfUser(userId);
+    const day = localDay(new Date(`${dto.date}T00:00:00+07:00`));
+    if (Number.isNaN(day.getTime())) throw new BadRequestException('Tanggal tidak valid.');
+    const existing = await this.prisma.employeeAttendance.findUnique({
+      where: { employeeId_date: { employeeId: emp.id, date: day } },
+    });
+    if (existing && (existing.status === 'HADIR' || existing.status === 'TELAT')) {
+      throw new ConflictException(`Tanggal ${dto.date} sudah tercatat hadir — izin tidak bisa dikirim.`);
+    }
+    const status = dto.category === 'SAKIT' ? 'SAKIT' : 'IZIN';
+    const catLabel = { SAKIT: 'Sakit', DINAS: 'Dinas luar', WORKSHOP: 'Workshop/Pelatihan', LAINNYA: 'Lainnya' }[dto.category];
+    const rec = await this.prisma.employeeAttendance.upsert({
+      where: { employeeId_date: { employeeId: emp.id, date: day } },
+      update: { status, leaveCategory: dto.category, note: dto.note ?? `${catLabel}`, source: 'SELFIE' },
+      create: {
+        employeeId: emp.id, date: day, status,
+        leaveCategory: dto.category, note: dto.note ?? catLabel, source: 'SELFIE',
+      },
+    });
+    await this.audit.log({
+      actorId: userId, action: 'attendance.leave', entity: 'employee_attendance', entityId: rec.id,
+      metadata: { date: dto.date, category: dto.category },
+    });
+    return rec;
+  }
+
+  /** Admin/TU clear absen 1 hari 1 pegawai (salah absen — mis. tap padahal libur):
+      hapus rekap harian + log mentahnya agar tidak ter-derivasi ulang. */
+  async clearDay(employeeId: string, dateIso: string, actorId: string) {
+    const day = localDay(new Date(`${dateIso}T00:00:00+07:00`));
+    if (Number.isNaN(day.getTime())) throw new BadRequestException('Tanggal tidak valid.');
+    const from = new Date(day.getTime() - DEVICE_OFFSET_MS);
+    const to = new Date(day.getTime() + 24 * 3600e3 - DEVICE_OFFSET_MS);
+    const [logs, rec] = await this.prisma.$transaction([
+      this.prisma.attendanceLog.deleteMany({
+        where: { employeeId, punchedAt: { gte: from, lt: to } },
+      }),
+      this.prisma.employeeAttendance.deleteMany({ where: { employeeId, date: day } }),
+    ]);
+    await this.audit.log({
+      actorId, action: 'attendance.clear-day', entity: 'employee', entityId: employeeId,
+      metadata: { date: dateIso, logsRemoved: logs.count, recordRemoved: rec.count },
+    });
+    return { logsRemoved: logs.count, recordRemoved: rec.count };
   }
 
   /** Foto selfie sebuah log — dibaca TU/admin. */

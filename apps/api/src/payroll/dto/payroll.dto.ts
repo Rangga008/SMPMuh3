@@ -6,6 +6,7 @@ import {
   IsDateString,
   IsIn,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
@@ -111,8 +112,8 @@ export class EmployeePayrollSettingsDto {
   @IsOptional()
   @IsInt()
   @Min(0)
-  @Max(10080)
-  weeklyRequiredMinutes?: number;
+  @Max(43200)
+  monthlyRequiredMinutes?: number;
 
   @emptyToUndefined()
   @IsOptional()
@@ -250,6 +251,32 @@ export class DeductionTypeDto {
   @Min(0)
   defaultAmount?: number;
 
+  /** FIXED = nominal rupiah; PERCENT = persen dari dasar (kotor/sisa). */
+  @emptyToUndefined()
+  @IsOptional()
+  @IsIn(['FIXED', 'PERCENT'])
+  method?: 'FIXED' | 'PERCENT';
+
+  @emptyToUndefined()
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  percent?: number;
+
+  /** Dasar potongan persen: GROSS = gaji kotor, REST = sisa setelah potongan sebelumnya. */
+  @emptyToUndefined()
+  @IsOptional()
+  @IsIn(['GROSS', 'REST'])
+  base?: 'GROSS' | 'REST';
+
+  /** Urutan potong — kecil dipotong duluan (mis. infaq dari kotor). */
+  @emptyToUndefined()
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  sortOrder?: number;
+
   @emptyToUndefined()
   @IsOptional()
   @IsBoolean()
@@ -274,6 +301,14 @@ export class EmployeeDeductionDto {
   @IsInt()
   @Min(0)
   amount?: number;
+
+  /** Override persen untuk tipe PERCENT — kosong = pakai persen tipe. */
+  @emptyToUndefined()
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  percent?: number;
 
   @emptyToUndefined()
   @IsOptional()

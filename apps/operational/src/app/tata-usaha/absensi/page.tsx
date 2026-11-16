@@ -9,6 +9,7 @@ import { DataTable } from '@/components/data-table';
 import { RowBtn } from '@/components/row-btn';
 import { PageTitle, Widget } from '@/components/widgets';
 import {
+  clearEmployeeDay,
   listAttendanceDaily,
   listEmployees,
   manualPunch,
@@ -153,6 +154,18 @@ export default function AbsensiPegawaiPage() {
                   <span className="flex gap-1.5">
                     <RowBtn tone="primary" type="button" onClick={() => setManualFor({ emp: r.employee, inOut: 0 })}>Tap Masuk</RowBtn>
                     <RowBtn tone="neutral" type="button" onClick={() => setManualFor({ emp: r.employee, inOut: 1 })}>Tap Pulang</RowBtn>
+                    {r.status || r.checkInAt || r.checkOutAt ? (
+                      <RowBtn
+                        tone="danger"
+                        type="button"
+                        onClick={() => {
+                          if (!window.confirm(`Clear absen ${r.employee.name} tanggal ${date}? Rekap & log ikut terhapus.`)) return;
+                          clearEmployeeDay(r.employee.id, date)
+                            .then(() => { setNotice(`Absen ${r.employee.name} di tanggal itu dihapus.`); loadDaily(); })
+                            .catch((er) => setError(er instanceof Error ? er.message : 'Gagal menghapus.'));
+                        }}
+                      >Clear</RowBtn>
+                    ) : null}
                   </span>
                 </td>
               ) : null}

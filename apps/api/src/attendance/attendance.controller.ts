@@ -25,6 +25,7 @@ import {
   AttendanceSettingsDto,
   CreateDeviceDto,
   CreateShiftDto,
+  LeaveDto,
   ManualPunchDto,
   PinMapDto,
   SelfiePunchDto,
@@ -231,6 +232,20 @@ export class AttendanceController {
   @Get('my')
   myAttendance(@CurrentUser() u: AuthUser, @Query('month') month?: string) {
     return this.attendance.myAttendance(u.id, month || undefined);
+  }
+
+  /** Pegawai setor izin sendiri (sakit/dinas/workshop/lainnya) — dari Absen Saya. */
+  @Post('my/leave')
+  submitLeave(@Body() dto: LeaveDto, @CurrentUser() u: AuthUser) {
+    return this.attendance.submitLeave(u.id, dto);
+  }
+
+  /** Admin/TU clear absen 1 hari 1 pegawai — hapus rekap + log mentahnya. */
+  @Delete('day')
+  @RequirePermission(M)
+  clearDay(@Query('employeeId') employeeId: string, @Query('date') date: string, @CurrentUser() u: AuthUser) {
+    if (!employeeId || !date) throw new BadRequestException('Parameter employeeId & date wajib.');
+    return this.attendance.clearDay(employeeId, date, u.id);
   }
 
   @Post('selfie')

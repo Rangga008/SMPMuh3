@@ -215,15 +215,15 @@ export default async function Home() {
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="bg-primary-800 text-primary-50">
-                  <th className="px-5 py-4 text-xs font-bold uppercase tracking-wider">Komponen Biaya</th>
+                  <th className="px-3 py-4 text-xs font-bold uppercase tracking-wider sm:px-5">Komponen Biaya</th>
                   <th className="hidden px-5 py-4 text-xs font-bold uppercase tracking-wider sm:table-cell">Kapan Dibayar</th>
-                  <th className="px-5 py-4 text-right text-xs font-bold uppercase tracking-wider">Nominal</th>
+                  <th className="px-3 py-4 text-right text-xs font-bold uppercase tracking-wider sm:px-5">Nominal</th>
                 </tr>
               </thead>
               <tbody>
                 {c.fees.map((f) => (
                   <tr key={f.label} className="border-t border-sand-100">
-                    <td className="px-5 py-4">
+                    <td className="px-3 py-4 sm:px-5">
                       <p className="font-bold text-sand-950">{f.label}</p>
                       {f.note ? (
                         <p className="mt-0.5 text-xs font-medium text-accent-700">{f.note}</p>
@@ -231,21 +231,25 @@ export default async function Home() {
                       <p className="mt-0.5 text-xs text-sand-500 sm:hidden">{f.stage}</p>
                     </td>
                     <td className="hidden px-5 py-4 text-sand-600 sm:table-cell">{f.stage}</td>
-                    <td className="px-5 py-4 text-right font-extrabold text-primary-800">
+                    <td className="whitespace-nowrap px-3 py-4 text-right font-extrabold text-primary-800 sm:px-5">
                       {rupiah(f.amount)}
                     </td>
                   </tr>
                 ))}
                 <tr className="border-t-2 border-primary-200 bg-primary-50">
-                  <td className="px-5 py-4 font-extrabold text-primary-900" colSpan={2}>
-                    Total biaya masuk (pendaftaran + DSP + seragam)
-                  </td>
-                  <td className="px-5 py-4 text-right text-base font-extrabold text-primary-900">
-                    {rupiah(
-                      c.fees
-                        .filter((f) => !f.label.startsWith('SPP'))
-                        .reduce((t, f) => t + f.amount, 0),
-                    )}
+                  <td className="px-3 py-4 sm:px-5" colSpan={3}>
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                      <span className="text-sm font-extrabold text-primary-900 sm:text-base">
+                        Total biaya masuk (pendaftaran + DSP + seragam)
+                      </span>
+                      <span className="whitespace-nowrap text-base font-extrabold text-primary-900">
+                        {rupiah(
+                          c.fees
+                            .filter((f) => !f.label.startsWith('SPP'))
+                            .reduce((t, f) => t + f.amount, 0),
+                        )}
+                      </span>
+                    </div>
                   </td>
                 </tr>
               </tbody>
@@ -500,7 +504,7 @@ export default async function Home() {
                 <h3 className="mt-4 text-xs font-bold uppercase tracking-wider text-sand-500">
                   {k.label}
                 </h3>
-                <p className="mt-2 text-sm font-semibold text-sand-900">{k.value}</p>
+                <p className="mt-2 break-all text-sm font-semibold text-sand-900">{k.value}</p>
               </div>
             ))}
           </div>

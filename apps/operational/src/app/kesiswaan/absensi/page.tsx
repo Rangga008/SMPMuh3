@@ -9,6 +9,7 @@ import type { StudentDto } from '@smpmuh3/types';
 import {
   attendanceDailyOverview,
   attendanceReport,
+  clearClassAttendance,
   getClassAttendance,
   saveClassAttendance,
   studentAttendanceHistory,
@@ -261,9 +262,19 @@ export default function AbsensiPage() {
                               <td key={k} className={`px-4 py-2.5 text-center font-semibold ${k === 'absent' && c[k] ? 'text-red-600' : k === 'present' ? 'text-emerald-700' : 'text-sand-700'}`}>{c.taken ? c[k] : '—'}</td>
                             ))}
                             <td className="px-4 py-2.5 text-right">
-                              <Button size="sm" variant={c.taken ? 'outline' : 'primary'} onClick={() => setEditor({ classId: c.classId, name: c.name, ...(c.takenBy ? { takenBy: c.takenBy } : {}) })}>
-                                {c.taken ? 'Detail / Revisi' : 'Absen Sekarang'}
-                              </Button>
+                              <span className="inline-flex gap-1.5">
+                                <Button size="sm" variant={c.taken ? 'outline' : 'primary'} onClick={() => setEditor({ classId: c.classId, name: c.name, ...(c.takenBy ? { takenBy: c.takenBy } : {}) })}>
+                                  {c.taken ? 'Detail / Revisi' : 'Absen Sekarang'}
+                                </Button>
+                                {c.taken ? (
+                                  <Button size="sm" variant="outline" onClick={() => {
+                                    if (!window.confirm(`Hapus seluruh absen ${c.name} tanggal ${date}?`)) return;
+                                    clearClassAttendance(c.classId, date)
+                                      .then(() => { setNotice(`Absen ${c.name} tanggal itu dihapus.`); loadOverview(); })
+                                      .catch((e) => setError(e instanceof ApiError ? e.message : 'Gagal menghapus.'));
+                                  }}>Clear</Button>
+                                ) : null}
+                              </span>
                             </td>
                           </tr>
                         ))}

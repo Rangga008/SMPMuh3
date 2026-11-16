@@ -23,6 +23,8 @@ RUN pnpm --filter @smpmuh3/types build \
 FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+# postgresql-client → pg_dump/psql untuk fitur Cadangan & Pemulihan Database.
+RUN apk add --no-cache postgresql-client
 COPY --from=build /app /app
 EXPOSE 4000
 CMD ["node", "apps/api/dist/main.js"]

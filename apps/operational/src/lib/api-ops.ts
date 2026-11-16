@@ -280,8 +280,14 @@ export const removeExamSeat = (seatId: string) => req(`/ops/exam-seats/${seatId}
 export const addRoomLink = (roomId: string, dto: { examId: string; sessionLabel?: string; startsAt?: string; endsAt?: string }) =>
   req<ExamRoomLinkView>(`/ops/exam-rooms/${roomId}/links`, { method: 'POST', json: dto });
 export const removeRoomLink = (linkId: string) => req(`/ops/exam-room-links/${linkId}`, { method: 'DELETE' });
-export const assignClassToRoom = (roomId: string, classId: string, linkId?: string) =>
-  req<{ added: number; skipped: number }>(`/ops/exam-rooms/${roomId}/assign-class`, { method: 'POST', json: { classId, linkId } });
+export const assignClassToRoom = (roomId: string, classId: string, linkId?: string, count?: number) =>
+  req<{ added: number; skipped: number; free: number }>(`/ops/exam-rooms/${roomId}/assign-class`, { method: 'POST', json: { classId, linkId, ...(count ? { count } : {}) } });
+/** Hapus seluruh absen satu rombel di satu tanggal (salah absen). */
+export const clearClassAttendance = (classId: string, date: string) =>
+  req<{ removed: number }>(`/ops/class-attendance?classId=${classId}&date=${date}`, { method: 'DELETE' });
+/** Sinkron ulang Grade dari attempt SUBMITTED — untuk ujian lama. */
+export const syncExamGrades = (examId: string) =>
+  req<{ synced: number; total: number }>(`/ops/exams/${examId}/sync-grades`, { method: 'POST' });
 export const getExamCards = (roomId: string, linkId?: string) =>
   req<{
     room: ExamRoomView & { academicYear: AcademicYear };

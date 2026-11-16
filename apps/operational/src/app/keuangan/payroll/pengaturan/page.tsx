@@ -59,6 +59,7 @@ import {
 } from '@/lib/api';
 
 import { RowBtn } from '@/components/row-btn';
+import { RpInput } from '@/components/rp-input';
 import { useConfirm } from '@/components/confirm-dialog';
 const rupiah = (n: number) => `Rp${n.toLocaleString('id-ID')}`;
 const PERIOD_LABEL: Record<string, string> = {
@@ -101,8 +102,10 @@ export default function PayrollPengaturanPage() {
   const [scaleModal, setScaleModal] = useState<false | PayScaleView>(false);
   const [honorTypeModal, setHonorTypeModal] = useState<HonorTypeView | 'new' | null>(null);
   const [dedTypeModal, setDedTypeModal] = useState<DeductionTypeView | 'new' | null>(null);
-  const [honorModal, setHonorModal] = useState(false);
-  const [dedModal, setDedModal] = useState(false);
+  const [dedMethod, setDedMethod] = useState('FIXED');
+  const [honorModal, setHonorModal] = useState<EmployeeHonorView | 'new' | null>(null);
+  const [honorTypeSel, setHonorTypeSel] = useState('');
+  const [dedModal, setDedModal] = useState<EmployeeDeductionView | 'new' | null>(null);
   const [loanModal, setLoanModal] = useState(false);
   const [bosModal, setBosModal] = useState(false);
   const [ledger, setLedger] = useState<{ name: string; entries: { month: string; amount: number; note?: string | null }[]; total: number } | null>(null);
@@ -273,7 +276,7 @@ export default function PayrollPengaturanPage() {
       {tab === 'Pegawai' ? (
         <Widget title="Pengaturan Payroll per Pegawai">
           <DataTable
-            head={['Pegawai', 'Masa kerja', 'Golongan', 'Jam wajib/mgg', 'Tarif/jam', 'Transport/jam', 'Sertifikasi', ...(canManage ? [''] : [])]}
+            head={['Pegawai', 'Masa kerja', 'Golongan', 'Jam wajib/bln', 'Tarif/jam', 'Transport/jam', 'Sertifikasi', ...(canManage ? [''] : [])]}
             loading={false}
             error={null}
             empty={employees.length === 0 ? 'Belum ada pegawai.' : undefined}
@@ -286,7 +289,7 @@ export default function PayrollPengaturanPage() {
                 </td>
                 <td className="px-5 py-3 text-sand-600">{e.serviceYears !== null && e.serviceYears !== undefined ? `${e.serviceYears} th` : '—'}</td>
                 <td className="px-5 py-3 text-sand-800">{e.payScale?.name ?? '—'}</td>
-                <td className="px-5 py-3 text-sand-600">{(e.weeklyRequiredMinutes / 60).toLocaleString('id-ID', { maximumFractionDigits: 1 })} jam</td>
+                <td className="px-5 py-3 text-sand-600">{(e.monthlyRequiredMinutes / 60).toLocaleString('id-ID', { maximumFractionDigits: 1 })} jam</td>
                 <td className="whitespace-nowrap px-5 py-3 text-sand-600">
                   {e.hourlyRate != null ? rupiah(e.hourlyRate) : (e.payScale ? `${rupiah(e.payScale.hourlyRate)} (gol.)` : '—')}
                 </td>
@@ -360,7 +363,7 @@ export default function PayrollPengaturanPage() {
           </Widget>
           <Widget
             title="Honor Pegawai"
-            action={canManage ? <Button size="sm" onClick={async () => setHonorModal(true)}>+ Honor Pegawai</Button> : undefined}
+            action={canManage ? <Button size="sm" onClick={async () => { setHonorTypeSel(''); setHonorModal('new'); }}>+ Honor Pegawai</Button> : undefined}
 >
             <DataTable head={['Pegawai', 'Tipe', 'Nominal', 'Berlaku', 'Status', ...(canManage ? [''] : [])]} loading={false} error={null} empty={honors.length === 0 ? 'Belum ada honor.' : undefined}>
               {honors.map((h) => (
@@ -379,6 +382,7 @@ export default function PayrollPengaturanPage() {
                   {canManage ? (
                     <td className="px-5 py-3 text-right">
                       <span className="flex justify-end gap-2">
+                        <RowBtn type="button" onClick={async () => { setHonorTypeSel(h.honorTypeId); setHonorModal(h); }}>Edit</RowBtn>
                         <RowBtn tone="neutral" type="button" onClick={async () => void run(() => updateEmployeeHonor(h.id, { isActive: !h.isActive }), 'Diperbarui.')}>{h.isActive ? 'Nonaktifkan' : 'Aktifkan'}</RowBtn>
                         <RowBtn tone="danger" type="button" onClick={async () => { if (await confirm('Hapus honor?')) void run(() => deleteEmployeeHonor(h.id), 'Honor dihapus.'); }}>Hapus</RowBtn>
                       </span>
@@ -458,17 +462,19 @@ export default function PayrollPengaturanPage() {
           </Widget>
           <Widget
             title="Tipe Potongan"
-            action={canManage ? <Button size="sm" onClick={async () => setDedTypeModal('new')}>+ Tipe</Button> : undefined}
+            action={canManage ? <Button size="sm" onClick={async () => { setDedMethod('FIXED'); setDedTypeModal('new'); }}>+ Tipe</Button> : undefined}
 >
-            <DataTable head={['Nama', 'Default', 'Berulang', ...(canManage ? [''] : [])]} loading={false} error={null} empty={dedTypes.length === 0 ? '—' : undefined}>
+            <DataTable head={['Nama', 'Cara hitung', 'Nilai', 'Urutan', 'Berulang', ...(canManage ? [''] : [])]} loading={false} error={null} empty={dedTypes.length === 0 ? '—' : undefined}>
               {dedTypes.map((t) => (
                 <tr key={t.id}>
                   <td className="px-5 py-3 font-medium text-sand-900">{t.name}</td>
-                  <td className="whitespace-nowrap px-5 py-3">{rupiah(t.defaultAmount)}</td>
+                  <td className="px-5 py-3 text-sand-600">{t.method === 'PERCENT' ? `Persen ${t.base === 'REST' ? 'dari bersih' : 'dari kotor'}` : 'Nominal tetap'}</td>
+                  <td className="whitespace-nowrap px-5 py-3">{t.method === 'PERCENT' ? `${t.percent ?? 0}%` : rupiah(t.defaultAmount)}</td>
+                  <td className="px-5 py-3 text-sand-600">{t.sortOrder ?? 0}</td>
                   <td className="px-5 py-3 text-sand-600">{t.isRecurring ? 'Tiap bulan' : 'Sekali'}</td>
                   {canManage ? (
                     <td className="px-5 py-3 text-right">
-                      <RowBtn type="button" onClick={async () => setDedTypeModal(t)}>Edit</RowBtn>
+                      <RowBtn type="button" onClick={async () => { setDedMethod(t.method ?? 'FIXED'); setDedTypeModal(t); }}>Edit</RowBtn>
                     </td>
                   ) : null}
                 </tr>
@@ -477,19 +483,27 @@ export default function PayrollPengaturanPage() {
           </Widget>
           <Widget
             title="Potongan Pegawai"
-            action={canManage ? <Button size="sm" onClick={async () => setDedModal(true)}>+ Potongan Pegawai</Button> : undefined}
+            action={canManage ? <Button size="sm" onClick={async () => setDedModal('new')}>+ Potongan Pegawai</Button> : undefined}
 >
             <DataTable head={['Pegawai', 'Tipe', 'Nominal', 'Bulan', 'Status', ...(canManage ? [''] : [])]} loading={false} error={null} empty={deductions.length === 0 ? 'Belum ada potongan.' : undefined}>
               {deductions.map((d) => (
                 <tr key={d.id}>
                   <td className="px-5 py-3 font-medium text-sand-900">{d.employee?.name}</td>
-                  <td className="px-5 py-3 text-sand-600">{d.deductionType?.name}</td>
-                  <td className="whitespace-nowrap px-5 py-3">{d.amount != null ? rupiah(d.amount) : 'default'}</td>
+                  <td className="px-5 py-3 text-sand-600">
+                    {d.deductionType?.name}
+                    {d.deductionType?.method === 'PERCENT' ? <span className="ml-1 text-[10px] text-sand-400">({d.deductionType.base === 'REST' ? 'dari bersih' : 'dari kotor'})</span> : null}
+                  </td>
+                  <td className="whitespace-nowrap px-5 py-3">
+                    {d.deductionType?.method === 'PERCENT'
+                      ? `${d.percent ?? d.deductionType.percent ?? 0}%`
+                      : d.amount != null ? rupiah(d.amount) : 'default'}
+                  </td>
                   <td className="px-5 py-3 text-xs text-sand-500">{d.month ?? 'Tiap bulan'}</td>
                   <td className="px-5 py-3">{d.isActive ? <Badge tone="primary">Aktif</Badge> : <Badge tone="neutral">Nonaktif</Badge>}</td>
                   {canManage ? (
                     <td className="px-5 py-3 text-right">
                       <span className="flex justify-end gap-2">
+                        <RowBtn type="button" onClick={async () => setDedModal(d)}>Edit</RowBtn>
                         <RowBtn tone="neutral" type="button" onClick={async () => void run(() => updateEmployeeDeduction(d.id, { isActive: !d.isActive }), 'Diperbarui.')}>{d.isActive ? 'Nonaktifkan' : 'Aktifkan'}</RowBtn>
                         <RowBtn tone="danger" type="button" onClick={async () => { if (await confirm('Hapus potongan?')) void run(() => deleteEmployeeDeduction(d.id), 'Potongan dihapus.'); }}>Hapus</RowBtn>
                       </span>
@@ -593,7 +607,7 @@ export default function PayrollPengaturanPage() {
                   updateEmployeePayrollSettings(empModal.id, {
                     ...(f.get('payScaleId') ? { payScaleId: String(f.get('payScaleId')) } : {}),
                     ...(f.get('workStartDate') ? { workStartDate: String(f.get('workStartDate')) } : {}),
-                    weeklyRequiredMinutes: Math.round(Number(f.get('weeklyHours') || 0) * 60),
+                    monthlyRequiredMinutes: Math.round(Number(f.get('monthlyHours') || 0) * 60),
                     hourlyRate: hourly ? Number(hourly) : null,
                     transportRate: transport ? Number(transport) : null,
                     isCertified: f.get('isCertified') === 'on',
@@ -614,8 +628,8 @@ export default function PayrollPengaturanPage() {
               <Input name="workStartDate" type="date" defaultValue={empModal.workStartDate?.slice(0, 10) ?? ''} />
             </Field>
             <div className="grid gap-3 sm:grid-cols-3">
-              <Field label="Jam wajib/minggu">
-                <Input name="weeklyHours" type="number" min={0} step={0.5} defaultValue={empModal.weeklyRequiredMinutes / 60} />
+              <Field label="Jam wajib/bulan" hint="Akumulasi sebulan — mis. 44">
+                <Input name="monthlyHours" type="number" min={0} step={0.5} defaultValue={empModal.monthlyRequiredMinutes / 60} />
               </Field>
               <Field label="Tarif/jam (override)">
                 <Input name="hourlyRate" type="number" min={0} placeholder="ikut golongan" defaultValue={empModal.hourlyRate ?? ''} />
@@ -699,10 +713,9 @@ export default function PayrollPengaturanPage() {
               <Select name="period" required defaultValue={honorTypeModal === 'new' ? 'MONTHLY' : (honorTypeModal as HonorTypeView)?.period}>
                 <option value="MONTHLY">Per bulan</option>
                 <option value="PER_SESSION">Per sesi</option>
-                <option value="ONE_TIME">Sekali (per kegiatan)</option>
               </Select>
             </Field>
-            <Field label="Nominal default"><Input name="defaultAmount" type="number" min={0} defaultValue={honorTypeModal === 'new' ? 0 : (honorTypeModal as HonorTypeView)?.defaultAmount ?? 0} /></Field>
+            <Field label="Nominal default"><RpInput name="defaultAmount" defaultValue={honorTypeModal === 'new' ? 0 : (honorTypeModal as HonorTypeView)?.defaultAmount ?? 0} /></Field>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="ghost" onClick={async () => setHonorTypeModal(null)}>Batal</Button>
@@ -712,55 +725,75 @@ export default function PayrollPengaturanPage() {
       </Modal>
 
       {/* Modal honor pegawai */}
-      <Modal open={honorModal} onClose={() => setHonorModal(false)} title="Honor Pegawai">
-        <form
-          className="grid gap-3"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const f = new FormData(e.currentTarget);
-            const amount = f.get('amount');
-            void run(
-              () =>
-                createEmployeeHonor({
-                  employeeId: String(f.get('employeeId')),
-                  honorTypeId: String(f.get('honorTypeId')),
-                  ...(amount ? { amount: Number(amount) } : {}),
+      <Modal open={honorModal !== null} onClose={() => setHonorModal(null)} title={honorModal === 'new' ? 'Honor Pegawai' : `Edit Honor — ${(honorModal as EmployeeHonorView)?.employee?.name ?? ''}`}>
+        {honorModal !== null ? (() => {
+          const editing = honorModal === 'new' ? null : honorModal;
+          const editingType = editing ? honorTypes.find((t) => t.id === editing.honorTypeId) : null;
+          const period = editingType?.period ?? honorTypes.find((t) => t.id === honorTypeSel)?.period;
+          return (
+            <form
+              className="grid gap-3"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const f = new FormData(e.currentTarget);
+                const amount = f.get('amount');
+                const body = {
+                  ...(amount ? { amount: Number(amount) } : { amount: null }),
                   sessions: Number(f.get('sessions')) || 1,
-                  ...(f.get('eventName') ? { eventName: String(f.get('eventName')) } : {}),
-                  ...(f.get('eventMonth') ? { eventMonth: String(f.get('eventMonth')) } : {}),
-                  ...(f.get('validFrom') ? { validFrom: String(f.get('validFrom')) } : {}),
-                  ...(f.get('validTo') ? { validTo: String(f.get('validTo')) } : {}),
-                }),
-              'Honor ditambahkan.',
-            ).then((ok) => { if (ok) setHonorModal(false); });
-          }}
+                  validFrom: f.get('validFrom') ? String(f.get('validFrom')) : null,
+                  validTo: f.get('validTo') ? String(f.get('validTo')) : null,
+                };
+                void run(
+                  () =>
+                    editing
+                      ? updateEmployeeHonor(editing.id, body)
+                      : createEmployeeHonor({
+                          employeeId: String(f.get('employeeId')),
+                          honorTypeId: String(f.get('honorTypeId')),
+                          ...(amount ? { amount: Number(amount) } : {}),
+                          sessions: Number(f.get('sessions')) || 1,
+                          ...(f.get('validFrom') ? { validFrom: String(f.get('validFrom')) } : {}),
+                          ...(f.get('validTo') ? { validTo: String(f.get('validTo')) } : {}),
+                        }),
+                  editing ? 'Honor diperbarui.' : 'Honor ditambahkan.',
+                ).then((ok) => { if (ok) setHonorModal(null); });
+              }}
 >
-          <Field label="Pegawai"><SearchSelect name="employeeId" required load={loadEmp} label={empLabel} sub={empSub} placeholder="Ketik nama pegawai…" /></Field>
-          <Field label="Tipe Honor">
-            <Select name="honorTypeId" required>
-              <option value="">—</option>
-              {honorTypes.filter((t) => t.isActive).map((t) => (
-                <option key={t.id} value={t.id}>{t.name} ({PERIOD_LABEL[t.period]})</option>
-              ))}
-            </Select>
-          </Field>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Nominal (kosong = default)"><Input name="amount" type="number" min={0} placeholder="default" /></Field>
-            <Field label="Sesi/bulan (utk per-sesi)"><Input name="sessions" type="number" min={1} defaultValue={1} /></Field>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Nama kegiatan (utk sekali)"><Input name="eventName" placeholder="Panitia PAS" /></Field>
-            <Field label="Bulan kegiatan"><Input name="eventMonth" type="month" /></Field>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Berlaku dari (YYYY-MM)"><Input name="validFrom" placeholder="2026-01" /></Field>
-            <Field label="Berlaku sampai"><Input name="validTo" placeholder="kosong = terus" /></Field>
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="ghost" onClick={async () => setHonorModal(false)}>Batal</Button>
-            <Button type="submit" disabled={busy}>Simpan</Button>
-          </div>
-        </form>
+              {editing ? (
+                <>
+                  <Field label="Pegawai"><p className="rounded-xl bg-sand-50 px-3 py-2 text-sm font-semibold text-sand-800">{editing.employee?.name ?? '—'}</p></Field>
+                  <Field label="Tipe Honor"><p className="rounded-xl bg-sand-50 px-3 py-2 text-sm text-sand-800">{editingType?.name ?? editing.honorType?.name ?? '—'} ({PERIOD_LABEL[period ?? ''] ?? period ?? '—'})</p></Field>
+                </>
+              ) : (
+                <>
+                  <Field label="Pegawai"><SearchSelect name="employeeId" required load={loadEmp} label={empLabel} sub={empSub} placeholder="Ketik nama pegawai…" /></Field>
+                  <Field label="Tipe Honor">
+                    <Select name="honorTypeId" required value={honorTypeSel} onChange={(e) => setHonorTypeSel(e.target.value)}>
+                      <option value="">—</option>
+                      {honorTypes.filter((t) => t.isActive && t.period !== 'ONE_TIME').map((t) => (
+                        <option key={t.id} value={t.id}>{t.name} ({PERIOD_LABEL[t.period]})</option>
+                      ))}
+                    </Select>
+                  </Field>
+                </>
+              )}
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Nominal (kosong = default)"><RpInput name="amount" defaultValue={editing?.amount} /></Field>
+                {period === 'PER_SESSION' ? (
+                  <Field label="Sesi/bulan"><Input name="sessions" type="number" min={1} defaultValue={editing?.sessions ?? 1} /></Field>
+                ) : <span />}
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Berlaku dari (YYYY-MM)"><Input name="validFrom" placeholder="2026-01" defaultValue={editing?.validFrom ?? ''} /></Field>
+                <Field label="Berlaku sampai"><Input name="validTo" placeholder="kosong = terus" defaultValue={editing?.validTo ?? ''} /></Field>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button type="button" variant="ghost" onClick={async () => setHonorModal(null)}>Batal</Button>
+                <Button type="submit" disabled={busy}>Simpan</Button>
+              </div>
+            </form>
+          );
+        })() : null}
       </Modal>
 
       {/* Modal tipe potongan */}
@@ -772,7 +805,11 @@ export default function PayrollPengaturanPage() {
             const f = new FormData(e.currentTarget);
             const dto = {
               name: String(f.get('name')),
+              method: String(f.get('method') ?? 'FIXED'),
               defaultAmount: Number(f.get('defaultAmount')) || 0,
+              percent: Number(f.get('percent')) || 0,
+              base: String(f.get('base') ?? 'GROSS'),
+              sortOrder: Number(f.get('sortOrder')) || 0,
               isRecurring: f.get('isRecurring') === 'on',
             };
             void run(
@@ -781,12 +818,40 @@ export default function PayrollPengaturanPage() {
             ).then((ok) => { if (ok) setDedTypeModal(null); });
           }}
 >
-          <Field label="Nama"><Input name="name" required placeholder="Infak Jumat" defaultValue={dedTypeModal === 'new' ? '' : (dedTypeModal as DeductionTypeView)?.name} /></Field>
-          <Field label="Nominal default"><Input name="defaultAmount" type="number" min={0} defaultValue={dedTypeModal === 'new' ? 0 : (dedTypeModal as DeductionTypeView)?.defaultAmount ?? 0} /></Field>
-          <label className="flex items-center gap-2 text-sm">
-            <input name="isRecurring" type="checkbox" defaultChecked={dedTypeModal === 'new' ? true : (dedTypeModal as DeductionTypeView)?.isRecurring ?? true} className="size-4" />
-            Berulang tiap bulan
-          </label>
+          {(() => {
+            const editing = dedTypeModal === 'new' ? null : (dedTypeModal as DeductionTypeView);
+            return (
+              <>
+                <Field label="Nama"><Input name="name" required placeholder="Infak Jumat" defaultValue={editing?.name ?? ''} /></Field>
+                <Field label="Cara hitung">
+                  <Select name="method" required defaultValue={editing?.method ?? 'FIXED'} onChange={(e) => setDedMethod(e.target.value)}>
+                    <option value="FIXED">Nominal tetap (Rp)</option>
+                    <option value="PERCENT">Persen dari gaji (%)</option>
+                  </Select>
+                </Field>
+                {dedMethod === 'PERCENT' ? (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label="Persen (%)" hint="mis. 2,5 untuk infaq"><Input name="percent" type="number" min={0} step={0.1} defaultValue={editing?.percent ?? 0} /></Field>
+                    <Field label="Dasar persen">
+                      <Select name="base" defaultValue={editing?.base ?? 'GROSS'}>
+                        <option value="GROSS">Gaji kotor</option>
+                        <option value="REST">Gaji bersih (setelah potongan sebelumnya)</option>
+                      </Select>
+                    </Field>
+                  </div>
+                ) : (
+                  <Field label="Nominal default (Rp)"><RpInput name="defaultAmount" defaultValue={editing?.defaultAmount ?? 0} /></Field>
+                )}
+                <Field label="Urutan potong" hint="kecil = dipotong duluan — infaq dulu baru pensiun">
+                  <Input name="sortOrder" type="number" min={0} defaultValue={editing?.sortOrder ?? 0} />
+                </Field>
+                <label className="flex items-center gap-2 text-sm">
+                  <input name="isRecurring" type="checkbox" defaultChecked={editing?.isRecurring ?? true} className="size-4" />
+                  Berulang tiap bulan
+                </label>
+              </>
+            );
+          })()}
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="ghost" onClick={async () => setDedTypeModal(null)}>Batal</Button>
             <Button type="submit" disabled={busy}>Simpan</Button>
@@ -795,43 +860,81 @@ export default function PayrollPengaturanPage() {
       </Modal>
 
       {/* Modal potongan pegawai */}
-      <Modal open={dedModal} onClose={() => setDedModal(false)} title="Potongan Pegawai">
-        <form
-          className="grid gap-3"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const f = new FormData(e.currentTarget);
-            const amount = f.get('amount');
-            void run(
-              () =>
-                createEmployeeDeduction({
-                  employeeId: String(f.get('employeeId')),
-                  deductionTypeId: String(f.get('deductionTypeId')),
-                  ...(amount ? { amount: Number(amount) } : {}),
-                  ...(f.get('month') ? { month: String(f.get('month')) } : {}),
-                }),
-              'Potongan ditambahkan.',
-            ).then((ok) => { if (ok) setDedModal(false); });
-          }}
+      <Modal open={dedModal !== null} onClose={() => setDedModal(null)} title={dedModal === 'new' ? 'Potongan Pegawai' : `Edit Potongan — ${(dedModal as EmployeeDeductionView)?.employee?.name ?? ''}`}>
+        {dedModal !== null ? (() => {
+          const editing = dedModal === 'new' ? null : dedModal;
+          const editingType = editing ? dedTypes.find((t) => t.id === editing.deductionTypeId) : null;
+          const isPercent = editingType?.method === 'PERCENT';
+          return (
+            <form
+              className="grid gap-3"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const f = new FormData(e.currentTarget);
+                const amount = f.get('amount');
+                const body = {
+                  amount: amount ? Number(amount) : null,
+                  percent: f.get('percent') ? Number(f.get('percent')) : null,
+                  month: f.get('month') ? String(f.get('month')) : null,
+                };
+                void run(
+                  () =>
+                    editing
+                      ? updateEmployeeDeduction(editing.id, body)
+                      : createEmployeeDeduction({
+                          employeeId: String(f.get('employeeId')),
+                          deductionTypeId: String(f.get('deductionTypeId')),
+                          ...(amount ? { amount: Number(amount) } : {}),
+                          ...(f.get('percent') ? { percent: Number(f.get('percent')) } : {}),
+                          ...(f.get('month') ? { month: String(f.get('month')) } : {}),
+                        }),
+                  editing ? 'Potongan diperbarui.' : 'Potongan ditambahkan.',
+                ).then((ok) => { if (ok) setDedModal(null); });
+              }}
 >
-          <Field label="Pegawai"><SearchSelect name="employeeId" required load={loadEmp} label={empLabel} sub={empSub} placeholder="Ketik nama pegawai…" /></Field>
-          <Field label="Tipe Potongan">
-            <Select name="deductionTypeId" required>
-              <option value="">—</option>
-              {dedTypes.filter((t) => t.isActive).map((t) => (
-                <option key={t.id} value={t.id}>{t.name}</option>
-              ))}
-            </Select>
-          </Field>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Nominal (kosong = default)"><Input name="amount" type="number" min={0} /></Field>
-            <Field label="Bulan (kosong = tiap bulan)"><Input name="month" type="month" /></Field>
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="ghost" onClick={async () => setDedModal(false)}>Batal</Button>
-            <Button type="submit" disabled={busy}>Simpan</Button>
-          </div>
-        </form>
+              {editing ? (
+                <>
+                  <Field label="Pegawai"><p className="rounded-xl bg-sand-50 px-3 py-2 text-sm font-semibold text-sand-800">{editing.employee?.name ?? '—'}</p></Field>
+                  <Field label="Tipe Potongan">
+                    <p className="rounded-xl bg-sand-50 px-3 py-2 text-sm text-sand-800">
+                      {editingType?.name ?? editing.deductionType?.name ?? '—'}
+                      {isPercent ? <span className="ml-1 text-xs text-sand-500">({editingType?.percent ?? editing.deductionType?.percent ?? 0}% dari {editingType?.base === 'REST' ? 'bersih' : 'kotor'})</span> : null}
+                    </p>
+                  </Field>
+                </>
+              ) : (
+                <>
+                  <Field label="Pegawai"><SearchSelect name="employeeId" required load={loadEmp} label={empLabel} sub={empSub} placeholder="Ketik nama pegawai…" /></Field>
+                  <Field label="Tipe Potongan">
+                    <Select name="deductionTypeId" required>
+                      <option value="">—</option>
+                      {dedTypes.filter((t) => t.isActive).map((t) => (
+                        <option key={t.id} value={t.id}>{t.name}{t.method === 'PERCENT' ? ` (${t.percent}% dari ${t.base === 'REST' ? 'bersih' : 'kotor'})` : ''}</option>
+                      ))}
+                    </Select>
+                  </Field>
+                </>
+              )}
+              <div className="grid gap-3 sm:grid-cols-3">
+                {isPercent ? (
+                  <Field label="Persen override (%)" hint={`default tipe ${editingType?.percent ?? 0}%`}>
+                    <Input name="percent" type="number" min={0} step={0.1} defaultValue={editing?.percent ?? ''} />
+                  </Field>
+                ) : (
+                  <Field label="Nominal override"><RpInput name="amount" defaultValue={editing?.amount} /></Field>
+                )}
+                {!editing || !isPercent ? (
+                  <Field label="Persen override (%)"><Input name="percent" type="number" min={0} step={0.1} defaultValue={editing?.percent ?? ''} /></Field>
+                ) : null}
+                <Field label="Bulan (kosong = tiap bulan)"><Input name="month" type="month" defaultValue={editing?.month ?? ''} /></Field>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button type="button" variant="ghost" onClick={async () => setDedModal(null)}>Batal</Button>
+                <Button type="submit" disabled={busy}>Simpan</Button>
+              </div>
+            </form>
+          );
+        })() : null}
       </Modal>
 
       {/* Modal pinjaman */}
@@ -876,8 +979,8 @@ export default function PayrollPengaturanPage() {
             </Field>
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
-            <Field label="Pokok"><Input name="principal" type="number" min={1} required /></Field>
-            <Field label="Jasa total"><Input name="fee" type="number" min={0} defaultValue={0} /></Field>
+            <Field label="Pokok"><RpInput name="principal" /></Field>
+            <Field label="Jasa total"><RpInput name="fee" defaultValue={0} /></Field>
             <Field label="Angsuran (×)"><Input name="installments" type="number" min={1} max={120} required defaultValue={10} /></Field>
           </div>
           <Field label="Mulai dipotong"><Input name="startMonth" type="month" required defaultValue={new Date().toISOString().slice(0, 7)} /></Field>

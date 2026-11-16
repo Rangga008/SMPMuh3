@@ -97,7 +97,7 @@ export async function SiteFooter() {
               <IconWrap>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="size-4"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" /></svg>
               </IconWrap>
-              <span className="text-primary-200">{email ?? 'Email menyusul'}</span>
+              <span className="break-all text-primary-200">{email ?? 'Email menyusul'}</span>
             </li>
           </ul>
         </div>

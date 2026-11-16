@@ -8,6 +8,7 @@ import {
   CreateBucketCommand,
   DeleteObjectCommand,
   GetObjectCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
   S3ServiceException,
@@ -93,6 +94,34 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
     await this.client.send(
       new DeleteObjectCommand({ Bucket: this.bucket, Key: key }),
     );
+  }
+
+  /**
+   * Statistik isi bucket per prefix level-1 (mis. "qmedia/", "archive/") —
+   * dipakai kartu penggunaan storage di halaman cadangan.
+   */
+  async listStatsByPrefix(): Promise<
+    Record<string, { files: number; bytes: number }>
+  > {
+    const stats: Record<string, { files: number; bytes: number }> = {};
+    let token: string | undefined;
+    do {
+      const res = await this.client.send(
+        new ListObjectsV2Command({
+          Bucket: this.bucket,
+          ContinuationToken: token,
+        }),
+      );
+      for (const obj of res.Contents ?? []) {
+        const key = obj.Key ?? '';
+        const prefix = key.includes('/') ? key.slice(0, key.indexOf('/') + 1) : '(root)';
+        const s = (stats[prefix] ??= { files: 0, bytes: 0 });
+        s.files += 1;
+        s.bytes += obj.Size ?? 0;
+      }
+      token = res.IsTruncated ? res.NextContinuationToken : undefined;
+    } while (token);
+    return stats;
   }
 
   onModuleDestroy() {

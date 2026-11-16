@@ -18,6 +18,9 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
         {item.icon}
       </span>
       <span className="min-w-0 flex-1 leading-snug">{item.label}</span>
+      {item.external ? (
+        <span aria-hidden="true" className="ml-auto text-[10px] text-sky-300/70">↗</span>
+      ) : null}
       {!item.enabled ? (
         <span className="ml-auto rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-sky-300">
           segera
@@ -34,9 +37,15 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
         : 'cursor-default text-sky-300/40',
   );
   return item.enabled && item.href ? (
-    <Link href={item.href} className={cls}>
-      {inner}
-    </Link>
+    item.external ? (
+      <a href={item.href} target="_blank" rel="noopener noreferrer" className={cls}>
+        {inner}
+      </a>
+    ) : (
+      <Link href={item.href} className={cls}>
+        {inner}
+      </Link>
+    )
   ) : (
     <span className={cls} aria-disabled="true">
       {inner}
@@ -497,7 +506,7 @@ export function Shell({ children }: { children: ReactNode }) {
           </div>
         ) : null}
 
-        <main id="konten" className="min-w-0 flex-1 p-4 pb-24 sm:p-6 lg:p-8 lg:pb-8">
+        <main id="konten" className="min-w-0 flex-1 p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8 lg:pb-8">
           {/* Pill aksi atas — desktop: profil + toggle tema */}
           <div className="pointer-events-none sticky top-4 z-30 -mt-1 mb-4 hidden justify-end lg:flex">
             <div className="pointer-events-auto flex items-center gap-2 rounded-2xl border border-sand-200 bg-white/80 p-1.5 shadow-soft backdrop-blur">
@@ -568,11 +577,11 @@ function BottomTab({ href, icon, label, active }: { href: string; icon: string; 
 
 /** Tile satu modul di sheet menu. */
 function MenuTile({
-  href, icon, label, pathname, close,
+  href, icon, label, pathname, close, external,
 }: {
-  href?: string | undefined; icon: string; label: string; pathname: string; close: () => void;
+  href?: string | undefined; icon: string; label: string; pathname: string; close: () => void; external?: boolean;
 }) {
-  const active = href !== undefined && routeActive(pathname, href);
+  const active = !external && href !== undefined && routeActive(pathname, href);
   const cls = cn(
     'flex flex-col items-center gap-1.5 rounded-2xl border p-3 text-center transition-colors',
     active ? 'border-primary-300 bg-primary-50 text-primary-800' : 'border-sand-200 bg-white text-sand-700',
@@ -580,9 +589,12 @@ function MenuTile({
   const inner = (
     <>
       <span aria-hidden="true" className="text-xl leading-none">{icon}</span>
-      <span className="text-[11px] font-semibold leading-tight">{label}</span>
+      <span className="text-[11px] font-semibold leading-tight">{label}{external ? ' ↗' : ''}</span>
     </>
   );
+  if (external && href) {
+    return <a href={href} target="_blank" rel="noopener noreferrer" onClick={close} className={cls}>{inner}</a>;
+  }
   return href ? (
     <Link href={href} onClick={close} className={cls}>{inner}</Link>
   ) : (
@@ -602,7 +614,7 @@ function MenuSection({
       <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-sand-400">{title}</p>
       <div className="grid grid-cols-4 gap-2.5 max-[380px]:grid-cols-3">
         {items.map((c) => (
-          <MenuTile key={c.key} href={c.href} icon={c.icon === '•' ? '▪' : c.icon} label={c.label} pathname={pathname} close={close} />
+          <MenuTile key={c.key} href={c.href} icon={c.icon === '•' ? '▪' : c.icon} label={c.label} pathname={pathname} close={close} {...(c.external ? { external: true } : {})} />
         ))}
       </div>
     </div>

@@ -8,6 +8,7 @@ import { Prisma } from '@prisma/client';
 import * as XLSX from 'xlsx';
 import { PrismaService } from '../core/prisma/prisma.service';
 import { StorageService } from '../core/storage/storage.service';
+import { AuditService } from '../audit/audit.service';
 import { randomUUID } from 'node:crypto';
 import { normalizePhone } from '../identity/users/users.service';
 import { genStudentPassword } from '../students/students.service';
@@ -37,6 +38,7 @@ export class OpsService {
   constructor(
     private prisma: PrismaService,
     private storage: StorageService,
+    private audit: AuditService,
   ) {}
 
   // ================= ScheduleBlock (ishoma/pembiasaan) =================
@@ -782,6 +784,45 @@ export class OpsService {
     });
   }
 
+  /** Hapus seluruh absen satu rombel di satu tanggal (salah absen — kelas tsb
+      ternyata tidak ada/ tidak masuk). */
+  async clearClassAttendance(classId: string, dateIso: string, actorId?: string) {
+    const date = toDateOnly(dateIso);
+    const res = await this.prisma.attendanceRecord.deleteMany({ where: { classId, date } });
+    await this.audit.log({
+      actorId, action: 'attendance.class-clear',
+      entity: 'class', entityId: classId,
+      metadata: { date: dateIso, removed: res.count },
+    });
+    return { removed: res.count, date };
+  }
+
+  /** Sinkron ulang Grade dari attempt ujian yang sudah SUBMITTED — untuk data
+      lama yang dinilai sebelum Grade otomatis ditulis. */
+  async syncExamGrades(examId: string) {
+    const exam = await this.prisma.exam.findUniqueOrThrow({
+      where: { id: examId },
+      include: { assessment: { select: { id: true, maxScore: true } } },
+    });
+    const attempts = await this.prisma.examAttempt.findMany({
+      where: { examId, status: 'SUBMITTED' },
+      select: { studentId: true, score: true, maxScore: true },
+    });
+    const scale = exam.assessment.maxScore || 100;
+    let synced = 0;
+    for (const a of attempts) {
+      if (a.score == null || a.maxScore == null || a.maxScore <= 0) continue;
+      const gradeScore = Math.round((a.score / a.maxScore) * scale);
+      await this.prisma.grade.upsert({
+        where: { assessmentId_studentId: { assessmentId: exam.assessmentId, studentId: a.studentId } },
+        update: { score: gradeScore },
+        create: { assessmentId: exam.assessmentId, studentId: a.studentId, score: gradeScore },
+      });
+      synced++;
+    }
+    return { synced, total: attempts.length };
+  }
+
   /** Ikhtisar harian seluruh rombel — untuk dasbor kesiswaan:
       per kelas: sudah/belum diabsen, siapa pengabsen, jumlah per status. */
   async attendanceDailyOverview(dateIso: string, academicYearId?: string) {
@@ -1403,23 +1444,25 @@ export class OpsService {
       data: { roomId, linkId, studentId: dto.studentId, classId: dto.classId ?? null, seatNo: dto.seatNo ?? seatCount + 1, code: await this.nextSeatCode(room.academicYearId, room.period) },
     });
   }
-  async assignClassToRoom(roomId: string, classId: string, linkId?: string) {
+  async assignClassToRoom(roomId: string, classId: string, linkId?: string, count?: number) {
     const room = await this.prisma.examRoom.findUniqueOrThrow({ where: { id: roomId }, include: { _count: { select: { seats: true } } } });
     if (linkId) {
       const link = await this.prisma.examRoomExam.findFirst({ where: { id: linkId, roomId } });
       if (!link) throw new NotFoundException('Sesi ujian ruang tidak ditemukan.');
     }
     const cls = await this.prisma.class.findUniqueOrThrow({ where: { id: classId } });
+    // Urutan kursi mengikuti nomor absen (NIS) — kursi berlanjut antar-kelas dalam satu ruang.
     const students = await this.prisma.enrollment.findMany({
       where: { classId, academicYearId: cls.academicYearId, student: { status: 'ACTIVE' } },
-      orderBy: { student: { name: 'asc' } },
+      orderBy: [{ student: { nis: 'asc' } }, { student: { name: 'asc' } }],
     });
     const seatWhere = linkId ? { linkId } : { roomId, linkId: null };
     const seated = await this.prisma.examSeat.count({ where: seatWhere });
     const existing = await this.prisma.examSeat.findMany({ where: { ...seatWhere, studentId: { in: students.map((s) => s.studentId) } }, select: { studentId: true } });
     const skip = new Set(existing.map((e) => e.studentId));
     const free = room.capacity - seated;
-    const toAdd = students.filter((s) => !skip.has(s.studentId)).slice(0, Math.max(free, 0));
+    const limit = count != null && count > 0 ? Math.min(count, free) : free;
+    const toAdd = students.filter((s) => !skip.has(s.studentId)).slice(0, Math.max(limit, 0));
     let seat = seated;
     // Kode peserta dibuat satu per satu (sequence per tahun ajaran) agar unik.
     for (const s of toAdd) {
@@ -1427,7 +1470,7 @@ export class OpsService {
         data: { roomId, linkId: linkId ?? null, studentId: s.studentId, classId, seatNo: ++seat, code: await this.nextSeatCode(room.academicYearId, room.period) },
       });
     }
-    return { added: toAdd.length, skipped: students.length - toAdd.length };
+    return { added: toAdd.length, skipped: students.length - toAdd.length, free: free - toAdd.length };
   }
 
   /** Kode peserta: {PERIODE}-{nomor urut 4 digit} — unik per tahun ajaran,

@@ -150,7 +150,7 @@ export class PayrollService {
         ...(dto.workStartDate !== undefined
           ? { workStartDate: dto.workStartDate ? new Date(dto.workStartDate) : null }
           : {}),
-        ...(dto.weeklyRequiredMinutes !== undefined ? { weeklyRequiredMinutes: dto.weeklyRequiredMinutes } : {}),
+        ...(dto.monthlyRequiredMinutes !== undefined ? { monthlyRequiredMinutes: dto.monthlyRequiredMinutes } : {}),
         ...(dto.hourlyRate !== undefined ? { hourlyRate: dto.hourlyRate } : {}),
         ...(dto.transportRate !== undefined ? { transportRate: dto.transportRate } : {}),
         ...(dto.isCertified !== undefined ? { isCertified: dto.isCertified } : {}),
@@ -755,13 +755,13 @@ export class PayrollService {
       );
 
       const prev = prevManual.get(emp.id);
-      // Jam wajib: otomatis dari pengaturan — kecuali sebelumnya dioverride manual.
-      const required = prev?.requiredManual ? prev.requiredMinutes : emp.weeklyRequiredMinutes * run.weeks;
+      // Jam wajib: langsung per bulan dari pengaturan pegawai (mis. 44 jam) — tidak dikali minggu.
+      const required = prev?.requiredManual ? prev.requiredMinutes : emp.monthlyRequiredMinutes;
       // transport: menit hadir aktual; tanpa data absen sama sekali → dianggap penuh (jam wajib);
-      // hadir tapi tanpa jejak jam → dihitung per hari hadir × rata-rata jam wajib harian (6 hari kerja).
+      // hadir tapi tanpa jejak jam → dihitung per hari hadir × rata-rata jam wajib harian (26 hari kerja/bulan).
       // Koreksi manual (manualMinutes) DITAMBAH ke hasil otomatis — bisa negatif.
       const manual = prev?.manualMinutes ?? 0;
-      const dailyRequired = Math.round(emp.weeklyRequiredMinutes / 6);
+      const dailyRequired = Math.round(emp.monthlyRequiredMinutes / 26);
       const autoTransport =
         att.length === 0 ? required : worked > 0 ? worked : present.length * dailyRequired;
       const transportMinutes = Math.max(0, autoTransport + manual);
@@ -792,8 +792,8 @@ export class PayrollService {
         lines.push({
           kind: 'BASE',
           label: prev?.requiredManual
-            ? `Gaji wajib ${Math.round(required / 60)} jam (dikoreksi)`
-            : `Gaji wajib ${Math.round(emp.weeklyRequiredMinutes / 60)} jam/minggu × ${run.weeks} minggu`,
+            ? `Gaji wajib ${Math.round(required / 60)} jam/bulan (dikoreksi)`
+            : `Gaji wajib ${Math.round(emp.monthlyRequiredMinutes / 60)} jam/bulan`,
           amount: basePay,
         });
       if (transportPay > 0)
@@ -835,13 +835,30 @@ export class PayrollService {
         gross += b.amount;
       }
 
-      for (const d of deductions.filter((x) => x.employeeId === emp.id)) {
-        if (d.month && d.month !== month) continue;
-        const amt = d.amount ?? d.deductionType.defaultAmount;
+      // Potongan berurutan (sortOrder): persen bisa dari kotor (GROSS) atau sisa (REST) —
+      // mis. infaq 2,5% dari kotor dipotong lebih dulu, potongan lain menyusul.
+      let rest = gross;
+      const empDeductions = deductions
+        .filter((x) => x.employeeId === emp.id && (!x.month || x.month === month))
+        .sort((a, b) =>
+          (a.deductionType.sortOrder - b.deductionType.sortOrder) ||
+          a.deductionType.name.localeCompare(b.deductionType.name));
+      for (const d of empDeductions) {
+        const t = d.deductionType;
+        let amt: number;
+        let label = t.name;
+        if (t.method === 'PERCENT') {
+          const pct = d.percent ?? t.percent ?? 0;
+          amt = Math.round((t.base === 'GROSS' ? gross : rest) * (pct / 100));
+          label = `${t.name} (${pct}% ${t.base === 'GROSS' ? 'dari kotor' : 'dari sisa'})`;
+        } else {
+          amt = d.amount ?? t.defaultAmount;
+        }
         if (amt <= 0) continue;
-        const kind = d.deductionType.key === PENSION_KEY ? 'PENSION' : 'DEDUCTION';
-        lines.push({ kind, label: d.deductionType.name, amount: -amt, refId: d.id });
+        const kind = t.key === PENSION_KEY ? 'PENSION' : 'DEDUCTION';
+        lines.push({ kind, label, amount: -amt, refId: d.id });
         ded += amt;
+        rest -= amt;
       }
 
       // Potongan keterlambatan otomatis — dari rekap absensi mesin/manual.
@@ -977,7 +994,7 @@ export class PayrollService {
             : 0),
       0,
     );
-    const dailyRequired = Math.round(emp.weeklyRequiredMinutes / 6);
+    const dailyRequired = Math.round(emp.monthlyRequiredMinutes / 26);
     const autoTransport =
       att.length === 0
         ? required
@@ -1014,10 +1031,10 @@ export class PayrollService {
           ? ' (penuh — tanpa data absen)'
           : ' hadir'
     }`;
-    const autoRequired = emp.weeklyRequiredMinutes * item.run.weeks;
-    const baseLabel = 
+    const autoRequired = emp.monthlyRequiredMinutes;
+    const baseLabel =
       required === autoRequired
-        ? `Gaji wajib ${Math.round(emp.weeklyRequiredMinutes / 60)} jam/minggu × ${item.run.weeks} minggu`
+        ? `Gaji wajib ${Math.round(emp.monthlyRequiredMinutes / 60)} jam/bulan`
         : `Gaji wajib ${Math.round(required / 60)} jam (dikoreksi)`;
 
     await this.prisma.$transaction(async (tx) => {

@@ -1,12 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Badge, Field, Input, Select } from '@smpmuh3/ui';
+import { Badge, Button, Field, Input, Select } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { PageTitle, Widget } from '@/components/widgets';
 import { DataTable } from '@/components/data-table';
 import {
-  examResults, getAttendanceRecap, getClassSubjectStats, getGradeLedger, listExams,
+  examResults, getAttendanceRecap, getClassSubjectStats, getGradeLedger, listExams, syncExamGrades,
   type ExamView,
 } from '@/lib/api-ops';
 import { listAcademicYears, listClasses, type AcademicYear, type ClassView } from '@/lib/api';
@@ -30,6 +30,7 @@ export default function LedgerPage() {
   const [from, setFrom] = useState(new Date().toISOString().slice(0, 8) + '01');
   const [to, setTo] = useState(new Date().toISOString().slice(0, 10));
   const [error, setError] = useState<string | null>(null);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
 
   useEffect(() => {
     listAcademicYears().then((ys) => {
@@ -83,6 +84,7 @@ export default function LedgerPage() {
     <Shell>
       <PageTitle title="Ledger & Rekap Kelas" subtitle="Pilih jenjang → kelas → ujian: daftar nilai per asesmen, nilai ujian CBT, statistik mapel, dan rekap kehadiran." />
       {error ? <p className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p> : null}
+      {syncMsg ? <p className="mb-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">{syncMsg}</p> : null}
 
       <div className="mb-4 flex flex-wrap items-end gap-3 rounded-2xl border border-sand-200 bg-white p-4 shadow-card">
         <Field label="Tahun Ajaran">
@@ -153,6 +155,17 @@ export default function LedgerPage() {
         <Widget
           title={ujian ? `Nilai Ujian — ${ujian.exam.title}` : 'Nilai Ujian'}
           subtitle={examId ? 'Hasil pengerjaan ujian CBT per siswa (skor mentah & nilai akhir).' : 'Pilih ujian di filter atas.'}
+          action={examId ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                syncExamGrades(examId)
+                  .then((r) => { setSyncMsg(`Tersinkron: ${r.synced}/${r.total} nilai masuk ledger.`); load(); })
+                  .catch((e) => setError(e instanceof Error ? e.message : 'Gagal sinkron.'));
+              }}
+            >↻ Sinkron ke Ledger</Button>
+          ) : undefined}
         >
           {!examId ? (
             <p className="px-5 py-6 text-sm text-sand-400">Pilih ujian CBT dari dropdown <b>Ujian</b> di atas untuk melihat daftar nilai.</p>

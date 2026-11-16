@@ -253,3 +253,17 @@ export class AssignShiftDto {
   @Max(6)
   dayOfWeek!: number;
 }
+
+/** Setor izin dari Absen Saya — sakit/dinas/workshop/lainnya + keterangan. */
+export class LeaveDto {
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'Format tanggal harus YYYY-MM-DD' })
+  date!: string;
+
+  @IsIn(['SAKIT', 'DINAS', 'WORKSHOP', 'LAINNYA'])
+  category!: 'SAKIT' | 'DINAS' | 'WORKSHOP' | 'LAINNYA';
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  note?: string;
+}

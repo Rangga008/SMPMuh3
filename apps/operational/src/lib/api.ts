@@ -120,6 +120,11 @@ export const changeMyPassword = (currentPassword: string, newPassword: string) =
     method: 'POST',
     json: { currentPassword, newPassword },
   });
+/** Minta OTP reset sandi via WhatsApp — selalu sukses (anti-enum). */
+export const requestPasswordOtp = (identifier: string) =>
+  req<void>('/auth/password-otp', { method: 'POST', json: { identifier } });
+export const resetPasswordWithOtp = (identifier: string, code: string, password: string) =>
+  req<void>('/auth/password-otp/reset', { method: 'POST', json: { identifier, code, password } });
 export interface MyEmployee {
   id: string;
   nip: string | null;
@@ -505,6 +510,51 @@ export function uploadSuratTemplate(file: File) {
   );
 }
 
+// ---- cadangan & pemulihan database ----
+export interface BackupStats {
+  dbBytes: number;
+  storage: { prefix: string; files: number; bytes: number }[];
+  storageFiles: number;
+  storageBytes: number;
+}
+export const getBackupStats = () => req<BackupStats>('/school/backup/stats');
+
+/** Unduh dump .sql.gz — fetch dengan token lalu simpan sebagai file. */
+export async function downloadBackup() {
+  const tokens = getTokens();
+  const res = await fetch(`${API}/school/backup/download`, {
+    headers: tokens?.accessToken
+      ? { Authorization: `Bearer ${tokens.accessToken}` }
+      : {},
+  });
+  if (!res.ok) {
+    const j = (await res.json().catch(() => null)) as {
+      error?: { message?: string };
+    } | null;
+    throw new ApiError(j?.error?.message ?? `Gagal mengunduh (${res.status})`, res.status);
+  }
+  const blob = await res.blob();
+  const cd = res.headers.get('Content-Disposition') ?? '';
+  const name =
+    cd.match(/filename="?([^";]+)"?/)?.[1] ??
+    `smpmuh3-backup-${new Date().toISOString().slice(0, 10)}.sql.gz`;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 30_000);
+}
+
+export function restoreBackup(file: File) {
+  const form = new FormData();
+  form.append('file', file);
+  return req<{ ok: boolean }>('/school/backup/restore', {
+    method: 'POST',
+    body: form,
+  });
+}
+
 // ---- shared ----
 export const listAcademicYears = () =>
   req<AcademicYear[]>('/academic-years');
@@ -754,6 +804,7 @@ export interface AttendanceLog {
 export interface DailyRow {
   employee: { id: string; name: string; nip?: string | null; fingerPin?: string | null };
   status: 'HADIR' | 'TELAT' | 'IZIN' | 'SAKIT' | 'ALPHA' | null;
+  leaveCategory?: 'SAKIT' | 'DINAS' | 'WORKSHOP' | 'LAINNYA' | null;
   checkInAt?: string | null;
   checkOutAt?: string | null;
   lateMinutes?: number | null;
@@ -1936,7 +1987,7 @@ export interface PayScaleView {
 export interface EmployeePayroll extends EmployeeDto {
   payScaleId?: string | null;
   workStartDate?: string | null;
-  weeklyRequiredMinutes: number;
+  monthlyRequiredMinutes: number;
   hourlyRate?: number | null;
   transportRate?: number | null;
   isCertified: boolean;
@@ -1948,6 +1999,7 @@ export interface EmpAttendance {
   employeeId: string;
   date: string;
   status: 'HADIR' | 'TELAT' | 'IZIN' | 'SAKIT' | 'ALPHA';
+  leaveCategory?: 'SAKIT' | 'DINAS' | 'WORKSHOP' | 'LAINNYA' | null;
   teachingMinutes: number;
   lateMinutes?: number;
   note?: string | null;
@@ -1984,6 +2036,10 @@ export interface DeductionTypeView {
   key: string;
   name: string;
   defaultAmount: number;
+  method: 'FIXED' | 'PERCENT';
+  percent?: number | null;
+  base: 'GROSS' | 'REST';
+  sortOrder: number;
   isRecurring: boolean;
   isActive: boolean;
 }
@@ -1992,10 +2048,11 @@ export interface EmployeeDeductionView {
   employeeId: string;
   deductionTypeId: string;
   amount?: number | null;
+  percent?: number | null;
   month?: string | null;
   isActive: boolean;
   employee?: { name: string };
-  deductionType?: { name: string; key: string; isRecurring: boolean };
+  deductionType?: { name: string; key: string; isRecurring: boolean; method?: 'FIXED' | 'PERCENT'; percent?: number | null; base?: 'GROSS' | 'REST'; sortOrder?: number };
 }
 export interface LoanView {
   id: string;
@@ -2173,6 +2230,13 @@ export const selfiePunch = (inOut: 0 | 1, latitude: number, longitude: number, p
     '/admin/attendance/selfie', { method: 'POST', body: fd });
 };
 export const attendanceLogPhotoUrl = (id: string) => `${API}/admin/attendance/logs/${id}/photo`;
+
+/** Setor izin dari Absen Saya — sakit/dinas/workshop/lainnya. */
+export const submitLeave = (date: string, category: 'SAKIT' | 'DINAS' | 'WORKSHOP' | 'LAINNYA', note?: string) =>
+  req('/admin/attendance/my/leave', { method: 'POST', json: { date, category, ...(note ? { note } : {}) } });
+/** Admin/TU clear absen 1 hari 1 pegawai — rekap + log mentah ikut terhapus. */
+export const clearEmployeeDay = (employeeId: string, date: string) =>
+  req<{ logsRemoved: number; recordRemoved: number }>(`/admin/attendance/day?employeeId=${employeeId}&date=${date}`, { method: 'DELETE' });
 
 // ---- bidang (kepala bidang) ----
 export const getMyDepartment = () =>

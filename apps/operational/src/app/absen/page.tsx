@@ -1,10 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Badge, Button, Field } from '@smpmuh3/ui';
+import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { PageTitle, Widget } from '@/components/widgets';
-import { getMyAttendance, selfiePunch, type AttendanceDayRow, type MyAttendance } from '@/lib/api';
+import { getMyAttendance, selfiePunch, submitLeave, type AttendanceDayRow, type MyAttendance } from '@/lib/api';
 
 const fmtTime = (iso?: string | null) =>
   iso
@@ -32,6 +32,7 @@ export default function AbsenPage() {
   const [shot, setShot] = useState<{ url: string; blob: Blob } | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
+  const [leaveOpen, setLeaveOpen] = useState(false);
 
   const load = useCallback(() => {
     getMyAttendance(month).then(setData).catch((e) => setErr(e instanceof Error ? e.message : String(e)));
@@ -207,6 +208,9 @@ export default function AbsenPage() {
               >
                 {alreadyOut ? 'Sudah Absen Pulang' : 'Absen Pulang (Selfie)'}
               </Button>
+              <Button variant="secondary" onClick={() => setLeaveOpen(true)} disabled={busy}>
+                Ajukan Izin
+              </Button>
             </div>
             {!alreadyIn && data.geo.configured && (
               <p className="mt-2 text-xs text-slate-400">Absen pulang aktif setelah Anda absen masuk.</p>
@@ -317,6 +321,39 @@ export default function AbsenPage() {
           </Widget>
         </>
       )}
+
+      <Modal open={leaveOpen} onClose={() => setLeaveOpen(false)} title="Ajukan Izin">
+        <form
+          className="grid gap-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const f = new FormData(e.currentTarget);
+            const date = String(f.get('date'));
+            const category = String(f.get('category')) as 'SAKIT' | 'DINAS' | 'WORKSHOP' | 'LAINNYA';
+            const note = String(f.get('note') ?? '').trim();
+            setBusy(true); setErr('');
+            submitLeave(date, category, note || undefined)
+              .then(() => { setMsg('Izin tercatat — status absen tanggal itu kini ' + category + '.'); setLeaveOpen(false); load(); })
+              .catch((er) => setErr(er instanceof Error ? er.message : 'Gagal mengajukan izin.'))
+              .finally(() => setBusy(false));
+          }}
+        >
+          <Field label="Tanggal"><Input name="date" type="date" required defaultValue={todayIso} /></Field>
+          <Field label="Jenis">
+            <Select name="category" required>
+              <option value="SAKIT">Sakit</option>
+              <option value="DINAS">Dinas</option>
+              <option value="WORKSHOP">Workshop/Pelatihan</option>
+              <option value="LAINNYA">Lainnya</option>
+            </Select>
+          </Field>
+          <Field label="Keterangan"><Input name="note" placeholder="mis. izin dinas luar ke LPMP" /></Field>
+          <div className="flex justify-end gap-2 pt-1">
+            <Button type="button" variant="ghost" onClick={() => setLeaveOpen(false)}>Batal</Button>
+            <Button type="submit" disabled={busy}>{busy ? 'Mengirim…' : 'Kirim Izin'}</Button>
+          </div>
+        </form>
+      </Modal>
 
       {(camOn || shot) && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 sm:items-center sm:p-4">

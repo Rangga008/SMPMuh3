@@ -39,7 +39,7 @@ export async function SiteHeader() {
             <span className="text-sm font-extrabold tracking-tight text-sand-950">
               SPMB
             </span>
-            <span className="hidden text-[11px] font-medium text-sand-500 sm:block">
+            <span className="hidden max-w-44 truncate text-[11px] font-medium text-sand-500 sm:block md:max-w-64">
               {schoolName}
             </span>
           </span>

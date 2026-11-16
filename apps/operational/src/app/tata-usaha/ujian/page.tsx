@@ -61,6 +61,7 @@ export default function UjianPage() {
   const [linkModal, setLinkModal] = useState<ExamRoomView | null>(null);
   const [assignModal, setAssignModal] = useState<{ room: ExamRoomView; link: ExamRoomLinkView | null } | null>(null);
   const [assignClassId, setAssignClassId] = useState('');
+  const [assignCount, setAssignCount] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -122,6 +123,34 @@ export default function UjianPage() {
         .hint{margin-top:8px;font-size:10.5px;color:#64748b;border-top:1px dashed #cbd5e1;padding-top:6px}
         @media print{.card{page-break-inside:avoid}}
       </style>${cards}`);
+  };
+
+  /** Daftar duduk: nomor bangku → siswa, dikelompokkan kelas, untuk ditempel di pintu/dibawa pengawas. */
+  const printSeating = (r: ExamRoomView, l: ExamRoomLinkView) => {
+    const seats = [...(l.seats ?? [])].sort((a, b) => (a.seatNo ?? 999) - (b.seatNo ?? 999));
+    const byClass = new Map<string, typeof seats>();
+    for (const s of seats) {
+      const k = s.class?.name ?? '—';
+      byClass.set(k, [...(byClass.get(k) ?? []), s]);
+    }
+    const rows = [...byClass.entries()].map(([cls, list]) => `
+      <h3>Kelas ${cls} <span class="cnt">(${list.length} siswa)</span></h3>
+      <table><thead><tr><th>Bangku</th><th>NIS</th><th>Nama</th><th>Kode Peserta</th></tr></thead><tbody>
+      ${list.map((s) => `<tr><td class="no">${s.seatNo ?? '—'}</td><td>${s.student.nis ?? '—'}</td><td>${s.student.name}</td><td class="mono">${s.code ?? '—'}</td></tr>`).join('')}
+      </tbody></table>`).join('');
+    printHtml(`Daftar Duduk ${r.name} — ${l.sessionLabel ?? l.exam.title}`, `
+      <style>
+        body{font-family:Georgia,serif;padding:24px;color:#1e293b}
+        h1{font-size:18px;margin:0 0 4px}p.sub{font-size:12px;color:#64748b;margin:0 0 18px}
+        h3{font-size:13px;margin:16px 0 4px;color:#0f3a63}.cnt{font-weight:normal;color:#64748b}
+        table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:8px}
+        th,td{border:1px solid #cbd5e1;padding:4px 8px;text-align:left}
+        th{background:#f1f5f9;font-size:10px;text-transform:uppercase;letter-spacing:.05em}
+        .no{font-weight:700;text-align:center;width:70px}.mono{font-family:ui-monospace,monospace;font-size:11px}
+      </style>
+      <h1>Daftar Duduk — ${r.name}</h1>
+      <p class="sub">${l.exam.title}${l.sessionLabel ? ` · ${l.sessionLabel}` : ''}${l.startsAt ? ` · ${fmtDt(l.startsAt)}` : ''} · ${seats.length}/${r.capacity} kursi</p>
+      ${rows}`);
   };
 
   const linksOf = (r: ExamRoomView) => r.links ?? [];
@@ -187,8 +216,9 @@ export default function UjianPage() {
                           ) : null}
                           <span className="ml-auto flex flex-wrap gap-1.5">
                             <Badge tone={l._count.seats >= r.capacity ? 'danger' : 'primary'}>{l._count.seats}/{r.capacity}</Badge>
-                            <Button size="sm" variant="outline" onClick={() => { setAssignModal({ room: r, link: l }); setAssignClassId(''); }}>+ Rombel</Button>
+                            <Button size="sm" variant="outline" onClick={() => { setAssignModal({ room: r, link: l }); setAssignClassId(''); setAssignCount(''); }}>+ Rombel</Button>
                             <Button size="sm" onClick={() => void printCards(r.id, l.id)} disabled={!l._count.seats}>Cetak Kartu</Button>
+                            <Button size="sm" variant="outline" onClick={() => printSeating(r, l)} disabled={!l._count.seats}>Daftar Duduk</Button>
                             <button type="button" className="text-xs font-semibold text-red-500 hover:text-red-700" onClick={async () => {
                               if (!window.confirm(`Lepas sesi "${l.sessionLabel ?? l.exam.title}" dari ${r.name}? ${l._count.seats} peserta ikut terhapus.`)) return;
                               try { await removeRoomLink(l.id); setNotice('Sesi dilepas.'); load(); }
@@ -311,18 +341,23 @@ export default function UjianPage() {
           <Field label="Kelas">
             <Select value={assignClassId} onChange={(e) => setAssignClassId(e.target.value)}>
               <option value="">— pilih kelas —</option>
-              {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {classes.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.gradeLevel ?? ''}{c._count?.enrollments != null ? ` · ${c._count.enrollments} siswa` : ''})</option>)}
             </Select>
+          </Field>
+          <Field label="Jumlah siswa (kosong = semua)" hint="Siswa diurut NIS — diambil sebanyak ini sampai kursi penuh. Ulangi untuk kelas lain (bisa campur jenjang).">
+            <Input type="number" min={1} value={assignCount} onChange={(e) => setAssignCount(e.target.value)} placeholder="semua" />
           </Field>
           <Button disabled={!assignClassId || busy} onClick={async () => {
             if (!assignModal || !assignClassId) return;
             setBusy(true);
             try {
-              const r = await assignClassToRoom(assignModal.room.id, assignClassId, assignModal.link?.id);
+              const r = await assignClassToRoom(assignModal.room.id, assignClassId, assignModal.link?.id, assignCount ? Number(assignCount) : undefined);
               setNotice(`${r.added} siswa ditempatkan${r.skipped ? ` · ${r.skipped} dilewati` : ''}.`);
-              setAssignModal(null); load();
+              setAssignClassId(''); setAssignCount('');
+              load();
             } catch (err) { setError(err instanceof Error ? err.message : 'Gagal menempatkan.'); } finally { setBusy(false); }
           }}>Tempatkan Rombel</Button>
+          <p className="text-xs text-sand-500">Ulangi untuk kelas lain — satu ruang bisa campur beberapa kelas & jenjang; setiap siswa dapat nomor bangku urut.</p>
         </div>
       </Modal>
     </Shell>

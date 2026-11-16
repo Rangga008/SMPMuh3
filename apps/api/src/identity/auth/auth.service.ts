@@ -13,6 +13,7 @@ import { AuditService } from '../../audit/audit.service';
 import { EnvService } from '../../core/config/env.service';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { StorageService } from '../../core/storage/storage.service';
+import { WhatsappService } from '../../spmb/whatsapp.service';
 import { normalizePhone, UsersService } from '../users/users.service';
 
 interface RequestMeta {
@@ -31,6 +32,7 @@ export class AuthService {
     private readonly env: EnvService,
     private readonly audit: AuditService,
     private readonly storage: StorageService,
+    private readonly whatsapp: WhatsappService,
   ) {}
 
   async login(
@@ -201,6 +203,88 @@ export class AuthService {
         data: { revokedAt: new Date() },
       }),
     ]);
+  }
+
+  /**
+   * Minta OTP reset sandi via WhatsApp. Selalu resolve tanpa membocorkan
+   * apakah akun/nomor ada — respons sama untuk semua identifier.
+   */
+  async requestPasswordOtp(identifier: string, meta: RequestMeta): Promise<void> {
+    const user = await this.users.findByIdentifier(identifier.trim());
+    if (!user || user.status !== 'ACTIVE' || !user.phone) return;
+
+    // Satu OTP aktif per akun — permintaan baru membatalkan yang lama.
+    await this.prisma.passwordResetOtp.updateMany({
+      where: { userId: user.id, usedAt: null },
+      data: { usedAt: new Date() },
+    });
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    await this.prisma.passwordResetOtp.create({
+      data: {
+        userId: user.id,
+        codeHash: hashToken(code),
+        expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 menit
+      },
+    });
+    await this.whatsapp.enqueue({
+      type: 'password_otp',
+      phone: user.phone,
+      message:
+        `*SMP Muhammadiyah 3 Bandung*\n\n` +
+        `Kode OTP reset kata sandi akun *${user.name}*:\n\n` +
+        `*${code}*\n\n` +
+        `Berlaku 10 menit. JANGAN berikan kode ini ke siapa pun, ` +
+        `termasuk yang mengaku pihak sekolah. Abaikan bila bukan permintaan Anda.`,
+      refType: 'user',
+      refId: user.id,
+    });
+    await this.audit.log({
+      actorId: user.id,
+      action: 'auth.password_otp_requested',
+      entity: 'user',
+      entityId: user.id,
+      ...meta,
+    });
+  }
+
+  /** Reset sandi dengan OTP dari WhatsApp — maks 5 percobaan per kode. */
+  async resetPasswordWithOtp(identifier: string, code: string, password: string, meta: RequestMeta): Promise<void> {
+    const invalid = new UnauthorizedException('Kode OTP salah atau kedaluwarsa.');
+    const user = await this.users.findByIdentifier(identifier.trim());
+    if (!user) throw invalid;
+    const otp = await this.prisma.passwordResetOtp.findFirst({
+      where: { userId: user.id, usedAt: null },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!otp || otp.expiresAt < new Date() || otp.attempts >= 5) throw invalid;
+    if (otp.codeHash !== hashToken(code.trim())) {
+      await this.prisma.passwordResetOtp.update({
+        where: { id: otp.id },
+        data: { attempts: { increment: 1 } },
+      });
+      throw invalid;
+    }
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: user.id },
+        data: { passwordHash: await argon2.hash(password) },
+      }),
+      this.prisma.passwordResetOtp.update({
+        where: { id: otp.id },
+        data: { usedAt: new Date() },
+      }),
+      this.prisma.refreshToken.updateMany({
+        where: { userId: user.id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
+    ]);
+    await this.audit.log({
+      actorId: user.id,
+      action: 'auth.password_reset_otp',
+      entity: 'user',
+      entityId: user.id,
+      ...meta,
+    });
   }
 
   async logout(rawToken: string): Promise<void> {

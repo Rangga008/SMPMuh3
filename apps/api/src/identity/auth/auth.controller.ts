@@ -24,7 +24,9 @@ import {
   ChangeMyPasswordDto,
   ForgotPasswordDto,
   RegisterDto,
+  RequestPasswordOtpDto,
   ResetPasswordDto,
+  ResetPasswordOtpDto,
   UpdateMeDto,
 } from './dto/account.dto';
 import { LoginDto } from './dto/login.dto';
@@ -66,6 +68,36 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   resetPassword(@Body() dto: ResetPasswordDto): Promise<void> {
     return this.auth.resetPassword(dto.token, dto.password);
+  }
+
+  /** Minta OTP reset sandi via WhatsApp — respons selalu 200 (anti-enum). */
+  @Public()
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @Post('password-otp')
+  @HttpCode(HttpStatus.OK)
+  requestPasswordOtp(
+    @Body() dto: RequestPasswordOtpDto,
+    @Req() req: Request,
+  ): Promise<void> {
+    return this.auth.requestPasswordOtp(dto.identifier, {
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+  }
+
+  /** Reset sandi dengan OTP WhatsApp — batas ketat karena OTP cuma 6 digit. */
+  @Public()
+  @Throttle({ default: { limit: 8, ttl: 60_000 } })
+  @Post('password-otp/reset')
+  @HttpCode(HttpStatus.OK)
+  resetPasswordOtp(
+    @Body() dto: ResetPasswordOtpDto,
+    @Req() req: Request,
+  ): Promise<void> {
+    return this.auth.resetPasswordWithOtp(dto.identifier, dto.code, dto.password, {
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
   }
 
   @Public()

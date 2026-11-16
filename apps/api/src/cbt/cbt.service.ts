@@ -547,6 +547,35 @@ export class CbtService {
         attemptStatus: null,
       });
     }
+    // Jadwal lengkap untuk rombel siswa (semua status, 60 hari ke belakang → depan).
+    const since = new Date(Date.now() - 60 * 86400_000);
+    const scheduled = await this.prisma.exam.findMany({
+      where: { startAt: { gte: since } },
+      include: {
+        assessment: { include: { subject: { select: { name: true } } } },
+        attempts: { where: { studentId: student.id }, select: { status: true, score: true, maxScore: true, submittedAt: true } },
+      },
+      orderBy: { startAt: 'desc' },
+      take: 60,
+    });
+    const myExams = scheduled.filter((e) => (e.classIds as string[]).some((cid) => classIds.includes(cid)));
+    const schedule = myExams.map((e) => ({
+      title: e.title,
+      subject: e.assessment.subject.name,
+      status: e.status,
+      startAt: e.startAt,
+      endAt: e.endAt,
+      attemptStatus: e.attempts[0]?.status ?? null,
+    }));
+    const history = myExams
+      .filter((e) => e.attempts[0]?.submittedAt)
+      .map((e) => ({
+        title: e.title,
+        subject: e.assessment.subject.name,
+        submittedAt: e.attempts[0]!.submittedAt,
+        score: e.showScore ? e.attempts[0]!.score : null,
+        maxScore: e.attempts[0]!.maxScore,
+      }));
     return {
       student: {
         name: student.name,
@@ -554,6 +583,8 @@ export class CbtService {
         className: enrollments[0]?.class.name ?? '—',
       },
       exams,
+      schedule,
+      history,
     };
   }
 
@@ -973,6 +1004,16 @@ export class CbtService {
     });
     const gradeOf = new Map(grades.map((g) => [g.studentId, g.score]));
     const maxScore = attempts.reduce((m, a) => Math.max(m, a.maxScore ?? 0), 0);
+    const scale = exam.assessment.maxScore || 100;
+    // Fallback: Grade belum tertulis (attempt lama) → hitung dari skor mentah.
+    const gradeFor = (studentId: string, a: (typeof attempts)[number] | undefined) => {
+      const g = gradeOf.get(studentId);
+      if (g != null) return g;
+      if (a?.status === 'SUBMITTED' && a.score != null && a.maxScore) {
+        return Math.round((a.score / a.maxScore) * scale);
+      }
+      return null;
+    };
     return {
       exam: { id: exam.id, title: exam.title, assessmentId: exam.assessmentId, maxScore },
       classes: classes
@@ -992,7 +1033,7 @@ export class CbtService {
                 status: !a ? 'BELUM' : a.status,
                 score: a?.status === 'SUBMITTED' ? a.score : null,
                 maxScore: a?.status === 'SUBMITTED' ? a.maxScore : null,
-                gradeScore: gradeOf.get(e.student.id) ?? null,
+                gradeScore: gradeFor(e.student.id, a),
                 submittedAt: a?.submittedAt ?? null,
               };
             }),

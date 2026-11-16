@@ -114,7 +114,36 @@ export default function TitipanBoardPage() {
               {yearId ? ' untuk tahun ajaran ini' : ''}. Jadilah yang pertama!
             </p>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+            {/* Kartu ringkas di HP — tabel penuh di tablet/desktop. */}
+            <ul className="space-y-3 sm:hidden">
+              {entries.map((e, i) => (
+                <li
+                  key={e.id}
+                  className="rounded-2xl border border-sand-200 bg-white p-4"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-bold text-sand-950">
+                        <span className="mr-1.5 text-sand-400">#{i + 1}</span>
+                        {e.candidateName}
+                      </p>
+                      <p className="mt-0.5 text-xs text-sand-500">
+                        {e.previousSchool ?? '—'}
+                      </p>
+                    </div>
+                    <Badge tone={STATUS_TONE[e.status] ?? 'neutral'}>
+                      {statusText(e)}
+                    </Badge>
+                  </div>
+                  <p className="mt-2 text-xs text-sand-500">
+                    {fmtDate(e.createdAt)} ·{' '}
+                    {e.academicYearName ?? yearName.get(e.academicYearId) ?? '—'}
+                  </p>
+                </li>
+              ))}
+            </ul>
+            <div className="hidden overflow-x-auto sm:block">
               <table className="w-full min-w-[640px] text-sm">
                 <thead>
                   <tr className="border-b border-sand-200 text-left text-xs font-bold uppercase tracking-wider text-sand-500">
@@ -155,6 +184,7 @@ export default function TitipanBoardPage() {
                 </tbody>
               </table>
             </div>
+            </>
           )}
         </section>
 

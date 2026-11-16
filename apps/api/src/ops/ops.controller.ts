@@ -267,6 +267,21 @@ export class OpsController {
   classAttendance(@Query('classId') c: string, @Query('date') d: string) {
     return this.ops.classAttendance(c, d);
   }
+
+  /** Hapus seluruh absen satu rombel di satu tanggal (salah absen). */
+  @Delete('class-attendance')
+  @RequirePermission(PERMISSIONS.ACADEMIC_MANAGE)
+  clearClassAttendance(@Query('classId') c: string, @Query('date') d: string, @CurrentUser() u: AuthUser) {
+    if (!c || !d) throw new BadRequestException('Parameter classId & date wajib.');
+    return this.ops.clearClassAttendance(c, d, u.id);
+  }
+
+  /** Sinkron ulang Grade dari attempt SUBMITTED (untuk ujian lama). */
+  @Post('exams/:id/sync-grades')
+  @RequirePermission(PERMISSIONS.ACADEMIC_MANAGE)
+  syncExamGrades(@Param('id') id: string) {
+    return this.ops.syncExamGrades(id);
+  }
   @Post('attendance')
   @RequirePermission(PERMISSIONS.ATTENDANCE_MANAGE)
   saveAttendance(@Body() dto: SaveAttendanceDto, @CurrentUser() u: AuthUser) {
@@ -507,8 +522,13 @@ export class OpsController {
   }
   @Post('exam-rooms/:id/assign-class')
   @RequirePermission(PERMISSIONS.TATAUSAHA_MANAGE)
-  assignClass(@Param('id') id: string, @Body('classId') classId: string, @Body('linkId') linkId?: string) {
-    return this.ops.assignClassToRoom(id, classId, linkId);
+  assignClass(
+    @Param('id') id: string,
+    @Body('classId') classId: string,
+    @Body('linkId') linkId?: string,
+    @Body('count') count?: number,
+  ) {
+    return this.ops.assignClassToRoom(id, classId, linkId, count != null ? Number(count) : undefined);
   }
   @Patch('exam-rooms/:id')
   @RequirePermission(PERMISSIONS.TATAUSAHA_MANAGE)

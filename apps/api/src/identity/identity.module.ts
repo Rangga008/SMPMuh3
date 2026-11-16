@@ -8,10 +8,12 @@ import { JwtStrategy } from './auth/strategies/jwt.strategy';
 import { RolesController } from './roles.controller';
 import { AdminUsersController } from './admin-users.controller';
 import { UsersService } from './users/users.service';
+import { WhatsappModule } from '../spmb/whatsapp.module';
 
 @Module({
   imports: [
     PassportModule,
+    WhatsappModule,
     JwtModule.registerAsync({
       useFactory: (env: EnvService) => ({
         secret: env.jwtAccessSecret,

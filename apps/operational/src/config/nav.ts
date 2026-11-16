@@ -10,6 +10,8 @@ export interface NavItem {
   label: string;
   icon: string; // emoji glyph — swap for an icon system later
   href?: string;
+  /** Buka di tab baru (link eksternal, mis. portal CBT siswa). */
+  external?: boolean;
   permission?: string;
   /** Hanya tampil bila user punya salah satu role ini (menu bidang). */
   roles?: string[];
@@ -397,6 +399,14 @@ export const NAV: NavItem[] = [
     enabled: true,
   },
   {
+    key: 'cbt-portal',
+    label: 'Portal CBT Siswa',
+    icon: '💻',
+    href: 'https://cbt.smpm3bdg.sch.id/',
+    external: true,
+    enabled: true,
+  },
+  {
     key: 'keuangan',
     label: 'Keuangan',
     icon: '💰',
@@ -548,6 +558,14 @@ export const NAV: NavItem[] = [
         label: 'WhatsApp Gateway',
         icon: '💬',
         href: '/pengaturan/whatsapp',
+        permission: PERMISSIONS.SCHOOL_MANAGE,
+        enabled: true,
+      },
+      {
+        key: 'backup',
+        label: 'Cadangan Database',
+        icon: '🗄',
+        href: '/pengaturan/backup',
         permission: PERMISSIONS.SCHOOL_MANAGE,
         enabled: true,
       },

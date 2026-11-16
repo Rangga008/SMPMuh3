@@ -84,10 +84,26 @@ export interface CbtLoginExam {
   attemptStatus: string | null;
 }
 
+/** Entri jadwal — termasuk ujian mendatang & selesai. */
+export interface CbtScheduleItem extends CbtLoginExam {
+  status: string;
+}
+
+/** Riwayat pengerjaan — nilai tampil sesuai pengaturan showScore ujian. */
+export interface CbtHistoryItem {
+  title: string;
+  subject: string;
+  submittedAt: string;
+  score: number | null;
+  maxScore: number | null;
+}
+
 /** Hasil login NIS + password — identitas & daftar ujian aktif (tanpa kode). */
 export interface CbtLogin {
   student: { name: string; nis: string | null; className: string };
   exams: CbtLoginExam[];
+  schedule?: CbtScheduleItem[];
+  history?: CbtHistoryItem[];
 }
 
 export const loginCbt = (nis: string, password: string) =>
