@@ -327,6 +327,36 @@ services:
           memory: 512M
     logging: *default-logging
 
+  # ---------- Dapodik Pauddikdasmen 2027 (PHP 7.2 + Postgres 54532 + ionCube) ----------
+  # Source app TIDAK masuk git (lisensi Kemdikbud) — build context /root/dapodik.
+  # Apache internal: app :5774 + daemon sync/prefill :5437.
+  dapodik:
+    build:
+      context: ../../dapodik
+      dockerfile: Dockerfile
+    image: smpmuh3-dapodik:prod
+    container_name: smpmuh3-dapodik
+    restart: unless-stopped
+    extra_hosts:
+      # URL sinkronisasi app memakai host publik — petakan ke diri sendiri
+      # supaya panggilan server-ke-server :5437 tidak keluar container.
+      - "dapodik.smpm3bdg.sch.id:127.0.0.1"
+    volumes:
+      - dapodik-pgdata:/var/lib/postgresql/data
+    networks: [internal, web]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 54532 -q && php -r 'exit(@file_get_contents(\"http://127.0.0.1:5774/\") ? 0 : 1);'"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.75"
+          memory: 768M
+    logging: *default-logging
+
   caddy:
     image: caddy:2-alpine
     container_name: smpmuh3-caddy
@@ -366,3 +396,4 @@ volumes:
   wp-data:
   erapor-app:
   erapor-pgdata:
+  dapodik-pgdata:

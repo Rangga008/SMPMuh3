@@ -63,3 +63,12 @@ api.smpm3bdg.sch.id {
 	}
 	reverse_proxy api:4000
 }
+
+# Dapodik Pauddikdasmen 2027 — Apache internal di container (app :5774).
+dapodik.smpm3bdg.sch.id {
+	import common
+	request_body {
+		max_size 256MB
+	}
+	reverse_proxy dapodik:5774
+}
