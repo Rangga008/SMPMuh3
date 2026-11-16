@@ -301,62 +301,6 @@ services:
           memory: 320M
     logging: *default-logging
 
-  # ---------- e-Rapor SMP 2025.2 (CodeIgniter 4 + Postgres + ionCube) ----------
-  # Source app TIDAK masuk git (lisensi Kemdikbud) — build context /root/erapor.
-  erapor:
-    build:
-      context: ../../erapor
-      dockerfile: Dockerfile
-    image: smpmuh3-erapor:prod
-    container_name: smpmuh3-erapor
-    restart: unless-stopped
-    volumes:
-      - erapor-app:/var/www/erapor
-      - erapor-pgdata:/var/lib/postgresql/data
-    networks: [internal, web]
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 55575 -q && pidof php-fpm >/dev/null"]
-      interval: 20s
-      timeout: 5s
-      retries: 5
-      start_period: 40s
-    deploy:
-      resources:
-        limits:
-          cpus: "0.75"
-          memory: 512M
-    logging: *default-logging
-
-  # ---------- Dapodik Pauddikdasmen 2027 (PHP 7.2 + Postgres 54532 + ionCube) ----------
-  # Source app TIDAK masuk git (lisensi Kemdikbud) — build context /root/dapodik.
-  # Apache internal: app :5774 + daemon sync/prefill :5437.
-  dapodik:
-    build:
-      context: ../../dapodik
-      dockerfile: Dockerfile
-    image: smpmuh3-dapodik:prod
-    container_name: smpmuh3-dapodik
-    restart: unless-stopped
-    extra_hosts:
-      # URL sinkronisasi app memakai host publik — petakan ke diri sendiri
-      # supaya panggilan server-ke-server :5437 tidak keluar container.
-      - "dapodik.smpm3bdg.sch.id:127.0.0.1"
-    volumes:
-      - dapodik-pgdata:/var/lib/postgresql/data
-    networks: [internal, web]
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 54532 -q && php -r 'exit(@file_get_contents(\"http://127.0.0.1:5774/\") ? 0 : 1);'"]
-      interval: 20s
-      timeout: 10s
-      retries: 10
-      start_period: 120s
-    deploy:
-      resources:
-        limits:
-          cpus: "0.75"
-          memory: 768M
-    logging: *default-logging
-
   caddy:
     image: caddy:2-alpine
     container_name: smpmuh3-caddy
@@ -368,7 +312,6 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - wp-data:/var/www/html:ro   # file statis WP dilayani Caddy; .php → fastcgi
-      - erapor-app:/var/www/erapor:ro   # file statis e-Rapor; .php → fastcgi
       - caddy-data:/data
       - caddy-config:/config
     networks: [web]
@@ -394,6 +337,3 @@ volumes:
   caddy-config:
   mariadb-data:
   wp-data:
-  erapor-app:
-  erapor-pgdata:
-  dapodik-pgdata:

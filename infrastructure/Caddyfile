@@ -43,18 +43,6 @@ cbt.smpm3bdg.sch.id {
 	reverse_proxy cbt:3005
 }
 
-# e-Rapor SMP (CodeIgniter 4) — pola sama seperti WordPress:
-# file statis dari volume erapor-app, .php → php-fpm.
-e-rapor.smpm3bdg.sch.id {
-	import common
-	root * /var/www/erapor/public
-	request_body {
-		max_size 2GB
-	}
-	php_fastcgi erapor:9000
-	file_server
-}
-
 api.smpm3bdg.sch.id {
 	import common
 	# Upload dokumen/selfie lewat API — izinkan body s/d 25 MB.
@@ -62,13 +50,4 @@ api.smpm3bdg.sch.id {
 		max_size 25MB
 	}
 	reverse_proxy api:4000
-}
-
-# Dapodik Pauddikdasmen 2027 — Apache internal di container (app :5774).
-dapodik.smpm3bdg.sch.id {
-	import common
-	request_body {
-		max_size 256MB
-	}
-	reverse_proxy dapodik:5774
 }
