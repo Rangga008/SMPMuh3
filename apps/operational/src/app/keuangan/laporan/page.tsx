@@ -527,7 +527,7 @@ export default function LaporanPage() {
               <Widget title={`${tabLabel} — ${periodLabel}`} className={loading ? 'opacity-60' : ''}>
 
                 {tab === 'bulanan' && (
-                  <table className="w-full text-sm">
+                  <div className="overflow-x-auto"><table className="w-full text-sm">
                     <thead>
                       <tr>
                         <th className={th}>Bulan</th><th className={thr}>Masuk</th><th className={thr}>Keluar</th>
@@ -555,7 +555,7 @@ export default function LaporanPage() {
                         </tr>
                       )}
                     </tbody>
-                  </table>
+                  </table></div>
                 )}
 
                 {tab === 'sheet' && (
@@ -594,7 +594,7 @@ export default function LaporanPage() {
                         <div className="grid gap-6 lg:grid-cols-2">
                           <div>
                             <p className="mb-2 text-sm font-semibold text-green-700">Pemasukan</p>
-                            <table className="w-full text-sm">
+                            <div className="overflow-x-auto"><table className="w-full text-sm">
                               <thead>
                                 <tr><th className={th}>Tanggal</th><th className={th}>Uraian</th><th className={thr}>Jumlah</th></tr>
                               </thead>
@@ -611,11 +611,11 @@ export default function LaporanPage() {
                                   </tr>
                                 ))}
                               </tbody>
-                            </table>
+                            </table></div>
                           </div>
                           <div>
                             <p className="mb-2 text-sm font-semibold text-red-700">Pengeluaran</p>
-                            <table className="w-full text-sm">
+                            <div className="overflow-x-auto"><table className="w-full text-sm">
                               <thead>
                                 <tr><th className={th}>Tanggal</th><th className={th}>Uraian</th><th className={thr}>Jumlah</th></tr>
                               </thead>
@@ -632,7 +632,7 @@ export default function LaporanPage() {
                                   </tr>
                                 ))}
                               </tbody>
-                            </table>
+                            </table></div>
                           </div>
                         </div>
                         <div className="mt-4 border-t-2 border-current/25 pt-3 text-sm font-bold">
@@ -645,7 +645,7 @@ export default function LaporanPage() {
 
                 {tab === 'kategori' && (
                   <>
-                    <table className="w-full text-sm">
+                    <div className="overflow-x-auto"><table className="w-full text-sm">
                       <thead>
                         <tr><th className={th}>Kategori</th><th className={th}>Tipe</th><th className={thr}>Masuk</th><th className={thr}>Keluar</th></tr>
                       </thead>
@@ -667,7 +667,7 @@ export default function LaporanPage() {
                           </tr>
                         )}
                       </tbody>
-                    </table>
+                    </table></div>
 
                     {/* Rincian transaksi satu kategori */}
                     <div className="mt-6 border-t border-current/10 pt-4">
@@ -679,7 +679,7 @@ export default function LaporanPage() {
                         </Select>
                       </div>
                       {katId && katRows.length > 0 && (
-                        <table className="w-full text-sm">
+                        <div className="overflow-x-auto"><table className="w-full text-sm">
                           <thead>
                             <tr><th className={th}>Tanggal</th><th className={th}>Deskripsi</th><th className={th}>Kas</th><th className={thr}>Masuk</th><th className={thr}>Keluar</th></tr>
                           </thead>
@@ -694,7 +694,7 @@ export default function LaporanPage() {
                               </tr>
                             ))}
                           </tbody>
-                        </table>
+                        </table></div>
                       )}
                       {katId && katRows.length === 0 && <p className="text-sm opacity-55">Tidak ada transaksi pada periode ini.</p>}
                     </div>
@@ -702,7 +702,7 @@ export default function LaporanPage() {
                 )}
 
                 {tab === 'sumber' && (
-                  <table className="w-full text-sm">
+                  <div className="overflow-x-auto"><table className="w-full text-sm">
                     <thead>
                       <tr><th className={th}>Sumber</th><th className={thr}>Masuk</th><th className={thr}>Keluar</th><th className={thr}>Net</th></tr>
                     </thead>
@@ -717,12 +717,12 @@ export default function LaporanPage() {
                         </tr>
                       ))}
                     </tbody>
-                  </table>
+                  </table></div>
                 )}
 
                 {tab === 'kas' && (
                   <>
-                    <table className="w-full text-sm">
+                    <div className="overflow-x-auto"><table className="w-full text-sm">
                       <thead>
                         <tr><th className={th}>Kas</th><th className={thr}>Masuk</th><th className={thr}>Keluar</th><th className={thr}>Net (Sisa)</th></tr>
                       </thead>
@@ -742,7 +742,7 @@ export default function LaporanPage() {
                           <td className={tdr}>{rupiah(report.balance)}</td>
                         </tr>
                       </tbody>
-                    </table>
+                    </table></div>
 
                     {/* Rincian satu kas — buku kas periode ini */}
                     <div className="mt-6 border-t border-current/10 pt-4">
@@ -754,7 +754,7 @@ export default function LaporanPage() {
                         </Select>
                       </div>
                       {kasId && kasLedger && kasLedger.items.length > 0 && (
-                        <table className="w-full text-sm">
+                        <div className="overflow-x-auto"><table className="w-full text-sm">
                           <thead>
                             <tr><th className={th}>Tanggal</th><th className={th}>Uraian</th><th className={thr}>Masuk</th><th className={thr}>Keluar</th><th className={thr}>Saldo</th></tr>
                           </thead>
@@ -779,7 +779,7 @@ export default function LaporanPage() {
                               <td className={tdr}>{rupiah(kasLedger.closing)}</td>
                             </tr>
                           </tbody>
-                        </table>
+                        </table></div>
                       )}
                       {kasId && (!kasLedger || kasLedger.items.length === 0) && <p className="text-sm opacity-55">Tidak ada gerakan pada periode ini.</p>}
                     </div>
@@ -806,7 +806,7 @@ export default function LaporanPage() {
                       </p>
                     </div>
                     <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
+                      <div className="overflow-x-auto"><table className="w-full text-sm">
                         <thead>
                           <tr>
                             <th className={th}>{siswaKelas ? 'Siswa' : siswaJenjang ? 'Kelas' : 'Jenjang'}</th>
@@ -838,14 +838,14 @@ export default function LaporanPage() {
                             </tr>
                           )}
                         </tbody>
-                      </table>
+                      </table></div>
                     </div>
                   </>
                 )}
 
                 {tab === 'kelas' && (
                   !invoices ? <p className="py-4 text-sm opacity-55">Memuat tagihan…</p> : (
-                    <table className="w-full text-sm">
+                    <div className="overflow-x-auto"><table className="w-full text-sm">
                       <thead>
                         <tr><th className={th}>Kelas</th><th className={thr}>Jml Tagihan</th><th className={thr}>Total</th><th className={thr}>Terbayar</th><th className={thr}>Sisa</th></tr>
                       </thead>
@@ -870,13 +870,13 @@ export default function LaporanPage() {
                           </tr>
                         )}
                       </tbody>
-                    </table>
+                    </table></div>
                   )
                 )}
 
                 {tab === 'jenjang' && (
                   !invoices ? <p className="py-4 text-sm opacity-55">Memuat tagihan…</p> : (
-                    <table className="w-full text-sm">
+                    <div className="overflow-x-auto"><table className="w-full text-sm">
                       <thead>
                         <tr><th className={th}>Jenjang</th><th className={thr}>Jml Tagihan</th><th className={thr}>Total</th><th className={thr}>Terbayar</th><th className={thr}>Sisa</th></tr>
                       </thead>
@@ -892,13 +892,13 @@ export default function LaporanPage() {
                           </tr>
                         ))}
                       </tbody>
-                    </table>
+                    </table></div>
                   )
                 )}
 
                 {tab === 'piutang' && (
                   !invoices ? <p className="py-4 text-sm opacity-55">Memuat tagihan…</p> : (
-                    <table className="w-full text-sm">
+                    <div className="overflow-x-auto"><table className="w-full text-sm">
                       <thead>
                         <tr>
                           <th className={th}>Siswa</th><th className={th}>Kelas</th><th className={th}>No HP Ortu</th>
@@ -928,7 +928,7 @@ export default function LaporanPage() {
                           </tr>
                         )}
                       </tbody>
-                    </table>
+                    </table></div>
                   )
                 )}
 
@@ -955,7 +955,7 @@ export default function LaporanPage() {
                       </div>
                     </div>
                     <p className="mb-2 text-sm font-semibold">Tabungan per bulan</p>
-                    <table className="w-full text-sm">
+                    <div className="overflow-x-auto"><table className="w-full text-sm">
                       <thead>
                         <tr><th className={th}>Bulan</th><th className={thr}>Setor</th><th className={thr}>Tarik</th><th className={thr}>Net</th></tr>
                       </thead>
@@ -978,12 +978,12 @@ export default function LaporanPage() {
                           </tr>
                         )}
                       </tbody>
-                    </table>
+                    </table></div>
                   </>
                 )}
 
                 {tab === 'rab' && (
-                  <table className="w-full text-sm">
+                  <div className="overflow-x-auto"><table className="w-full text-sm">
                     <thead>
                       <tr>
                         <th className={th}>Kategori</th><th className={thr}>Rencana</th><th className={thr}>Realisasi</th>
@@ -1017,7 +1017,7 @@ export default function LaporanPage() {
                         </tr>
                       ))}
                     </tbody>
-                  </table>
+                  </table></div>
                 )}
               </Widget>
 

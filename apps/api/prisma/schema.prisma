@@ -24,6 +24,9 @@ model User {
   email        String?    @unique
   phone        String?    @unique
   passwordHash String     @map("password_hash")
+  /// Sandi terenkripsi (AES-256-GCM) — hanya diisi saat sandi dibuat/di-set
+  /// admin atau user, agar admin berwenang dapat MELIHATnya kembali.
+  passwordView String?    @map("password_view")
   name         String
   status       UserStatus @default(ACTIVE)
   lastLoginAt  DateTime?  @map("last_login_at")

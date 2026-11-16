@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import type { AuthUser, PermissionKey } from '@smpmuh3/types';
 import { PrismaService } from '../../core/prisma/prisma.service';
+import { decryptPassword, encryptPassword } from './password-view';
 
 const userWithAccess = {
   roles: {
@@ -182,6 +183,7 @@ export class UsersService {
     email?: string | undefined;
     phone?: string | undefined;
     passwordHash: string;
+    passwordPlain?: string | undefined;
     roleIds: string[];
   }) {
     return this.prisma.user.create({
@@ -190,6 +192,7 @@ export class UsersService {
         email: input.email ?? null,
         phone: input.phone ? normalizePhone(input.phone) : null,
         passwordHash: input.passwordHash,
+        passwordView: input.passwordPlain ? encryptPassword(input.passwordPlain) : null,
         roles: { create: input.roleIds.map((roleId) => ({ roleId })) },
       },
       include: {
@@ -218,11 +221,20 @@ export class UsersService {
     });
   }
 
-  resetPassword(id: string, passwordHash: string) {
+  resetPassword(id: string, passwordHash: string, passwordPlain?: string) {
     return this.prisma.user.update({
       where: { id },
-      data: { passwordHash },
+      data: {
+        passwordHash,
+        ...(passwordPlain ? { passwordView: encryptPassword(passwordPlain) } : {}),
+      },
     });
+  }
+
+  /** Sandi terdekripsi untuk ditampilkan ke admin berwenang — null bila belum tersimpan. */
+  async viewPassword(id: string): Promise<string | null> {
+    const u = await this.prisma.user.findUnique({ where: { id }, select: { passwordView: true } });
+    return decryptPassword(u?.passwordView);
   }
 
   /** Hapus akun staf — menolak akun yang hanya punya role ortu. */

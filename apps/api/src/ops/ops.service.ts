@@ -145,6 +145,22 @@ export class OpsService {
         total: Object.values(r.dayCounts).reduce((a, b) => a + b, 0),
       }));
     const tno = new Map(teachers.map((t) => [t.id, t.no]));
+    // Mapel unik per kelas (untuk legenda "Mapel per Kelas" di export).
+    const classSubjects = new Map<string, { subject: string; teacherNo: number; teacher: string }[]>();
+    for (const e of entries) {
+      const cid = e.assignment.classId;
+      const sub = e.assignment.subject.name;
+      const arr = classSubjects.get(cid) ?? [];
+      if (!arr.some((x) => x.subject === sub)) {
+        arr.push({
+          subject: sub,
+          teacherNo: tno.get(e.assignment.employee.id) ?? 0,
+          teacher: e.assignment.employee.name,
+        });
+        classSubjects.set(cid, arr);
+      }
+    }
+    for (const arr of classSubjects.values()) arr.sort((a, b) => a.subject.localeCompare(b.subject));
     const days = [1, 2, 3, 4, 5, 6].map((day) => {
       const ents = entries.filter((e) => e.day === day);
       const blks = blocks.filter((b) => b.day === day);
@@ -173,7 +189,7 @@ export class OpsService {
       }
       return { day, rows };
     });
-    return { classes, teachers, days };
+    return { classes, teachers, days, classSubjects };
   }
 
   /**
@@ -201,8 +217,7 @@ export class OpsService {
     const nCls = classes.length;
     const DAY_NAMES = ['', 'SENIN', 'SELASA', 'RABU', 'KAMIS', 'JUMAT', 'SABTU', 'MINGGU'];
     const mm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}.${String(m % 60).padStart(2, '0')}`;
-    const W = 3 + nCls; // lebar satu blok hari
-    const gcol = W + 1; // kolom awal blok kanan (1 kolom spasi)
+    const W = 3 + nCls; // lebar blok hari: NO|WAKTU|JAM|KELAS×n
 
     const rows: (string | number)[][] = [];
     const merges: XLSX.Range[] = [];
@@ -215,8 +230,8 @@ export class OpsService {
     const merge = (r: number, c1: number, c2: number) =>
       merges.push({ s: { r, c: c1 }, e: { r, c: c2 } });
 
-    // ---- Kop ----
-    const totalW = gcol + W;
+    // ---- Kop — selebar blok jadwal + kolom legenda ----
+    const totalW = Math.max(W, 15);
     cell(0, 0, (school?.name ?? 'SMP MUHAMMADIYAH 3 KOTA BANDUNG').toUpperCase());
     merge(0, 0, totalW - 1);
     cell(1, 0, 'JADWAL PELAJARAN');
@@ -265,56 +280,79 @@ export class OpsService {
       return r; // baris bebas setelah blok
     };
 
-    // ---- Kolom kiri: SENIN–KAMIS · kolom kanan: JUMAT–SABTU + DAFTAR GURU ----
-    const leftDays = mx.days.filter((d) => d.day <= 4 && d.rows.length);
-    const rightDays = mx.days.filter((d) => d.day >= 5 && d.rows.length);
-    let rl = 6;
-    for (const d of leftDays) {
-      rl = writeDay(d, rl, 0) + 1;
-    }
+    // ---- Semua hari ditulis berturut-turut di kolom kiri (SENIN–SABTU) ----
+    const allDays = mx.days.filter((d) => d.rows.length);
     let rr = 6;
-    for (const d of rightDays) {
-      rr = writeDay(d, rr, gcol) + 1;
+    for (const d of allDays) {
+      rr = writeDay(d, rr, 0) + 1;
     }
 
-    // ---- Daftar Guru di kolom kanan ----
+    // ---- 2. Daftar Guru (kolom kiri, lanjut di bawah jadwal) ----
+    const gc = 0;
     rr += 1;
-    cell(rr, gcol, '2. DAFTAR GURU');
+    cell(rr, gc, '2. DAFTAR GURU');
     rr += 2;
-    const gh = ['NO', 'NAMA', 'MATA PELAJARAN', 'SEN', 'SEL', 'RAB', 'KAM', 'JUM', 'SAB', 'JML'];
-    // Header 'JUMLAH JAM PERHARI' digabung di atas kolom hari.
-    cell(rr, gcol + 3, 'JUMLAH JAM PERHARI');
-    merge(rr, gcol + 3, gcol + 9);
+    // Header 2 baris: 'JUMLAH JAM PERHARI' tergabung di atas kolom hari.
+    cell(rr, gc + 8, 'JUMLAH JAM PERHARI');
+    merge(rr, gc + 8, gc + 13);
     rr += 1;
-    gh.forEach((h, i) => cell(rr, gcol + i, h));
+    cell(rr, gc, 'NO');
+    cell(rr, gc + 1, 'NAMA');
+    merge(rr, gc + 1, gc + 2);
+    cell(rr, gc + 3, 'MATA PELAJARAN');
+    merge(rr, gc + 3, gc + 7);
+    ['SEN', 'SEL', 'RAB', 'KAM', 'JUM', 'SAB', 'JML'].forEach((h, i) => cell(rr, gc + 8 + i, h));
     rr += 1;
     for (const t of mx.teachers) {
-      const vals: (string | number)[] = [
-        t.no, t.name, t.subject,
-        t.dayCounts[1] ?? 0, t.dayCounts[2] ?? 0, t.dayCounts[3] ?? 0,
-        t.dayCounts[4] ?? 0, t.dayCounts[5] ?? 0, t.dayCounts[6] ?? 0, t.total,
-      ];
-      vals.forEach((v, i) => cell(rr, gcol + i, v));
+      cell(rr, gc, t.no);
+      cell(rr, gc + 1, t.name);
+      merge(rr, gc + 1, gc + 2);
+      cell(rr, gc + 3, t.subject);
+      merge(rr, gc + 3, gc + 7);
+      const cnt = [t.dayCounts[1] ?? 0, t.dayCounts[2] ?? 0, t.dayCounts[3] ?? 0, t.dayCounts[4] ?? 0, t.dayCounts[5] ?? 0, t.dayCounts[6] ?? 0, t.total];
+      cnt.forEach((v, i) => cell(rr, gc + 8 + i, v));
       rr += 1;
+    }
+
+    // ---- 3. Mapel per kelas: kolom KELAS | NO | MATA PELAJARAN | GURU ----
+    rr += 1;
+    cell(rr, gc, '3. KODE MAPEL PER KELAS');
+    rr += 1;
+    cell(rr, gc, 'KELAS');
+    cell(rr, gc + 1, 'NO');
+    cell(rr, gc + 2, 'MATA PELAJARAN');
+    merge(rr, gc + 2, gc + 4);
+    cell(rr, gc + 5, 'GURU (NO)');
+    merge(rr, gc + 5, gc + 8);
+    rr += 1;
+    for (const c of classes) {
+      const subs = mx.classSubjects.get(c.id) ?? [];
+      const r0 = rr;
+      subs.forEach((s, i) => {
+        cell(rr, gc + 1, i + 1);
+        cell(rr, gc + 2, s.subject);
+        merge(rr, gc + 2, gc + 4);
+        cell(rr, gc + 5, `${s.teacher} (${s.teacherNo})`);
+        merge(rr, gc + 5, gc + 8);
+        rr += 1;
+      });
+      if (subs.length) {
+        cell(r0, gc, c.name);
+        if (subs.length > 1) merges.push({ s: { r: r0, c: gc }, e: { r: rr - 1, c: gc } });
+      } else {
+        cell(rr, gc, c.name);
+        cell(rr, gc + 2, '—');
+        rr += 1;
+      }
     }
 
     const ws = XLSX.utils.aoa_to_sheet(rows);
     ws['!merges'] = merges;
     ws['!cols'] = [
-      // blok kiri
-      { wch: 4 }, { wch: 13 }, { wch: 4 }, ...new Array(nCls).fill({ wch: 5 }) as { wch: number }[],
-      // spasi
-      { wch: 2 },
-      // blok kanan
-      { wch: 4 }, { wch: 13 }, { wch: 4 }, ...new Array(nCls).fill({ wch: 5 }) as { wch: number }[],
-      // ekstra kolom legenda guru (NAMA/MAPEL lebih lebar — timpa kolom kelas kanan)
+      { wch: 5 }, { wch: 13 }, { wch: 5 }, ...new Array(nCls).fill({ wch: 6 }) as { wch: number }[],
+      // kolom ekstra untuk legenda guru/mapel (di luar lebar kolom kelas)
+      { wch: 7 }, { wch: 7 }, { wch: 7 }, { wch: 7 }, { wch: 7 }, { wch: 7 }, { wch: 7 },
     ];
-    // Kolom blok kanan: NO/WAKTU/JAM sempit, kolom kelas jadi lebar tetap;
-    // NAMA & MATA PELAJARAN legenda menempati kolom kelas kanan pertama —
-    // lebarkan supaya nama guru muat.
-    const cols = ws['!cols'] as { wch: number }[];
-    cols[gcol + 1] = { wch: 26 }; // NAMA guru menimpa kolom WAKTU kanan
-    cols[gcol + 2] = { wch: 18 }; // MAPEL menimpa kolom JAM kanan
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Jadwal');
     return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
@@ -644,7 +682,14 @@ export class OpsService {
       },
       include: { assessment: { include: { subject: { select: { id: true, name: true, code: true } } } } },
     });
+    // Mapel kolom diambil dari nilai + SEMUA asesmen kelas ini — kolom
+    // tetap tampil walau nilai belum diisi (tabel tidak tampak kosong).
+    const assessments = await this.prisma.assessment.findMany({
+      where: { academicYearId, OR: [{ classId }, { classId: null }] },
+      select: { subject: { select: { id: true, name: true, code: true } } },
+    });
     const subjects = new Map<string, { id: string; name: string; code: string }>();
+    for (const a of assessments) subjects.set(a.subject.id, a.subject);
     const cell = new Map<string, number[]>();
     for (const g of grades) {
       const sub = g.assessment.subject;

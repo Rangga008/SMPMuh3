@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Button, Field, Input } from '@smpmuh3/ui';
+import { Button, Field, Input, Modal } from '@smpmuh3/ui';
 import {
   API,
   ApiError,
@@ -158,17 +158,27 @@ export default function LoginPage() {
           Akses khusus staf dan guru.
         </p>
 
-        {reset ? (
-          <div className="fixed inset-0 z-50 flex items-end justify-center bg-primary-950/60 p-4 backdrop-blur-sm sm:items-center" role="dialog" aria-modal="true">
-            <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-lift">
-              {reset.step === 'ask' ? (
+        <Modal
+          open={!!reset}
+          onClose={() => setReset(null)}
+          size="md"
+          title={
+            reset?.step === 'ask'
+              ? 'Lupa Kata Sandi'
+              : reset?.step === 'otp'
+                ? 'Masukkan Kode OTP'
+                : 'Sandi Berhasil Direset'
+          }
+          description={
+            reset?.step === 'ask'
+              ? 'Kode OTP akan dikirim ke WhatsApp nomor yang terdaftar di akun Anda.'
+              : reset?.step === 'otp'
+                ? 'Bila nomor terdaftar, kode 6 digit telah dikirim via WhatsApp — berlaku 10 menit.'
+                : undefined
+          }
+        >
+          {reset?.step === 'ask' ? (
                 <form onSubmit={onAskOtp} className="space-y-4">
-                  <div>
-                    <h2 className="text-lg font-extrabold text-sand-950">Lupa Kata Sandi</h2>
-                    <p className="mt-1 text-sm text-sand-600">
-                      Kode OTP akan dikirim ke <strong>WhatsApp</strong> nomor yang terdaftar di akun Anda.
-                    </p>
-                  </div>
                   <Field label="Email atau Nomor HP">
                     <Input name="identifier" required autoComplete="username" placeholder="nama@sekolah.id / 08xx" />
                   </Field>
@@ -184,14 +194,8 @@ export default function LoginPage() {
                     </Button>
                   </div>
                 </form>
-              ) : reset.step === 'otp' ? (
+              ) : reset?.step === 'otp' ? (
                 <form onSubmit={onResetOtp} className="space-y-4">
-                  <div>
-                    <h2 className="text-lg font-extrabold text-sand-950">Masukkan Kode OTP</h2>
-                    <p className="mt-1 text-sm text-sand-600">
-                      Bila nomor terdaftar, kode 6 digit telah dikirim via WhatsApp — berlaku 10 menit.
-                    </p>
-                  </div>
                   <Field label="Kode OTP">
                     <Input
                       name="code"
@@ -231,16 +235,13 @@ export default function LoginPage() {
               ) : (
                 <div className="space-y-4 text-center">
                   <span aria-hidden="true" className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-emerald-100 text-2xl">✓</span>
-                  <h2 className="text-lg font-extrabold text-sand-950">Sandi Berhasil Direset</h2>
                   <p className="text-sm text-sand-600">Silakan masuk kembali dengan kata sandi baru Anda.</p>
                   <Button className="w-full" onClick={() => setReset(null)}>
                     Kembali Masuk
                   </Button>
                 </div>
               )}
-            </div>
-          </div>
-        ) : null}
+        </Modal>
       </div>
     </main>
   );

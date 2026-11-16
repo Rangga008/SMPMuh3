@@ -12,6 +12,7 @@ import {
   type RegistrationStatus,
 } from '@smpmuh3/types';
 import { Badge, Button, Field, Input, Modal, Select, Textarea } from '@smpmuh3/ui';
+import { RpInput } from '@/components/rp-input';
 import { Shell } from '@/components/shell';
 import { useConfirm } from '@/components/confirm-dialog';
 import { PageTitle, Widget } from '@/components/widgets';
@@ -616,7 +617,7 @@ export default function AdminRegistrationPage() {
           </Field>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Jumlah (Rp)">
-              <Input name="amount" type="number" min={1000} required placeholder="0" />
+              <RpInput name="amount" />
             </Field>
             <Field label="Jenis">
               <Select name="kind" defaultValue="dsp_dp">
@@ -646,7 +647,7 @@ export default function AdminRegistrationPage() {
           </Field>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Total (Rp)">
-              <Input name="ptotal" type="number" min={10000} required placeholder="2800000" />
+              <RpInput name="ptotal" placeholder="2.800.000" />
             </Field>
             <Field label="Jumlah Angsuran">
               <Input name="pcount" type="number" min={2} max={12} required defaultValue={3} />

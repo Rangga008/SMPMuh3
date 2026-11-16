@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import type { DiscountRuleDto, FeeDto, FormQuestionDto, WaveDto } from '@smpmuh3/types';
 import { Badge, Button, Field, Input, Modal, Select, Textarea } from '@smpmuh3/ui';
+import { RpInput } from '@/components/rp-input';
 import { Shell } from '@/components/shell';
 import { PageTitle, Widget } from '@/components/widgets';
 import { useConfirm } from '@/components/confirm-dialog';
@@ -266,7 +267,7 @@ function SpmbSettingsInner() {
                           void run(() => updateFee(f.key, amount), `${FEE_LABELS[f.key] ?? f.label} diperbarui.`);
                         }}
                       >
-                        <Input name="amount" type="number" min={0} required defaultValue={f.amount} />
+                        <RpInput name="amount" hidePreview defaultValue={f.amount} />
                         <Button size="sm" type="submit" variant="outline" disabled={busy}>Simpan</Button>
                       </form>
                     </td>
@@ -807,10 +808,9 @@ function SpmbSettingsInner() {
                             }
                           }}
                         >
-                          <Input
+                          <RpInput
                             name="amount"
-                            type="number"
-                            min={0}
+                            hidePreview
                             defaultValue={f.overridden ? f.amount : ''}
                             placeholder="kosong = tarif dasar"
                           />
@@ -853,7 +853,7 @@ function SpmbSettingsInner() {
             <Input name="label" required />
           </Field>
           <Field label="Nominal (Rp)">
-            <Input name="amount" type="number" min={0} required placeholder="0" />
+            <RpInput name="amount" />
           </Field>
           <Button type="submit" disabled={busy}>{busy ? 'Menyimpan…' : 'Tambah Biaya'}</Button>
         </form>

@@ -128,7 +128,7 @@ function JenisModal({
       ) : null}
 
       <div className="max-h-96 overflow-y-auto rounded-xl border border-sand-200">
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto"><table className="w-full text-sm">
           <tbody>
             {rows.map((t) => (
               <tr key={t.id} className="border-b border-sand-100 last:border-0">
@@ -192,7 +192,7 @@ function JenisModal({
               <tr><td className="px-3 py-6 text-center text-sand-500">Belum ada jenis sarana.</td></tr>
             ) : null}
           </tbody>
-        </table>
+        </table></div>
       </div>
     </Modal>
   );

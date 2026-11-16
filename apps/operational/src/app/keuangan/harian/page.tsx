@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
+import { RpInput } from '@/components/rp-input';
 import { Shell } from '@/components/shell';
 import { DataTable } from '@/components/data-table';
 import { PageTitle, Widget } from '@/components/widgets';
@@ -202,7 +203,7 @@ export default function HarianPage() {
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Jumlah (Rp)">
-              <Input name="amount" type="number" min={1} required placeholder="0" />
+              <RpInput name="amount" />
             </Field>
             <Field label="Tanggal">
               <Input name="occurredAt" type="date" defaultValue={today()} />
@@ -350,7 +351,7 @@ export default function HarianPage() {
               </Select>
             </Field>
             <Field label="Jumlah (Rp)">
-              <Input name="amount" type="number" min={1} required defaultValue={txModal.amount} placeholder="0" />
+              <RpInput name="amount" defaultValue={txModal.amount} />
             </Field>
             <Field label="Kas / Bank" hint="Kosong = akun default">
               <Select name="cashAccountId" defaultValue={txModal.cashAccountId ?? ''} aria-label="Akun kas">

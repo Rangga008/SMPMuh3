@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
+import { RpInput } from '@/components/rp-input';
 import { Shell } from '@/components/shell';
 import { DataTable } from '@/components/data-table';
 import { PageTitle, Widget } from '@/components/widgets';
@@ -572,8 +573,8 @@ export default function TagihanPage() {
                 ))}
               </Select>
             </Field>
-            <Field label="Nominal per Siswa">
-              <Input name="amount" type="number" min={1} required placeholder="250000" />
+            <Field label="Nominal per Siswa (Rp)">
+              <RpInput name="amount" placeholder="250.000" />
             </Field>
           </div>
           <Field label="Judul Tagihan">
@@ -647,13 +648,11 @@ function ItemRows() {
             placeholder="Nama komponen (mis. SPP November)"
             aria-label={`Label komponen ${i + 1}`}
           />
-          <Input
+          <RpInput
             name="itemAmount"
-            type="number"
-            min={0}
+            hidePreview
             value={r.a}
-            onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, a: e.target.value } : x)))}
-            placeholder="0"
+            onChange={(v) => setRows(rows.map((x, j) => (j === i ? { ...x, a: v } : x)))}
             aria-label={`Nominal komponen ${i + 1}`}
           />
           <Button
@@ -861,14 +860,11 @@ function PayModal({
                     <RowBtn type="button" onClick={async () => setAmounts((m) => ({ ...m, [key]: String(t.max) }))}>
                       Penuh
                     </RowBtn>
-                    <Input
-                      type="number"
-                      min={0}
-                      max={t.max}
+                    <RpInput
+                      hidePreview
                       value={amounts[key] ?? ''}
-                      onChange={(e) => setAmounts((m) => ({ ...m, [key]: e.target.value }))}
-                      placeholder="0"
-                      className="w-32 text-right"
+                      onChange={(v) => setAmounts((m) => ({ ...m, [key]: v }))}
+                      inputClassName="w-32 text-right"
                       aria-label={`Nominal ${t.label}`}
                     />
                   </div>

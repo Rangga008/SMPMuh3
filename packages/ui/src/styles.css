@@ -234,3 +234,16 @@
   outline: 2px solid var(--color-primary-600);
   outline-offset: 2px;
 }
+
+/* Hilangkan spinner naik/turun pada input angka — angka tetap mudah
+ * diketik (keyboard numerik mobile tetap aktif), validasi min/max &
+ * valueAsNumber tetap berfungsi karena type=number dipertahankan. */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}

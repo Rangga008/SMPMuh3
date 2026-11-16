@@ -15,6 +15,7 @@ import { PrismaService } from '../../core/prisma/prisma.service';
 import { StorageService } from '../../core/storage/storage.service';
 import { WhatsappService } from '../../spmb/whatsapp.service';
 import { normalizePhone, UsersService } from '../users/users.service';
+import { encryptPassword } from '../users/password-view';
 
 interface RequestMeta {
   ip?: string | undefined;
@@ -267,7 +268,10 @@ export class AuthService {
     await this.prisma.$transaction([
       this.prisma.user.update({
         where: { id: user.id },
-        data: { passwordHash: await argon2.hash(password) },
+        data: {
+          passwordHash: await argon2.hash(password),
+          passwordView: encryptPassword(password),
+        },
       }),
       this.prisma.passwordResetOtp.update({
         where: { id: otp.id },
@@ -339,7 +343,10 @@ export class AuthService {
     await this.prisma.$transaction([
       this.prisma.user.update({
         where: { id: userId },
-        data: { passwordHash: await argon2.hash(newPassword) },
+        data: {
+          passwordHash: await argon2.hash(newPassword),
+          passwordView: encryptPassword(newPassword),
+        },
       }),
       this.prisma.refreshToken.updateMany({
         where: { userId, revokedAt: null },

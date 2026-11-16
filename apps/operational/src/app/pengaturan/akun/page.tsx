@@ -13,6 +13,7 @@ import {
   listStaffUsers,
   resetStaffPassword,
   updateStaffUser,
+  viewStaffPassword,
   type RoleOption,
   type StaffUser,
   phoneLocal,
@@ -34,6 +35,8 @@ export default function AccountSettingsPage() {
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<StaffUser | null>(null);
   const [resetTarget, setResetTarget] = useState<StaffUser | null>(null);
+  const [newPassword, setNewPassword] = useState<string | null>(null);
+  const [viewPw, setViewPw] = useState<{ name: string; password: string | null } | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState('');
@@ -159,10 +162,11 @@ export default function AccountSettingsPage() {
     const fd = new FormData(e.currentTarget);
     setBusy(true);
     setError(null);
+    const password = String(fd.get('password'));
     try {
-      await resetStaffPassword(resetTarget.id, String(fd.get('password')));
-      setResetTarget(null);
-      setNotice('Kata sandi diatur ulang.');
+      await resetStaffPassword(resetTarget.id, password);
+      setNewPassword(password);
+      setNotice('Kata sandi diatur ulang — salin sandi baru sebelum menutup.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Gagal mengatur ulang.');
     } finally {
@@ -310,6 +314,23 @@ export default function AccountSettingsPage() {
                     </button>
                     <button
                       type="button"
+                      onClick={async () => {
+                        setBusy(true);
+                        try {
+                          const r = await viewStaffPassword(u.id);
+                          setViewPw({ name: u.name, password: r.password });
+                        } catch (err) {
+                          setError(err instanceof Error ? err.message : 'Gagal memuat sandi.');
+                        } finally {
+                          setBusy(false);
+                        }
+                      }}
+                      className="rounded-lg px-2.5 py-1.5 font-semibold text-sand-600 hover:bg-sand-100"
+                    >
+                      Lihat
+                    </button>
+                    <button
+                      type="button"
                       onClick={async () => setResetTarget(u)}
                       className="rounded-lg px-2.5 py-1.5 font-semibold text-sand-600 hover:bg-sand-100"
                     >
@@ -401,23 +422,102 @@ export default function AccountSettingsPage() {
       {/* Atur ulang sandi */}
       <Modal
         open={!!resetTarget}
-        onClose={() => setResetTarget(null)}
+        onClose={() => { setResetTarget(null); setNewPassword(null); }}
         title={`Sandi Baru — ${resetTarget?.name ?? ''}`}
+        description={
+          newPassword
+            ? 'Sandi ditampilkan sekali — salin & kirim ke pemilik akun.'
+            : 'Sandi lama tidak dapat dilihat (tersimpan ter-hash) — atur sandi baru.'
+        }
       >
         {resetTarget ? (
-          <form onSubmit={submitReset} className="space-y-4">
-            <Field label="Kata Sandi Baru" hint="Minimal 8 karakter">
-              <Input name="password" type="password" required minLength={8} />
-            </Field>
-            <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="secondary" onClick={async () => setResetTarget(null)}>
-                Batal
-              </Button>
-              <Button type="submit" disabled={busy}>
-                {busy ? 'Menyimpan…' : 'Atur Ulang'}
-              </Button>
+          newPassword ? (
+            <div className="space-y-4">
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-center">
+                <p className="text-xs font-semibold text-emerald-700">Sandi baru</p>
+                <p className="mt-1 select-all font-mono text-xl font-bold tracking-wider text-emerald-900">
+                  {newPassword}
+                </p>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => void navigator.clipboard?.writeText(newPassword)}
+                >
+                  Salin
+                </Button>
+                <Button onClick={() => { setResetTarget(null); setNewPassword(null); }}>Selesai</Button>
+              </div>
             </div>
-          </form>
+          ) : (
+            <form onSubmit={submitReset} className="space-y-4">
+              <Field label="Kata Sandi Baru" hint="Minimal 8 karakter — atau acak otomatis.">
+                <Input id="reset-pw" name="password" type="text" required minLength={8} />
+              </Field>
+              <div className="flex justify-between gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789';
+                    const arr = new Uint32Array(10);
+                    crypto.getRandomValues(arr);
+                    const pw = [...arr].map((n) => chars[n % chars.length]).join('');
+                    const input = document.getElementById('reset-pw') as HTMLInputElement | null;
+                    if (input) input.value = pw;
+                  }}
+                >
+                  🎲 Acak Sandi
+                </Button>
+                <div className="flex gap-2">
+                  <Button type="button" variant="secondary" onClick={() => setResetTarget(null)}>
+                    Batal
+                  </Button>
+                  <Button type="submit" disabled={busy}>
+                    {busy ? 'Menyimpan…' : 'Atur Ulang'}
+                  </Button>
+                </div>
+              </div>
+            </form>
+          )
+        ) : null}
+      </Modal>
+      {/* Lihat sandi tersimpan */}
+      <Modal
+        open={!!viewPw}
+        onClose={() => setViewPw(null)}
+        title={`Sandi — ${viewPw?.name ?? ''}`}
+        description="Sandi yang terakhir di-set (tersimpan terenkripsi)."
+      >
+        {viewPw ? (
+          <div className="space-y-4">
+            {viewPw.password ? (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-center">
+                <p className="select-all font-mono text-xl font-bold tracking-wider text-emerald-900">
+                  {viewPw.password}
+                </p>
+              </div>
+            ) : (
+              <p className="rounded-xl bg-sand-50 px-4 py-3 text-sm text-sand-600">
+                Sandi belum terekam — akun ini dibuat sebelum fitur lihat-sandi aktif, atau sandi
+                belum pernah diatur ulang. Gunakan <b>Sandi</b> untuk menetapkan yang baru.
+              </p>
+            )}
+            <div className="flex justify-end gap-2">
+              {viewPw.password ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => void navigator.clipboard?.writeText(viewPw.password ?? '')}
+                >
+                  Salin
+                </Button>
+              ) : null}
+              <Button onClick={() => setViewPw(null)}>Tutup</Button>
+            </div>
+          </div>
         ) : null}
       </Modal>
           {dialog}

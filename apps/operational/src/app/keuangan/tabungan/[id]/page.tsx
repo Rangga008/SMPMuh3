@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { PERMISSIONS } from '@smpmuh3/types';
 import { Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
+import { RpInput } from '@/components/rp-input';
 import { Shell } from '@/components/shell';
 import { DataTable } from '@/components/data-table';
 import { PageTitle, Widget } from '@/components/widgets';
@@ -185,8 +186,8 @@ export default function BukuTabunganPage() {
               </p>
             ) : null}
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Jumlah">
-                <Input name="amount" type="number" min={1} max={entryModal === 'OUT' ? balance : undefined} required placeholder="0" />
+              <Field label="Jumlah (Rp)">
+                <RpInput name="amount" />
               </Field>
               <Field label="Tanggal">
                 <Input name="occurredAt" type="date" defaultValue={new Date().toISOString().slice(0, 10)} />

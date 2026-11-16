@@ -272,7 +272,21 @@ export async function inlineMathInDocx(buf: Buffer): Promise<Buffer> {
   const docFile = zip.file('word/document.xml');
   if (!docFile) return buf;
   let xmlStr = await docFile.async('string');
-  if (!xmlStr.includes('<m:oMath')) return buf;
+  const hasMath = xmlStr.includes('<m:oMath');
+  const hasVert = xmlStr.includes('w:vertAlign');
+  if (!hasMath && !hasVert) return buf;
+
+  // Pangkat/bawah yang diketik sebagai FORMAT teks (Ctrl+=, Ctrl+Shift+=)
+  // — w:vertAlign superscript/subscript — diabaikan mammoth. Ubah tiap run
+  // vertAlign menjadi run teks LaTeX ${}^{n}$ / $_{n}$ supaya ter-render KaTeX.
+  xmlStr = xmlStr.replace(/<w:r\b[^>]*>[\s\S]*?<\/w:r>/g, (run) => {
+    const va = /<w:vertAlign[^>]*w:val="(superscript|subscript)"/.exec(run)?.[1];
+    if (!va) return run;
+    const texts = [...run.matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((m) => m[1]).join('');
+    if (!texts.trim()) return run;
+    const sym = va === 'superscript' ? '^' : '_';
+    return `<w:r><w:t xml:space="preserve">${'$'}{}${sym}{${escXml(texts)}}$</w:t></w:r>`;
+  });
 
   // Blok display: <m:oMathPara>…</m:oMathPara> — ganti dengan paragraf teks berisi $…$.
   xmlStr = xmlStr.replace(/<m:oMathPara\b[^>]*>([\s\S]*?)<\/m:oMathPara>/g, (whole) => {

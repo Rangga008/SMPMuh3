@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
+import { RpInput } from '@/components/rp-input';
 import { Shell } from '@/components/shell';
 import { DataTable } from '@/components/data-table';
 import { PageTitle, Widget } from '@/components/widgets';
@@ -246,8 +247,8 @@ export default function KasPage() {
             </Field>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Jumlah">
-              <Input name="amount" type="number" min={1} required placeholder="250000" />
+            <Field label="Jumlah (Rp)">
+              <RpInput name="amount" placeholder="250.000" />
             </Field>
             <Field label="Tanggal">
               <Input name="receivedAt" type="date" />
@@ -301,8 +302,8 @@ export default function KasPage() {
                 <option value="BANK">Bank</option>
               </Select>
             </Field>
-            <Field label="Saldo Awal">
-              <Input name="openingBalance" type="number" min={0} defaultValue={editingAcc?.openingBalance ?? 0} />
+            <Field label="Saldo Awal (Rp)">
+              <RpInput name="openingBalance" defaultValue={editingAcc?.openingBalance ?? 0} />
             </Field>
           </div>
           {editingAcc ? (

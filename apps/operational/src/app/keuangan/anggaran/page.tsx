@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
+import { RpInput } from '@/components/rp-input';
 import { Shell } from '@/components/shell';
 import { DataTable } from '@/components/data-table';
 import { PageTitle, StatCard, Widget } from '@/components/widgets';
@@ -197,7 +198,7 @@ export default function AnggaranPage() {
             </Select>
           </Field>
           <Field label="Anggaran (Rp)">
-            <Input name="amount" type="number" min={0} required defaultValue={bEditing?.amount ?? ''} placeholder="0" />
+            <RpInput name="amount" defaultValue={bEditing?.amount ?? ''} />
           </Field>
           <Field label="Catatan">
             <Input name="note" defaultValue={bEditing?.note ?? ''} placeholder="opsional" />

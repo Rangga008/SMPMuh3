@@ -422,21 +422,17 @@ export default function PayrollPengaturanPage() {
               </p>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Potongan per hari telat (Rp)" hint="tarif tetap tiap hari berstatus TELAT">
-                  <Input
-                    type="number"
+                  <RpInput
+                    key={`d${payrollSettings?.lateDeductionPerDay ?? 0}`}
                     name="lateDeductionPerDay"
-                    min={0}
-                    step={1000}
                     defaultValue={payrollSettings?.lateDeductionPerDay ?? 0}
                     disabled={!canManage}
                   />
                 </Field>
                 <Field label="Potongan per menit telat (Rp)" hint="akumulasi menit dari jam masuk shift">
-                  <Input
-                    type="number"
+                  <RpInput
+                    key={`m${payrollSettings?.lateDeductionPerMin ?? 0}`}
                     name="lateDeductionPerMin"
-                    min={0}
-                    step={500}
                     defaultValue={payrollSettings?.lateDeductionPerMin ?? 0}
                     disabled={!canManage}
                   />
@@ -632,10 +628,10 @@ export default function PayrollPengaturanPage() {
                 <Input name="monthlyHours" type="number" min={0} step={0.5} defaultValue={empModal.monthlyRequiredMinutes / 60} />
               </Field>
               <Field label="Tarif/jam (override)">
-                <Input name="hourlyRate" type="number" min={0} placeholder="ikut golongan" defaultValue={empModal.hourlyRate ?? ''} />
+                <RpInput name="hourlyRate" placeholder="ikut golongan" defaultValue={empModal.hourlyRate ?? ''} />
               </Field>
               <Field label="Transport/jam (override)">
-                <Input name="transportRate" type="number" min={0} placeholder="ikut golongan" defaultValue={empModal.transportRate ?? ''} />
+                <RpInput name="transportRate" placeholder="ikut golongan" defaultValue={empModal.transportRate ?? ''} />
               </Field>
             </div>
             <label className="flex items-center gap-2 text-sm">
@@ -678,8 +674,8 @@ export default function PayrollPengaturanPage() {
               <Field label="Maks. tahun (kosong = ∞)"><Input name="maxYears" type="number" min={0} defaultValue={(scaleModal as PayScaleView).maxYears ?? ''} /></Field>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Tarif/jam wajib"><Input name="hourlyRate" type="number" min={0} required defaultValue={(scaleModal as PayScaleView).hourlyRate ?? ''} /></Field>
-              <Field label="Tarif transport/jam"><Input name="transportRate" type="number" min={0} required defaultValue={(scaleModal as PayScaleView).transportRate ?? ''} /></Field>
+              <Field label="Tarif/jam wajib (Rp)"><RpInput name="hourlyRate" defaultValue={(scaleModal as PayScaleView).hourlyRate ?? ''} /></Field>
+              <Field label="Tarif transport/jam (Rp)"><RpInput name="transportRate" defaultValue={(scaleModal as PayScaleView).transportRate ?? ''} /></Field>
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="ghost" onClick={async () => setScaleModal(false)}>Batal</Button>
@@ -1017,8 +1013,8 @@ export default function PayrollPengaturanPage() {
               {loanEdit.fee > 0 ? ` + jasa ${rupiah(loanEdit.fee)}` : ''}
             </p>
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Angsuran/bulan"><Input name="monthlyAmount" type="number" min={1} defaultValue={loanEdit.monthlyAmount} required /></Field>
-              <Field label="Sisa" hint="Bisa diubah bila guru melunasi/menyesuaikan di luar"><Input name="remaining" type="number" min={0} defaultValue={loanEdit.remaining} required /></Field>
+              <Field label="Angsuran/bulan"><RpInput name="monthlyAmount" defaultValue={loanEdit.monthlyAmount} /></Field>
+              <Field label="Sisa" hint="Bisa diubah bila guru melunasi/menyesuaikan di luar"><RpInput name="remaining" defaultValue={loanEdit.remaining} /></Field>
             </div>
             <Field label="Status">
               <Select name="status" defaultValue={loanEdit.status}>
@@ -1059,7 +1055,7 @@ export default function PayrollPengaturanPage() {
           <Field label="Pegawai"><SearchSelect name="employeeId" required load={loadEmp} label={empLabel} sub={empSub} placeholder="Ketik nama pegawai…" /></Field>
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Bulan"><Input name="month" type="month" required defaultValue={new Date().toISOString().slice(0, 7)} /></Field>
-            <Field label="Nominal"><Input name="amount" type="number" min={0} required /></Field>
+            <Field label="Nominal"><RpInput name="amount" /></Field>
           </div>
           <label className="flex items-center gap-2 text-sm">
             <input name="certified" type="checkbox" defaultChecked className="size-4" />

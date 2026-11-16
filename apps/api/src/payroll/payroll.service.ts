@@ -386,6 +386,10 @@ export class PayrollService {
         key,
         name: dto.name,
         defaultAmount: dto.defaultAmount ?? 0,
+        method: dto.method ?? 'FIXED',
+        percent: dto.percent ?? null,
+        base: dto.base ?? 'GROSS',
+        sortOrder: dto.sortOrder ?? 0,
         isRecurring: dto.isRecurring ?? true,
       },
     });
@@ -400,6 +404,10 @@ export class PayrollService {
       data: {
         ...(dto.name !== undefined ? { name: dto.name } : {}),
         ...(dto.defaultAmount !== undefined ? { defaultAmount: dto.defaultAmount } : {}),
+        ...(dto.method !== undefined ? { method: dto.method } : {}),
+        ...(dto.percent !== undefined ? { percent: dto.percent } : {}),
+        ...(dto.base !== undefined ? { base: dto.base } : {}),
+        ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),
         ...(dto.isRecurring !== undefined ? { isRecurring: dto.isRecurring } : {}),
         ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
       },
@@ -414,7 +422,17 @@ export class PayrollService {
       where: employeeId ? { employeeId } : {},
       include: {
         employee: { select: { name: true } },
-        deductionType: { select: { name: true, key: true, isRecurring: true } },
+        deductionType: {
+          select: {
+            name: true,
+            key: true,
+            isRecurring: true,
+            method: true,
+            percent: true,
+            base: true,
+            sortOrder: true,
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -432,6 +450,7 @@ export class PayrollService {
         employeeId: dto.employeeId,
         deductionTypeId: dto.deductionTypeId,
         amount: dto.amount ?? null,
+        percent: dto.percent ?? null,
         month: dto.month || null,
         isActive: dto.isActive ?? true,
       },
@@ -446,6 +465,7 @@ export class PayrollService {
       where: { id },
       data: {
         ...(dto.amount !== undefined ? { amount: dto.amount } : {}),
+        ...(dto.percent !== undefined ? { percent: dto.percent } : {}),
         ...(dto.month !== undefined ? { month: dto.month || null } : {}),
         ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
       },

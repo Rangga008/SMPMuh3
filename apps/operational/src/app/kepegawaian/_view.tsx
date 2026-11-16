@@ -395,7 +395,7 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
 
         {preview ? (
           <div className="mt-4 max-h-72 overflow-auto rounded-xl border border-sand-200">
-            <table className="w-full text-xs">
+            <div className="overflow-x-auto"><table className="w-full text-xs">
               <thead className="sticky top-0 bg-sand-50 text-left text-sand-500">
                 <tr>
                   <th className="px-3 py-2">Baris</th><th className="px-3 py-2">Nama</th><th className="px-3 py-2">Jabatan / Tugas</th>
@@ -422,7 +422,7 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           </div>
         ) : null}
 

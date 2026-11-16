@@ -137,6 +137,7 @@ export class AdminUsersController {
       email: dto.email?.toLowerCase(),
       phone: dto.phone ? normalizePhone(dto.phone) : undefined,
       passwordHash,
+      passwordPlain: dto.password,
       roleIds: dto.roleIds,
     });
     await this.audit.log({
@@ -187,7 +188,7 @@ export class AdminUsersController {
   ) {
     const target = await this.users.findById(id);
     if (!target) throw new NotFoundException('Akun tidak ditemukan');
-    await this.users.resetPassword(id, await argon2.hash(dto.password));
+    await this.users.resetPassword(id, await argon2.hash(dto.password), dto.password);
     await this.audit.log({
       actorId: me.id,
       action: 'admin.user.reset_password',
@@ -195,6 +196,21 @@ export class AdminUsersController {
       entityId: id,
     });
     return { ok: true };
+  }
+
+  /** Lihat sandi yang terakhir di-set — terenkripsi di DB, ter-audit. */
+  @Get(':id/password-view')
+  @RequirePermission(PERMISSIONS.IDENTITY_USER_MANAGE)
+  async viewPassword(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() me: AuthUser) {
+    const target = await this.users.findById(id);
+    if (!target) throw new NotFoundException('Akun tidak ditemukan');
+    await this.audit.log({
+      actorId: me.id,
+      action: 'admin.user.view_password',
+      entity: 'user',
+      entityId: id,
+    });
+    return { password: await this.users.viewPassword(id) };
   }
 
   @Delete(':id')

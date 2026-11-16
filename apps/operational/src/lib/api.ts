@@ -1555,6 +1555,9 @@ export const resetStaffPassword = (id: string, password: string) =>
   req<{ ok: boolean }>(`/admin/users/${id}/password`, { method: 'POST', json: { password } });
 export const deleteStaffUser = (id: string) =>
   req<{ ok: boolean }>(`/admin/users/${id}`, { method: 'DELETE' });
+/** Sandi terakhir di-set — disimpan terenkripsi di server, hanya admin berwenang. */
+export const viewStaffPassword = (id: string) =>
+  req<{ password: string | null }>(`/admin/users/${id}/password-view`);
 
 export const getSchool = () => req<School>('/school');
 export const updateSchool = (dto: Record<string, unknown>) =>

@@ -21,7 +21,7 @@ function SeatTable({ seats, roomName, onChanged }: { seats: ExamSeatView[]; room
   return (
     <>
       {error ? <p className="mb-2 text-xs text-red-600">{error}</p> : null}
-      <table className="w-full max-w-3xl text-sm">
+      <div className="overflow-x-auto"><table className="w-full max-w-3xl text-sm">
         <thead><tr className="border-b border-sand-200 text-left text-xs uppercase tracking-wide text-sand-500">
           <th className="py-1.5 pr-4">No</th><th className="py-1.5 pr-4">NIS</th><th className="py-1.5 pr-4">Nama</th>
           <th className="py-1.5 pr-4">Kelas</th><th className="py-1.5 pr-4">Kode Peserta</th><th className="py-1.5"></th>
@@ -43,7 +43,7 @@ function SeatTable({ seats, roomName, onChanged }: { seats: ExamSeatView[]; room
             </tr>
           ))}
         </tbody>
-      </table>
+      </table></div>
     </>
   );
 }
@@ -102,14 +102,14 @@ export default function UjianPage() {
         <div class="kop">${school?.logoUrl ? `<img src="/logo.png" class="logo" onerror="this.style.display='none'"/>` : ''}<div>
           <b>${school?.name ?? 'SMP Muhammadiyah 3 Kota Bandung'}</b>${school?.npsn ? ` · NPSN ${school.npsn}` : ''}<br>
           <span class="sub">Kartu Peserta ${room.period}${sessionInfo ? ` · ${sessionInfo}` : ''} · TA ${room.academicYear?.name ?? ''}</span></div></div>
-        <table>
+        <div className="overflow-x-auto"><table>
           <tr><td>Nama</td><td>: <b>${s.student.name}</b></td></tr>
           <tr><td>NIS</td><td>: <b class="kode">${s.student.nis ?? '—'}</b></td></tr>
           ${examLines}
           ${pw ? `<tr><td>Password</td><td>: <b class="kode">${pw}</b></td></tr>` : ''}
           <tr><td>Kelas</td><td>: ${s.class?.name ?? '—'}</td></tr>
           <tr><td>Ruang</td><td>: <b>${room.name}</b> · No. ${s.seatNo ?? '—'}</td></tr>
-        </table>
+        </table></div>
         <div class="hint">Login CBT: masukkan <b>NIS</b> &amp; <b>Password</b> di atas. <b>Kode ujian diumumkan pengawas</b> di ruang. Simpan kartu ini.</div>
       </div>`;
     }).join('');
@@ -135,9 +135,9 @@ export default function UjianPage() {
     }
     const rows = [...byClass.entries()].map(([cls, list]) => `
       <h3>Kelas ${cls} <span class="cnt">(${list.length} siswa)</span></h3>
-      <table><thead><tr><th>Bangku</th><th>NIS</th><th>Nama</th><th>Kode Peserta</th></tr></thead><tbody>
+      <div className="overflow-x-auto"><table><thead><tr><th>Bangku</th><th>NIS</th><th>Nama</th><th>Kode Peserta</th></tr></thead><tbody>
       ${list.map((s) => `<tr><td class="no">${s.seatNo ?? '—'}</td><td>${s.student.nis ?? '—'}</td><td>${s.student.name}</td><td class="mono">${s.code ?? '—'}</td></tr>`).join('')}
-      </tbody></table>`).join('');
+      </tbody></table></div>`).join('');
     printHtml(`Daftar Duduk ${r.name} — ${l.sessionLabel ?? l.exam.title}`, `
       <style>
         body{font-family:Georgia,serif;padding:24px;color:#1e293b}

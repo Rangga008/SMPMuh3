@@ -67,7 +67,7 @@ function ClassEditor({ classId, className, date, takenBy, onClose, onSaved }: {
         </span>
       </div>
       <div className="max-h-[55vh] overflow-y-auto">
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto"><table className="w-full text-sm">
           <tbody>
             {filtered.map((r) => (
               <tr key={r.id} className="border-b border-sand-100">
@@ -80,7 +80,7 @@ function ClassEditor({ classId, className, date, takenBy, onClose, onSaved }: {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
         {!filtered.length ? <p className="py-6 text-center text-sm text-sand-400">Memuat…</p> : null}
       </div>
     </Modal>
@@ -101,7 +101,7 @@ function HistoryModal({ studentId, yearId, onClose }: { studentId: string; yearI
             ))}
           </div>
           <div className="max-h-[50vh] overflow-y-auto">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead><tr className="text-left text-xs text-sand-500"><th className="py-1.5">Tanggal</th><th>Kelas</th><th>Status</th><th>Catatan</th></tr></thead>
               <tbody>
                 {h.records.map((r) => (
@@ -113,7 +113,7 @@ function HistoryModal({ studentId, yearId, onClose }: { studentId: string; yearI
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
             {!h.records.length ? <p className="py-6 text-center text-sm text-sand-400">Belum ada catatan absen.</p> : null}
           </div>
         </>
@@ -242,7 +242,7 @@ export default function AbsensiPage() {
               {[...new Set(ov.classes.map((c) => c.gradeLevel))].map((g) => (
                 <Widget key={g} title={`Kelas ${g}`}>
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[760px] text-sm">
+                    <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm">
                       <thead><tr className="border-b border-sand-200 text-left text-xs uppercase tracking-wide text-sand-500">
                         <th className="px-4 py-2">Rombel</th><th className="px-4 py-2">Siswa</th><th className="px-4 py-2">Status Absen</th>
                         <th className="px-4 py-2 text-center">H</th><th className="px-4 py-2 text-center">S</th><th className="px-4 py-2 text-center">I</th><th className="px-4 py-2 text-center">A</th>
@@ -279,7 +279,7 @@ export default function AbsensiPage() {
                           </tr>
                         ))}
                       </tbody>
-                    </table>
+                    </table></div>
                   </div>
                 </Widget>
               ))}
@@ -385,7 +385,7 @@ export default function AbsensiPage() {
                   {g.classes.map((c) => (
                     <div key={c.classId} className="mb-3 overflow-x-auto rounded-2xl border border-sand-200 bg-white">
                       <h4 className="border-b border-sand-100 bg-sand-50 px-4 py-2 text-sm font-bold text-sand-800">{c.name} <span className="font-normal text-sand-400">({c.students.length} siswa)</span></h4>
-                      <table className="w-full min-w-max text-xs">
+                      <div className="overflow-x-auto"><table className="w-full min-w-max text-xs">
                         <thead>
                           <tr className="border-b border-sand-200 text-left text-sand-500">
                             <th className="sticky left-0 bg-white px-3 py-2">Siswa</th>
@@ -415,7 +415,7 @@ export default function AbsensiPage() {
                             </tr>
                           ))}
                         </tbody>
-                      </table>
+                      </table></div>
                     </div>
                   ))}
                 </div>

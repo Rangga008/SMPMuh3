@@ -318,7 +318,7 @@ export default function EkskulPage() {
         ) : null}
 
         <div className="max-h-96 overflow-auto rounded-xl border border-sand-200">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead className="sticky top-0 bg-sand-50 text-left text-xs uppercase tracking-wider text-sand-500">
               <tr>
                 <th className="px-4 py-2">Siswa</th>
@@ -369,7 +369,7 @@ export default function EkskulPage() {
                 ))
               )}
             </tbody>
-          </table>
+          </table></div>
         </div>
       </Modal>
       {dialog}

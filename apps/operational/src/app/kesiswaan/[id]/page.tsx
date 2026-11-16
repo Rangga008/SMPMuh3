@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { DOC_TYPE_LABELS, PERMISSIONS, STUDENT_STATUS_LABELS } from '@smpmuh3/types';
 import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
+import { RpInput } from '@/components/rp-input';
 import { Shell } from '@/components/shell';
 import { SearchSelect } from '@/components/search-select';
 import { PageTitle, Widget } from '@/components/widgets';
@@ -238,17 +239,17 @@ export default function StudentDetailPage() {
           ${school?.logoUrl ? '<span style="width:56px"></span>' : ''}
         </div>
         <div class="nomor"><b>KWITANSI PEMBAYARAN</b><br/><span style="font-size:12px;color:#6b675a">No. ${number}</span></div>
-        <table class="meta"><tbody>
+        <div className="overflow-x-auto"><table class="meta"><tbody>
           <tr><td>Telah diterima dari</td><td><b>${r.invoice.student?.parent?.name ?? 'Orang Tua/Wali'}</b></td></tr>
           <tr><td>Untuk pembayaran siswa</td><td><b>${r.invoice.student?.name ?? '-'}</b>${r.invoice.student?.nis ? ` · NIS ${r.invoice.student.nis}` : ''}</td></tr>
           <tr><td>Tanggal bayar</td><td>${fmtDate(r.paidAt)}</td></tr>
           <tr><td>Metode / Kas</td><td>${METHOD_LABEL[r.method ?? ''] ?? r.method ?? '-'}${r.cashAccount?.name ? ` · ${r.cashAccount.name}` : ''}</td></tr>
-        </tbody></table>
+        </tbody></table></div>
         <br/>
-        <table><thead><tr><th style="width:34px">No</th><th>Rincian Pembayaran</th><th style="width:130px;text-align:right">Jumlah</th></tr></thead>
+        <div className="overflow-x-auto"><table><thead><tr><th style="width:34px">No</th><th>Rincian Pembayaran</th><th style="width:130px;text-align:right">Jumlah</th></tr></thead>
         <tbody>${rows}</tbody>
         <tfoot><tr class="total"><td></td><td>TOTAL DITERIMA</td><td style="text-align:right">${rupiah(r.amount)}</td></tr></tfoot>
-        </table>
+        </table></div>
         <div class="ttd">
           <div><p>Orang Tua/Wali</p><p class="nm">${r.invoice.student?.parent?.name ?? '( …………………… )'}</p></div>
           ${school?.headmaster ? `<div><p>Mengetahui,<br/>Kepala Sekolah</p>${school.headmasterSignatureUrl ? `<img class="sig" src="/signature.png" alt=""/>` : ''}<p class="nm${school.headmasterSignatureUrl ? ' hassig' : ''}">${school.headmaster}${school.headmasterNip ? `<br/><span style="font-weight:400;font-size:11px">NIP/NUPTK ${school.headmasterNip}</span>` : ''}</p></div>` : ''}
@@ -525,7 +526,7 @@ export default function StudentDetailPage() {
               <p className="py-4 text-sm text-sand-500">Belum ada tagihan terbit.</p>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                <div className="overflow-x-auto"><table className="w-full text-sm">
                   <thead>
                     <tr className="text-left text-xs uppercase tracking-wider text-sand-500">
                       <th className="pb-2 pr-3">Tagihan</th>
@@ -585,7 +586,7 @@ export default function StudentDetailPage() {
                       );
                     })}
                   </tbody>
-                </table>
+                </table></div>
                 {waUrl ? (
                   <p className="mt-3 text-xs text-sand-500">
                     Bila pesan tak terkirim otomatis, kirim manual:{' '}
@@ -603,7 +604,7 @@ export default function StudentDetailPage() {
               <p className="py-2 text-sm text-sand-500">Belum ada pembayaran tercatat.</p>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                <div className="overflow-x-auto"><table className="w-full text-sm">
                   <thead>
                     <tr className="text-left text-xs uppercase tracking-wider text-sand-500">
                       <th className="pb-2 pr-3">No. Kwitansi</th>
@@ -643,7 +644,7 @@ export default function StudentDetailPage() {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </table></div>
               </div>
             )}
           </Widget>
@@ -952,7 +953,7 @@ export default function StudentDetailPage() {
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Nominal Bayar (Rp)">
-                <Input name="amount" type="number" min={1} max={payModal.remaining} required defaultValue={payModal.remaining} />
+                <RpInput name="amount" defaultValue={payModal.remaining} />
               </Field>
               <Field label="Metode">
                 <Select name="method" defaultValue="cash">

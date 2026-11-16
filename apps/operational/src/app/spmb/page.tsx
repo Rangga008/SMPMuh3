@@ -507,7 +507,7 @@ function SpmbList() {
         </div>
         {importPreview ? (
           <div className="mt-4 max-h-72 overflow-auto rounded-xl border border-sand-200">
-            <table className="w-full text-xs">
+            <div className="overflow-x-auto"><table className="w-full text-xs">
               <thead className="sticky top-0 bg-sand-50 text-left text-sand-500">
                 <tr>
                   <th className="px-3 py-2">Sheet/Baris</th>
@@ -534,7 +534,7 @@ function SpmbList() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           </div>
         ) : null}
         <div className="mt-4 flex items-center justify-between gap-2">

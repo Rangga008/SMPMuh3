@@ -15,8 +15,8 @@ import { ApiError, downloadFile, listClasses, type ClassView } from '@/lib/api';
 import { richHtml } from '@/lib/math';
 import {
   createExamSession, deleteExamSession, examAnalysis, examAnswersMatrix, examMonitor,
-  examQuestions, examResults, exportExamResults, getExam, getExamPassages, importExamQuestions, listMonitorExams, regenerateExamCode,
-  setExamQuestions, updateExam, updateExamGrade, updateExamSession,
+  examQuestions, examResults, exportExamResults, getExam, getExamPassages, listMonitorExams, regenerateExamCode,
+  updateExam, updateExamGrade, updateExamSession,
   type ExamQuestion, type ExamView, type ItemAnalysis, type MonitorClass,
 } from '@/lib/api-ops';
 
@@ -38,28 +38,6 @@ const toLocalInput = (iso: string) => {
 };
 const mmss = (sec: number) => `${Math.floor(sec / 60)}m ${sec % 60}d`;
 
-type QForm = { number: number; type: ExamQuestion['type']; prompt: string; weight: number; choices: string[]; statements: string[]; keyOne: number; keyMany: Set<number>; keyBool: boolean | null; keyBools: boolean[] };
-const blankQ = (n: number): QForm => ({ number: n, type: 'MCQ', prompt: '', weight: 1, choices: ['', '', '', ''], statements: ['', ''], keyOne: 0, keyMany: new Set(), keyBool: null, keyBools: [true, false] });
-
-const qToForm = (q: ExamQuestion): QForm => {
-  const opts = (q.options ?? {}) as { choices?: string[]; statements?: string[] };
-  return {
-    number: q.number, type: q.type, prompt: q.prompt ?? '', weight: q.weight,
-    choices: opts.choices?.length ? [...opts.choices] : ['', '', '', ''],
-    statements: opts.statements?.length ? [...opts.statements] : ['', ''],
-    keyOne: typeof q.key === 'number' ? q.key : 0,
-    keyMany: new Set(Array.isArray(q.key) && q.type === 'MCQ_COMPLEX' ? (q.key as number[]) : []),
-    keyBool: q.type === 'TRUE_FALSE' ? Boolean(q.key) : null,
-    keyBools: Array.isArray(q.key) && q.type === 'TRUE_FALSE_COMPLEX' ? (q.key as boolean[]) : (opts.statements ?? ['', '']).map(() => true),
-  };
-};
-
-const formToQ = (f: QForm): Omit<ExamQuestion, 'id'> => {
-  if (f.type === 'MCQ') return { number: f.number, type: 'MCQ', weight: f.weight, prompt: f.prompt, options: { choices: f.choices.filter(Boolean) }, key: f.keyOne };
-  if (f.type === 'MCQ_COMPLEX') return { number: f.number, type: 'MCQ_COMPLEX', weight: f.weight, prompt: f.prompt, options: { choices: f.choices.filter(Boolean) }, key: [...f.keyMany].sort() };
-  if (f.type === 'TRUE_FALSE') return { number: f.number, type: 'TRUE_FALSE', weight: f.weight, prompt: f.prompt, key: f.keyBool ?? true };
-  return { number: f.number, type: 'TRUE_FALSE_COMPLEX', weight: f.weight, prompt: f.prompt, options: { statements: f.statements.filter(Boolean) }, key: f.keyBools.slice(0, f.statements.filter(Boolean).length) };
-};
 
 export default function UjianDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -81,10 +59,8 @@ export default function UjianDetailPage() {
   const [modalErr, setModalErr] = useState<string | null>(null);
   const [modal, setModal] = useState(false);
   const [sesiModal, setSesiModal] = useState<{ id?: string; name: string; classIds: Set<string>; startAt: string; endAt: string } | null>(null);
-  const [qModal, setQModal] = useState<QForm | null>(null);
   const [gradeEdit, setGradeEdit] = useState<{ studentId: string; name: string; score: string } | null>(null);
   const [busy, setBusy] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
   const canManage = usePermission(PERMISSIONS.ACADEMIC_MANAGE);
   const canMonitor = usePermission(PERMISSIONS.CBT_MONITOR);
   const { confirm, dialog } = useConfirm();
@@ -207,47 +183,8 @@ export default function UjianDetailPage() {
   };
 
   // ---------- Soal ----------
-  const saveQ = async () => {
-    if (!qModal || !exam) return;
-    const f = qModal;
-    if (!f.prompt.trim()) { setModalErr('Teks soal wajib.'); return; }
-    if ((f.type === 'MCQ' || f.type === 'MCQ_COMPLEX') && f.choices.filter(Boolean).length < 2) { setModalErr('Minimal 2 pilihan.'); return; }
-    if (f.type === 'MCQ_COMPLEX' && f.keyMany.size < 1) { setModalErr('Tandai minimal satu kunci PGK.'); return; }
-    if (f.type === 'TRUE_FALSE' && f.keyBool === null) { setModalErr('Pilih kunci Benar/Salah.'); return; }
-    if (f.type === 'TRUE_FALSE_COMPLEX' && f.statements.filter(Boolean).length < 2) { setModalErr('BSK butuh ≥2 pernyataan.'); return; }
-    const next = [...questions];
-    const idx = next.findIndex((q) => q.number === f.number);
-    const q = formToQ(f);
-    if (idx >= 0) next[idx] = { ...q, id: next[idx]!.id } as ExamQuestion;
-    else next.push(q as ExamQuestion);
-    next.sort((a, b) => a.number - b.number);
-    setBusy(true);
-    try {
-      await setExamQuestions(exam.id, next.map(({ id: _id, ...rest }) => rest));
-      setQModal(null); setModalErr(null); flash('Soal disimpan.');
-      examQuestions(exam.id).then(setQuestions).catch(() => {});
-    } catch (e) { setModalErr(e instanceof ApiError ? e.message : 'Gagal menyimpan soal.'); }
-    finally { setBusy(false); }
-  };
-  const delQ = async (num: number) => {
-    if (!exam || !(await confirm(`Hapus soal nomor ${num}?`))) return;
-    try {
-      await setExamQuestions(exam.id, questions.filter((q) => q.number !== num).map(({ id: _id, ...rest }) => rest));
-      examQuestions(exam.id).then(setQuestions).catch(() => {});
-      flash('Soal dihapus.');
-    } catch (e) { err(e, 'Gagal menghapus soal.'); }
-  };
-  const onImport = async (f: File | undefined) => {
-    if (!f || !exam) return;
-    setBusy(true);
-    try {
-      const r = await importExamQuestions(exam.id, f);
-      flash(`${r.count} soal diimpor.`);
-      examQuestions(exam.id).then(setQuestions).catch(() => {});
-      load();
-    } catch (e) { err(e, 'Gagal impor soal.'); }
-    finally { setBusy(false); }
-  };
+  // Pengelolaan soal (import/edit/hapus/bacaan/gambar) disatukan di halaman
+  // Bank Asesmen — ujian hanya menampilkan pratinjau & tautan ke sana.
 
   // ---------- Hasil ----------
   const saveGrade = async () => {
@@ -418,12 +355,14 @@ export default function UjianDetailPage() {
             <Widget title={`Butir Soal — ${questions.length}`}
               subtitle="Tipe: Pilihan Ganda · PG Kompleks · Benar/Salah · B-S Kompleks."
               action={examManage ? (
-                <div className="flex flex-wrap gap-2">
-                  <Button size="sm" variant="outline" onClick={() => downloadFile(`/ops/assessments/${exam.assessment.id}/questions/template`, 'template-soal.xlsx').catch(() => setError('Gagal unduh template.'))}>Template Excel</Button>
-                  <Button size="sm" variant="outline" onClick={() => downloadFile(`/ops/assessments/${exam.assessment.id}/questions/template.docx`, 'template-import-soal.docx').catch(() => setError('Gagal unduh template.'))}>Template Word</Button>
-                  <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()} disabled={busy}>Impor Soal</Button>
-                  <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv,.docx" className="hidden" onChange={(e) => { void onImport(e.target.files?.[0]); e.target.value = ''; }} />
-                  <Button size="sm" onClick={() => { setModalErr(null); setQModal(blankQ(questions.length + 1)); }}>+ Soal</Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[11px] text-sand-400">Soal milik asesmen <b>{exam.assessment.name}</b></span>
+                  <Link
+                    href={`/kurikulum/asesmen/${exam.assessment.id}`}
+                    className="rounded-lg bg-primary-700 px-3 py-2 text-xs font-bold text-white transition hover:bg-primary-800"
+                  >
+                    Kelola Soal · Import · Bacaan →
+                  </Link>
                 </div>
               ) : undefined}>
               {passages.length ? (
@@ -440,7 +379,7 @@ export default function UjianDetailPage() {
                 </details>
               ) : null}
               {!questions.length ? (
-                <p className="p-5 text-sm text-sand-400">Belum ada soal — tambah manual atau impor Excel/Word (foto di Word ikut terbawa).</p>
+                <p className="p-5 text-sm text-sand-400">Belum ada soal — klik <b>Kelola Soal</b> di atas untuk menambah/mengimpor di halaman asesmen (gambar &amp; rumus ikut terbawa).</p>
               ) : (
                 <div className="divide-y divide-sand-100">
                   {questions.map((q) => (
@@ -479,10 +418,12 @@ export default function UjianDetailPage() {
                         })()}
                       </div>
                       {examManage ? (
-                        <div className="flex shrink-0 gap-1.5">
-                          <RowBtn onClick={() => { setModalErr(null); setQModal(qToForm(q)); }}>Edit</RowBtn>
-                          <RowBtn tone="danger" onClick={() => void delQ(q.number)}>Hapus</RowBtn>
-                        </div>
+                        <Link
+                          href={`/kurikulum/asesmen/${exam.assessment.id}`}
+                          className="shrink-0 rounded-lg bg-sand-100 px-2.5 py-1.5 text-xs font-bold text-sand-700 hover:bg-sand-200"
+                        >
+                          Edit →
+                        </Link>
                       ) : null}
                     </div>
                   ))}
@@ -594,7 +535,7 @@ export default function UjianDetailPage() {
               {(matrix && resClass ? [{ cid: resClass, m: matrix }] : Object.entries(matrices).map(([cid, m]) => ({ cid, m }))).map(({ cid, m }) => (
                 <Widget key={cid} title={`Rekap Jawaban — ${classes.find((c) => c.id === cid)?.name ?? ''}`} subtitle="B = benar · S = salah · · = kosong">
                   <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
+                    <div className="overflow-x-auto"><table className="w-full text-xs">
                       <thead>
                         <tr className="border-b border-sand-200 text-left text-sand-500">
                           <th className="px-4 py-2">NIS</th><th className="px-4 py-2">Nama</th>
@@ -616,7 +557,7 @@ export default function UjianDetailPage() {
                           </tr>
                         ))}
                       </tbody>
-                    </table>
+                    </table></div>
                   </div>
                 </Widget>
               ))}
@@ -684,104 +625,6 @@ export default function UjianDetailPage() {
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setSesiModal(null)}>Batal</Button>
               <Button disabled={busy || !sesiModal.classIds.size} onClick={() => void saveSesi()}>{busy ? 'Menyimpan…' : 'Simpan Sesi'}</Button>
-            </div>
-          </div>
-        ) : null}
-      </Modal>
-
-      {/* ---------- Modal editor soal ---------- */}
-      <Modal open={!!qModal} onClose={() => setQModal(null)} title={`Soal No. ${qModal?.number ?? ''}`} size="xl">
-        {qModal ? (
-          <div className="space-y-4">
-            {modalErr ? <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{modalErr}</p> : null}
-            <div className="grid grid-cols-3 gap-3">
-              <Field label="Tipe">
-                <Select value={qModal.type} onChange={(e) => setQModal({ ...qModal, type: e.target.value as QForm['type'] })}>
-                  <option value="MCQ">Pilihan Ganda</option>
-                  <option value="MCQ_COMPLEX">PG Kompleks (≥1 benar)</option>
-                  <option value="TRUE_FALSE">Benar / Salah</option>
-                  <option value="TRUE_FALSE_COMPLEX">B-S Kompleks (pernyataan)</option>
-                </Select>
-              </Field>
-              <Field label="Nomor"><Input type="number" min={1} value={qModal.number} onChange={(e) => setQModal({ ...qModal, number: Number(e.target.value) || 1 })} /></Field>
-              <Field label="Bobot"><Input type="number" min={1} value={qModal.weight} onChange={(e) => setQModal({ ...qModal, weight: Number(e.target.value) || 1 })} /></Field>
-            </div>
-            <Field label="Teks soal">
-              <textarea className="w-full rounded-xl border border-sand-200 p-3 text-sm" rows={3} value={qModal.prompt} onChange={(e) => setQModal({ ...qModal, prompt: e.target.value })} />
-            </Field>
-
-            {(qModal.type === 'MCQ' || qModal.type === 'MCQ_COMPLEX') && (
-              <Field label={qModal.type === 'MCQ' ? 'Pilihan + kunci (radio)' : 'Pilihan + kunci (centang semua yang benar)'}>
-                <div className="space-y-2">
-                  {qModal.choices.map((c, i) => (
-                    <div key={i} className="flex items-center gap-2">
-                      {qModal.type === 'MCQ' ? (
-                        <input type="radio" name="keyOne" checked={qModal.keyOne === i} onChange={() => setQModal({ ...qModal, keyOne: i })} className="size-4 accent-primary-600" />
-                      ) : (
-                        <input type="checkbox" checked={qModal.keyMany.has(i)} onChange={(e) => {
-                          const n = new Set(qModal.keyMany);
-                          if (e.target.checked) n.add(i); else n.delete(i);
-                          setQModal({ ...qModal, keyMany: n });
-                        }} className="size-4 accent-primary-600" />
-                      )}
-                      <span className="w-5 text-xs font-bold text-sand-500">{'ABCDE'[i]}.</span>
-                      <Input value={c} onChange={(e) => setQModal({ ...qModal, choices: qModal.choices.map((x, xi) => xi === i ? e.target.value : x) })} placeholder={`Pilihan ${'ABCDE'[i]}`} />
-                      {qModal.choices.length > 2 ? (
-                        <button type="button" className="text-red-500" onClick={() => setQModal({ ...qModal, choices: qModal.choices.filter((_, xi) => xi !== i) })}>✕</button>
-                      ) : null}
-                    </div>
-                  ))}
-                  {qModal.choices.length < 5 ? (
-                    <button type="button" className="text-xs font-bold text-primary-700" onClick={() => setQModal({ ...qModal, choices: [...qModal.choices, ''] })}>+ tambah pilihan</button>
-                  ) : null}
-                </div>
-              </Field>
-            )}
-
-            {qModal.type === 'TRUE_FALSE' && (
-              <Field label="Kunci jawaban">
-                <div className="flex gap-3">
-                  {[['Benar', true], ['Salah', false]].map(([l, v]) => (
-                    <label key={l as string} className={`flex-1 rounded-xl border px-4 py-3 text-center text-sm font-bold ${qModal.keyBool === v ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-sand-200'}`}>
-                      <input type="radio" name="keyBool" className="hidden" checked={qModal.keyBool === (v as boolean)} onChange={() => setQModal({ ...qModal, keyBool: v as boolean })} />
-                      {l as string}
-                    </label>
-                  ))}
-                </div>
-              </Field>
-            )}
-
-            {qModal.type === 'TRUE_FALSE_COMPLEX' && (
-              <Field label="Pernyataan + kunci B/S masing-masing">
-                <div className="space-y-2">
-                  {qModal.statements.map((st, i) => (
-                    <div key={i} className="flex items-center gap-2">
-                      <Input value={st} onChange={(e) => setQModal({ ...qModal, statements: qModal.statements.map((x, xi) => xi === i ? e.target.value : x) })} placeholder={`Pernyataan ${i + 1}`} />
-                      <div className="flex shrink-0 gap-1">
-                        {[true, false].map((v) => (
-                          <button key={String(v)} type="button"
-                            className={`rounded-lg px-3 py-2 text-xs font-black ${qModal.keyBools[i] === v ? 'bg-primary-700 text-white' : 'bg-sand-100 text-sand-500'}`}
-                            onClick={() => setQModal({ ...qModal, keyBools: qModal.keyBools.map((x, xi) => xi === i ? v : x) })}>
-                            {v ? 'B' : 'S'}
-                          </button>
-                        ))}
-                      </div>
-                      {qModal.statements.length > 2 ? (
-                        <button type="button" className="text-red-500" onClick={() => setQModal({ ...qModal, statements: qModal.statements.filter((_, xi) => xi !== i), keyBools: qModal.keyBools.filter((_, xi) => xi !== i) })}>✕</button>
-                      ) : null}
-                    </div>
-                  ))}
-                  {qModal.statements.length < 5 ? (
-                    <button type="button" className="text-xs font-bold text-primary-700"
-                      onClick={() => setQModal({ ...qModal, statements: [...qModal.statements, ''], keyBools: [...qModal.keyBools, true] })}>+ tambah pernyataan</button>
-                  ) : null}
-                </div>
-              </Field>
-            )}
-
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setQModal(null)}>Batal</Button>
-              <Button disabled={busy} onClick={() => void saveQ()}>{busy ? 'Menyimpan…' : 'Simpan Soal'}</Button>
             </div>
           </div>
         ) : null}

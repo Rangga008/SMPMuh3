@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
+import { RpInput } from '@/components/rp-input';
 import { Shell } from '@/components/shell';
 import { DataTable } from '@/components/data-table';
 import { PageTitle, Widget } from '@/components/widgets';
@@ -96,17 +97,14 @@ function AllocRows({
               <option key={a.id} value={a.id}>{a.name}</option>
             ))}
           </Select>
-          <Input
+          <RpInput
             aria-label={`Nominal ${i + 1}`}
-            type="number"
-            min={1}
-            placeholder="Rp"
             className="w-40"
+            hidePreview
             value={r.amount}
-            onChange={(e) => {
-              emit(rows.map((r, j) => (j === i ? { cashAccountId: r.cashAccountId, amount: e.target.value } : r)));
+            onChange={(v) => {
+              emit(rows.map((r, j) => (j === i ? { cashAccountId: r.cashAccountId, amount: v } : r)));
             }}
-            required
           />
           {rows.length > 1 ? (
             <button
