@@ -663,6 +663,19 @@ export class AcademicController {
     return this.academic.createAssessment(dto, u.id);
   }
 
+  @Get('assessments/:id')
+  @RequirePermission(R)
+  assessment(@Param('id', ParseUUIDPipe) id: string) {
+    return this.academic.getAssessment(id);
+  }
+
+  /** Buatkan ujian pendamping untuk asesmen lama yang belum punya. */
+  @Post('assessments/:id/ensure-exam')
+  @RequirePermission(R)
+  ensureExam(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.academic.ensureExam(id, u.id);
+  }
+
   @Patch('assessments/:id')
   @RequirePermission(M)
   updateAssessment(

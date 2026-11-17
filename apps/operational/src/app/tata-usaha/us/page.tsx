@@ -207,8 +207,8 @@ export default function UsPage() {
   return (
     <Shell>
       <PageTitle
-        title="Ujian Sekolah (US 1 & 2)"
-        subtitle="Rekap hasil Ujian Sekolah per periode dan tahun ajaran"
+        title="Administrasi Ujian Sekolah Kelas 9"
+        subtitle="Rekap hasil Ujian Sekolah (US 1 & 2) per periode dan tahun ajaran"
         actions={
           <Button size="sm" onClick={async () => setModal('new')} disabled={!yearId}>
             + Tambah Catatan

@@ -915,7 +915,8 @@ export interface AttendanceDayRow {
   checkInAt?: string | null;
   checkOutAt?: string | null;
   lateMinutes: number;
-  teachingMinutes: number;
+  /** JP efektif hari itu (jam pelajaran) — dari entri/jadwal/tap. */
+  teachingJp: number;
   source: 'DEVICE' | 'IMPORT' | 'MANUAL' | 'SELFIE';
   note?: string | null;
 }
@@ -1019,6 +1020,8 @@ export interface PayrollSettings {
   id: string;
   lateDeductionPerDay: number;
   lateDeductionPerMin: number;
+  /** 1 jam pelajaran = N menit — konversi absen harian → JP. */
+  lessonMinutes: number;
 }
 export const getPayrollSettings = () =>
   req<PayrollSettings>('/admin/payroll/settings');
@@ -1816,14 +1819,30 @@ export const updateSchedule = (
 export const deleteSchedule = (id: string) =>
   req(`/schedules/${id}`, { method: 'DELETE' });
 
+/** Ujian pendamping CBT milik asesmen (1:1 — mesin CBT internal). */
+export interface AssessmentExamView {
+  id: string;
+  code: string;
+  title: string;
+  status: 'DRAFT' | 'OPEN' | 'CLOSED';
+  subjectId?: string | null;
+  gradeLevel?: number | null;
+  classIds: string[];
+  startAt: string;
+  endAt: string;
+  durationMin: number;
+  _count?: { attempts: number; questions: number };
+}
 export interface AssessmentView {
   id: string;
   name: string;
   type: 'FORMATIF' | 'SUMATIF' | 'PTS' | 'PAS';
   maxScore: number;
-  subject: { code: string; name: string };
-  class?: { name: string } | null;
-  exams?: { id: string; title: string; status: string }[];
+  /** Asesmen = ujian per mapel + jenjang. class/subject null hanya pada data lama. */
+  subject?: { code: string; name: string } | null;
+  class?: { name: string; gradeLevel?: number } | null;
+  academicYear?: { id: string; name: string };
+  exams?: AssessmentExamView[];
   _count?: { grades: number; questions: number };
 }
 export const listAssessments = (academicYearId?: string, classId?: string) => {
@@ -1835,6 +1854,10 @@ export const listAssessments = (academicYearId?: string, classId?: string) => {
 };
 export const createAssessment = (dto: Record<string, unknown>) =>
   req<AssessmentView>('/assessments', { method: 'POST', json: dto });
+export const getAssessment = (id: string) =>
+  req<AssessmentView>(`/assessments/${id}`);
+export const ensureAssessmentExam = (id: string) =>
+  req<{ examId: string; created: boolean }>(`/assessments/${id}/ensure-exam`, { method: 'POST' });
 export const updateAssessment = (id: string, dto: Record<string, unknown>) =>
   req<AssessmentView>(`/assessments/${id}`, { method: 'PATCH', json: dto });
 export const deleteAssessment = (id: string) =>
@@ -1994,7 +2017,8 @@ export interface PayScaleView {
 export interface EmployeePayroll extends EmployeeDto {
   payScaleId?: string | null;
   workStartDate?: string | null;
-  monthlyRequiredMinutes: number;
+  /** Jam wajib per bulan dalam jam pelajaran (JP) — gaji pokok = requiredJp × tarif. */
+  requiredJp: number;
   hourlyRate?: number | null;
   transportRate?: number | null;
   isCertified: boolean;
@@ -2007,7 +2031,8 @@ export interface EmpAttendance {
   date: string;
   status: 'HADIR' | 'TELAT' | 'IZIN' | 'SAKIT' | 'ALPHA';
   leaveCategory?: 'SAKIT' | 'DINAS' | 'WORKSHOP' | 'LAINNYA' | null;
-  teachingMinutes: number;
+  /** JP efektif hari itu — entri manual langsung JP; otomatis dari jadwal/tap. */
+  teachingJp: number;
   lateMinutes?: number;
   note?: string | null;
   checkInAt?: string | null;
@@ -2095,9 +2120,11 @@ export interface PayrollItemView {
   id: string;
   employeeId: string;
   workedMinutes: number;
-  manualMinutes: number;
+  /** Total JP transport (absen + koreksi manual) — dibayar × tarif transport. */
+  transportJp: number;
+  manualJp: number;
   manualNote?: string | null;
-  requiredMinutes: number;
+  requiredJp: number;
   basePay: number;
   transportPay: number;
   grossAmount: number;
@@ -2149,8 +2176,8 @@ export const listEmpAttendance = (month: string, employeeId?: string) => {
 };
 export const saveEmpAttendance = (dto: { date: string; entries: Record<string, unknown>[] }) =>
   req<{ saved: number }>(`${py}/attendance`, { method: 'POST', json: dto });
-/** Koreksi manual item payroll: jam wajib override + menit tambahan transport (boleh negatif). */
-export const updatePayrollItem = (id: string, dto: { requiredMinutes?: number; manualMinutes?: number; manualNote?: string }) =>
+/** Koreksi manual item payroll: jam wajib (JP) override + JP tambahan transport (boleh negatif). */
+export const updatePayrollItem = (id: string, dto: { requiredJp?: number; manualJp?: number; manualNote?: string }) =>
   req<PayrollRunView>(`${py}/items/${id}`, { method: 'PATCH', json: dto });
 export const listHonorTypes = () => req<HonorTypeView[]>(`${py}/honor-types`);
 export const createHonorType = (dto: Record<string, unknown>) =>

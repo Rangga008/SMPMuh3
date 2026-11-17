@@ -25,7 +25,7 @@ import {
   type PayrollRunView,
   type School,
 } from '@/lib/api';
-import { jam, monthLabel, printEl, RUN_LABEL, RUN_TONE, rupiah, SlipView } from '@/components/payroll-slip';
+import { jp, monthLabel, printEl, RUN_LABEL, RUN_TONE, rupiah, SlipView } from '@/components/payroll-slip';
 
 import { RowBtn } from '@/components/row-btn';
 import { useConfirm } from '@/components/confirm-dialog';
@@ -171,7 +171,7 @@ export default function PayrollRunPage() {
               </p>
             ) : null}
             <DataTable
-              head={['Pegawai', 'Jam wajib', 'Jam hadir', 'Gaji wajib', 'Transport', 'Bruto', 'Potongan', 'Netto', '']}
+              head={['Pegawai', 'JP wajib', 'JP hadir', 'Gaji pokok', 'Transport', 'Bruto', 'Potongan', 'Netto', '']}
               loading={loading}
               error={null}
               empty={(run.items?.length ?? 0) === 0 ? 'Tidak ada pegawai aktif.' : undefined}
@@ -182,14 +182,14 @@ export default function PayrollRunPage() {
                     <p className="font-medium text-sand-900">{it.employee?.name}</p>
                     <p className="text-[10px] text-sand-400">{it.employee?.nip ?? ''}{it.employee?.payScale?.name ? ` · ${it.employee.payScale.name}` : ''}</p>
                   </td>
-                  <td className="whitespace-nowrap px-5 py-3 text-xs font-semibold text-sand-700">{jam(it.requiredMinutes)}</td>
+                  <td className="whitespace-nowrap px-5 py-3 text-xs font-semibold text-sand-700">{jp(it.requiredJp)}</td>
                   <td className="whitespace-nowrap px-5 py-3 text-xs">
-                    <span className={it.workedMinutes + (it.manualMinutes ?? 0) > 0 ? 'font-semibold text-emerald-700' : 'text-sand-400'}>
-                      {jam(it.workedMinutes + (it.manualMinutes ?? 0))}
+                    <span className={it.transportJp > 0 ? 'font-semibold text-emerald-700' : 'text-sand-400'}>
+                      {jp(it.transportJp)}
                     </span>
                     <span className="block text-[10px] font-normal text-sand-400">
-                      absen {jam(it.workedMinutes)}
-                      {(it.manualMinutes ?? 0) !== 0 ? ` ${it.manualMinutes > 0 ? '+' : '−'}manual ${jam(Math.abs(it.manualMinutes))}` : ''}
+                      absen {jp(it.transportJp - (it.manualJp ?? 0))}
+                      {(it.manualJp ?? 0) !== 0 ? ` ${it.manualJp > 0 ? '+' : '−'}manual ${jp(Math.abs(it.manualJp))}` : ''}
                     </span>
                   </td>
                   <td className="whitespace-nowrap px-5 py-3 text-right">{rupiah(it.basePay)}</td>
@@ -209,7 +209,7 @@ export default function PayrollRunPage() {
               ))}
             </DataTable>
             <p className="mt-3 rounded-xl bg-sand-50 px-4 py-2.5 text-xs text-sand-500">
-              <b>Jam wajib</b> = jam/minggu × {run?.weeks ?? 0} minggu (dari Pengaturan payroll). <b>Jam hadir</b> dihitung otomatis dari absensi — menit mengajar sesuai jadwal untuk guru, durasi masuk–pulang untuk staf. Transport dibayar per jam hadir.
+              <b>JP wajib</b> = jam pelajaran per bulan (Pengaturan → Gaji) — gaji pokok TETAP, tidak dipotong absen. <b>JP hadir</b> diakumulasi dari absensi: menit hadir tiap hari ÷ menit-per-JP, dibulatkan per hari lalu dijumlahkan sebulan. Transport dibayar per JP hadir.
             </p>
             {(run.items?.length ?? 0) > 0 ? (
               <p className="mt-3 text-right text-sm font-bold text-sand-900">
@@ -291,13 +291,13 @@ export default function PayrollRunPage() {
             onSubmit={(e) => {
               e.preventDefault();
               const f = new FormData(e.currentTarget);
-              const reqJam = Number(f.get('requiredJam')) || 0;
-              const manualJam = Number(f.get('manualJam')) || 0;
+              const reqJp = Number(f.get('requiredJp')) || 0;
+              const manualJp = Number(f.get('manualJp')) || 0;
               void run_(
                 () =>
                   updatePayrollItem(editItem.id, {
-                    requiredMinutes: Math.round(reqJam * 60),
-                    manualMinutes: Math.round(manualJam * 60),
+                    requiredJp: reqJp,
+                    manualJp: manualJp,
                     ...(String(f.get('manualNote') ?? '').trim() ? { manualNote: String(f.get('manualNote')).trim() } : { manualNote: '' }),
                   }),
                 'Koreksi tersimpan.',
@@ -305,14 +305,14 @@ export default function PayrollRunPage() {
             }}
           >
             <p className="rounded-xl bg-sand-50 px-3 py-2 text-xs text-sand-600">
-              Jam hadir dari absen: <b>{jam(editItem.workedMinutes)}</b>. Koreksi manual <b>ditambahkan</b> ke hasil absen — isi negatif untuk mengurangi. Nilai bertahan saat Hitung Ulang.
+              JP hadir dari absen: <b>{jp(editItem.transportJp - (editItem.manualJp ?? 0))}</b>. Koreksi manual <b>ditambahkan</b> ke hasil absen — isi negatif untuk mengurangi. Nilai bertahan saat Hitung Ulang.
             </p>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Jam wajib total (jam)" hint={`${run?.weeks ?? 0} minggu × jam/minggu — override bila perlu`}>
-                <Input name="requiredJam" type="number" step="0.5" min={0} defaultValue={(editItem.requiredMinutes / 60).toString()} required />
+              <Field label="JP wajib /bulan" hint="Jam pelajaran — gaji pokok = JP wajib × tarif">
+                <Input name="requiredJp" type="number" step="0.5" min={0} defaultValue={editItem.requiredJp.toString()} required />
               </Field>
-              <Field label="Koreksi jam transport (±jam)" hint="mis. +2 atau -1.5">
-                <Input name="manualJam" type="number" step="0.5" defaultValue={((editItem.manualMinutes ?? 0) / 60).toString()} />
+              <Field label="Koreksi JP transport (±JP)" hint="mis. +2 atau -1.5">
+                <Input name="manualJp" type="number" step="0.5" defaultValue={(editItem.manualJp ?? 0).toString()} />
               </Field>
             </div>
             <Field label="Alasan koreksi" hint="Dicatat di audit — mis. 'mengajar pengganti 2 jam'">

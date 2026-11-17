@@ -428,13 +428,14 @@ export class AttendanceService {
       existing && ['IZIN', 'SAKIT', 'ALPHA'].includes(existing.status)
         ? existing.status
         : status;
-    // Menit efektif hari itu — otomatis: jadwal mengajar (guru) bila ada, selain itu
-    // durasi kehadiran masuk→pulang (staf). Dipakai payroll untuk jam hadir & transport.
+    // JP efektif hari itu — otomatis: jadwal mengajar (guru) bila ada, selain itu
+    // durasi kehadiran masuk→pulang (staf). Dipakai payroll untuk JP hadir & transport.
+    const lessonMin = await this.lessonMinutes();
     const teaching =
       finalStatus === 'HADIR' || finalStatus === 'TELAT'
-        ? (await this.scheduledMinutes(employeeId, day)) ||
+        ? Math.round((await this.scheduledMinutes(employeeId, day)) / lessonMin) ||
           (checkIn && checkOut
-            ? Math.max(0, Math.round((checkOut.getTime() - checkIn.getTime()) / 60000))
+            ? Math.round(Math.max(0, Math.round((checkOut.getTime() - checkIn.getTime()) / 60000)) / lessonMin)
             : 0)
         : 0;
     await this.prisma.employeeAttendance.upsert({
@@ -444,7 +445,7 @@ export class AttendanceService {
         checkInAt: checkIn,
         checkOutAt: checkOut,
         lateMinutes,
-        teachingMinutes: teaching,
+        teachingJp: teaching,
         source: 'DEVICE',
       },
       create: {
@@ -454,10 +455,19 @@ export class AttendanceService {
         checkInAt: checkIn,
         checkOutAt: checkOut,
         lateMinutes,
-        teachingMinutes: teaching,
+        teachingJp: teaching,
         source: 'DEVICE',
       },
     });
+  }
+
+  /** Menit per jam pelajaran dari pengaturan payroll (default 40). */
+  private async lessonMinutes() {
+    const s = await this.prisma.payrollSetting.findUnique({
+      where: { id: 'global' },
+      select: { lessonMinutes: true },
+    });
+    return Math.max(1, s?.lessonMinutes ?? 40);
   }
 
   /** Menit mengajar terjadwal seorang pegawai pada tanggal — dari jadwal pelajaran
@@ -588,7 +598,7 @@ export class AttendanceService {
         checkInAt: r.checkInAt,
         checkOutAt: r.checkOutAt,
         lateMinutes: r.lateMinutes,
-        teachingMinutes: r.teachingMinutes,
+        teachingJp: r.teachingJp,
         source: r.source,
         note: r.note,
       })),
@@ -756,7 +766,7 @@ export class AttendanceService {
         checkInAt: r.checkInAt,
         checkOutAt: r.checkOutAt,
         lateMinutes: r.lateMinutes,
-        teachingMinutes: r.teachingMinutes,
+        teachingJp: r.teachingJp,
         note: r.note,
       })),
       shifts: shifts.map((s) => ({

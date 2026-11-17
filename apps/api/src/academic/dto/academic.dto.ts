@@ -1,5 +1,6 @@
 import { Transform } from 'class-transformer';
 import {
+  IsArray,
   IsBoolean,
   IsEmail,
   IsIn,
@@ -461,9 +462,23 @@ export class UpdateScheduleEntryDto {
 }
 
 export class AssessmentDto {
+  /** Asesmen = ujian itu sendiri: per mapel + jenjang. Ujian pendamping CBT
+   *  dibuat otomatis 1:1 — kode akses, jadwal & sesi diatur di detail asesmen. */
   @IsUUID()
   subjectId!: string;
 
+  @IsInt()
+  @Min(1)
+  @Max(12)
+  gradeLevel!: number;
+
+  /** Rombel peserta — kosong = semua rombel pada jenjang tsb. */
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true })
+  classIds?: string[];
+
+  /** Legacy: satu rombel tunggal — tidak dipakai model baru. */
   @IsOptional()
   @IsUUID()
   classId?: string;
@@ -488,12 +503,24 @@ export class AssessmentDto {
 
 export class AssessmentUpdateDto {
   @IsOptional()
+  @ValidateIf((o: AssessmentUpdateDto) => o.subjectId !== null)
   @IsUUID()
-  subjectId?: string;
+  subjectId?: string | null;
 
   @IsOptional()
   @IsUUID()
   classId?: string | null;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(12)
+  gradeLevel?: number | null;
+
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true })
+  classIds?: string[];
 
   @IsOptional()
   @IsString()

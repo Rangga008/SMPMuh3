@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { randomBytes } from 'crypto';
 import * as argon2 from 'argon2';
 import type { Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
@@ -1565,14 +1566,57 @@ export class AcademicService {
   }
 
   // ---------- Assessments & grades ----------
-  createAssessment(dto: AssessmentDto, _actorId: string) {
-    return this.prisma.assessment.create({
+  /** Alfabet kode ujian — tanpa karakter rancu (0/O/1/I/L). */
+  private static genExamCode() {
+    const A = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+    const b = randomBytes(8);
+    const part = (o: number) =>
+      Array.from({ length: 4 }, (_, i) => A[b[o + i]! % A.length]).join('');
+    return `${part(0)}-${part(4)}`;
+  }
+
+  /** Asesmen = ujian itu sendiri (per mapel + jenjang). Membuat asesmen
+   *  sekaligus membuat ujian pendamping CBT 1:1 — jadwal/sesi/kode diatur
+   *  dari tab Ujian pada detail asesmen. */
+  async createAssessment(dto: AssessmentDto, actorId: string) {
+    let classIds = dto.classIds ?? [];
+    if (!classIds.length) {
+      const cs = await this.prisma.class.findMany({
+        where: { academicYearId: dto.academicYearId, gradeLevel: dto.gradeLevel },
+        select: { id: true },
+      });
+      classIds = cs.map((c) => c.id);
+    }
+    const now = new Date();
+    const [assessment] = await this.prisma.$transaction([
+      this.prisma.assessment.create({
+        data: {
+          name: dto.name,
+          type: dto.type,
+          maxScore: dto.maxScore ?? 100,
+          subjectId: dto.subjectId,
+          classId: dto.classId ?? null,
+          academicYearId: dto.academicYearId,
+        },
+      }),
+    ]);
+    await this.prisma.exam.create({
       data: {
-        ...dto,
-        classId: dto.classId ?? null,
-        maxScore: dto.maxScore ?? 100,
+        code: AcademicService.genExamCode(),
+        title: assessment.name,
+        assessmentId: assessment.id,
+        subjectId: dto.subjectId,
+        gradeLevel: dto.gradeLevel,
+        academicYearId: dto.academicYearId,
+        classIds,
+        startAt: now,
+        endAt: new Date(now.getTime() + 864e5),
+        durationMin: 90,
+        createdBy: actorId,
       },
     });
+    await this.audit.log({ actorId, action: 'assessment.create', entity: 'assessment', entityId: assessment.id });
+    return assessment;
   }
 
   listAssessments(academicYearId?: string, classId?: string) {
@@ -1586,33 +1630,133 @@ export class AcademicService {
       include: {
         subject: { select: { code: true, name: true } },
         class: { select: { name: true } },
-        exams: { select: { id: true, title: true, status: true } },
+        exams: {
+          select: {
+            id: true, code: true, title: true, status: true, subjectId: true,
+            gradeLevel: true, classIds: true, startAt: true, endAt: true,
+            durationMin: true,
+            _count: { select: { attempts: true, questions: true } },
+          },
+        },
         _count: { select: { grades: true, questions: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
   }
 
-  updateAssessment(id: string, dto: AssessmentUpdateDto, _actorId: string) {
+  async getAssessment(id: string) {
+    const a = await this.prisma.assessment.findUnique({
+      where: { id },
+      include: {
+        subject: { select: { id: true, code: true, name: true } },
+        class: { select: { id: true, name: true, gradeLevel: true } },
+        academicYear: { select: { id: true, name: true } },
+        exams: {
+          select: {
+            id: true, code: true, title: true, status: true, subjectId: true,
+            gradeLevel: true, classIds: true, startAt: true, endAt: true,
+            durationMin: true,
+            _count: { select: { attempts: true, questions: true } },
+          },
+        },
+        _count: { select: { grades: true, questions: true } },
+      },
+    });
+    if (!a) throw new NotFoundException('Asesmen tidak ditemukan.');
+    return a;
+  }
+
+  /** Pastikan asesmen punya ujian pendamping CBT (asesmen lama dari sebelum
+   *  model ini). Soal legacy milik asesmen dipindahkan ke ujiannya. */
+  async ensureExam(id: string, actorId: string) {
+    const a = await this.prisma.assessment.findUnique({
+      where: { id },
+      include: {
+        exams: { select: { id: true } },
+        class: { select: { id: true, gradeLevel: true } },
+      },
+    });
+    if (!a) throw new NotFoundException('Asesmen tidak ditemukan.');
+    if (a.exams[0]) return { examId: a.exams[0].id, created: false };
+    const classIds = a.classId
+      ? [a.classId]
+      : (
+          await this.prisma.class.findMany({
+            where: { academicYearId: a.academicYearId },
+            select: { id: true },
+          })
+        ).map((c) => c.id);
+    const now = new Date();
+    const exam = await this.prisma.$transaction(async (tx) => {
+      const ex = await tx.exam.create({
+        data: {
+          code: AcademicService.genExamCode(),
+          title: a.name,
+          assessmentId: a.id,
+          subjectId: a.subjectId,
+          gradeLevel: a.class?.gradeLevel ?? null,
+          academicYearId: a.academicYearId,
+          classIds,
+          startAt: now,
+          endAt: new Date(now.getTime() + 864e5),
+          durationMin: 90,
+          createdBy: actorId,
+        },
+      });
+      // Soal legacy (exam_id NULL) pindah ke ujian — hindari nomor ganda.
+      const taken = await tx.assessmentQuestion.findMany({
+        where: { examId: ex.id },
+        select: { number: true },
+      });
+      await tx.assessmentQuestion.updateMany({
+        where: {
+          assessmentId: a.id,
+          examId: null,
+          number: { notIn: taken.map((x) => x.number) },
+        },
+        data: { examId: ex.id },
+      });
+      return ex;
+    });
+    await this.audit.log({ actorId, action: 'assessment.ensure_exam', entity: 'exam', entityId: exam.id });
+    return { examId: exam.id, created: true };
+  }
+
+  async updateAssessment(id: string, dto: AssessmentUpdateDto, _actorId: string) {
     const data: Prisma.AssessmentUpdateInput = {};
     if (dto.name !== undefined) data.name = dto.name.trim();
     if (dto.type !== undefined) data.type = dto.type;
     if (dto.maxScore !== undefined) data.maxScore = dto.maxScore;
-    if (dto.subjectId !== undefined) data.subject = { connect: { id: dto.subjectId } };
+    if (dto.subjectId !== undefined) {
+      data.subject = dto.subjectId ? { connect: { id: dto.subjectId } } : { disconnect: true };
+    }
     if (dto.classId !== undefined) {
       data.class = dto.classId ? { connect: { id: dto.classId } } : { disconnect: true };
     }
-    return this.prisma.assessment.update({ where: { id }, data });
+    const updated = await this.prisma.assessment.update({ where: { id }, data });
+    // Sinkronkan ke ujian pendamping — asesmen & ujian adalah satu entitas.
+    await this.prisma.exam.updateMany({
+      where: { assessmentId: id },
+      data: {
+        ...(dto.name !== undefined ? { title: updated.name } : {}),
+        ...(dto.subjectId !== undefined ? { subjectId: dto.subjectId || null } : {}),
+        ...(dto.gradeLevel !== undefined ? { gradeLevel: dto.gradeLevel } : {}),
+        ...(dto.classIds !== undefined ? { classIds: dto.classIds } : {}),
+      },
+    });
+    return updated;
   }
 
   async deleteAssessment(id: string, _actorId: string) {
-    const exams = await this.prisma.exam.count({ where: { assessmentId: id } });
-    if (exams) {
+    const attempts = await this.prisma.examAttempt.count({
+      where: { exam: { assessmentId: id } },
+    });
+    if (attempts) {
       throw new ConflictException(
-        'Asesmen dipakai ujian CBT — hapus/tutup ujiannya dulu, atau biarkan asesmen ini.',
+        'Sudah ada siswa yang mengerjakan — asesmen ini tidak bisa dihapus.',
       );
     }
-    // Grades, questions, passages ter-cascade dari relasi schema.
+    // Exams, grades, questions, passages ter-cascade dari relasi schema.
     return this.prisma.assessment.delete({ where: { id } });
   }
 

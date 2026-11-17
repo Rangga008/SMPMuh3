@@ -166,7 +166,7 @@ export default function LedgerPage() {
           <Select value={examId} onChange={(e) => { setExamId(e.target.value); if (e.target.value) setTab('ujian'); }} searchable>
             <option value="">— pilih ujian —</option>
             {examOptions.map((x) => (
-              <option key={x.id} value={x.id}>{x.title} · {x.code} · {x.assessment.subject.name}</option>
+              <option key={x.id} value={x.id}>{x.title} · {x.code} · {x.subject?.name ?? x.assessment.subject?.name ?? '—'}</option>
             ))}
           </Select>
         </Field>

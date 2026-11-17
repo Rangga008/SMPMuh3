@@ -134,55 +134,8 @@ export class OpsController {
   @RequirePermission(PERMISSIONS.ACADEMIC_READ)
   questionsTemplate(@Res() res: Response, @Query('pg') pgQ?: string, @Query('pgk') pgkQ?: string, @Query('bs') bsQ?: string, @Query('bsk') bskQ?: string) {
     const gen = pgQ !== undefined || pgkQ !== undefined || bsQ !== undefined || bskQ !== undefined;
-    const n = (v?: string) => Math.min(200, Math.max(0, Math.floor(Number(v) || 0)));
-    const rows: string[][] = [
-      ['TEMPLATE IMPORT SOAL — isi kolom Soal, A–E, Kunci mulai BARIS 6 (baris keterangan jangan diubah)'],
-      ['Tipe : PG = pilihan ganda · PGK = pilihan ganda kompleks (centang ≥1) · BS = benar/salah · BSK = benar/salah kompleks (beberapa pernyataan)'],
-      ['Kunci: PG → satu huruf (C) · PGK → huruf dipisah koma (A,C) · BS → B atau S · BSK → B/S per pernyataan dipisah koma (B,S,B)'],
-      ['Kolom A–E: PG/PGK = pilihan jawaban · BSK = daftar pernyataan'],
-      [],
-      ['No', 'Tipe', 'Soal', 'A', 'B', 'C', 'D', 'E', '', 'Kunci', 'Bobot'],
-    ];
-    let no = 1;
-    if (gen) {
-      for (const [tipe, cnt] of [['PG', n(pgQ)], ['PGK', n(pgkQ)], ['BS', n(bsQ)], ['BSK', n(bskQ)]] as const) {
-        for (let i = 0; i < cnt; i++) rows.push([String(no++), tipe, '', '', '', '', '', '', '', '', '1']);
-      }
-      if (no === 1) rows.push(['1', 'PG', '', '', '', '', '', '', '', '', '', '1']);
-    } else {
-      rows.push(
-        ['CONTOH 1 (hapus)', 'PG', 'Ibu kota Indonesia adalah…', 'Surabaya', 'Bandung', 'Jakarta', 'Medan', '', '', 'C', '1'],
-        ['CONTOH 2 (hapus)', 'PGK', 'Pilih semua bilangan prima:', '2', '4', '5', '9', '', '', '', 'A,C', '2'],
-        ['CONTOH 3 (hapus)', 'BS', 'Indonesia merdeka tahun 1945.', '', '', '', '', '', '', 'B', '1'],
-        ['CONTOH 4 (hapus)', 'BSK', 'Tentukan benar/salah tiap pernyataan:', 'Air mendidih pada 100°C', 'Es lebih padat dari air', 'Bandung di Jawa Barat', '', '', '', 'B,S,B', '2', ''],
-        ['CONTOH 5 (hapus)', 'PG', 'Berdasarkan bacaan B1, tokoh utama cerita adalah…', 'Siti', 'Budi', 'Andi', 'Rina', '', '', 'A', '1', 'B1'],
-      );
-    }
-    const ws = XLSX.utils.aoa_to_sheet(rows);
-    ws['!cols'] = [
-      { wch: 4 }, { wch: 7 }, { wch: 44 }, { wch: 20 }, { wch: 20 },
-      { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 2 }, { wch: 10 }, { wch: 6 }, { wch: 8 },
-    ];
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Soal');
-    const bacaan = XLSX.utils.aoa_to_sheet([
-      ['Kode', 'Teks'],
-      ['B1', '(contoh — hapus) Siti adalah siswa kelas 9 yang rajin. Setiap pagi ia berangkat ke sekolah naik sepeda. Ia gemar membaca buku cerita di perpustakaan.'],
-    ]);
-    bacaan['!cols'] = [{ wch: 8 }, { wch: 100 }];
-    XLSX.utils.book_append_sheet(wb, bacaan, 'Bacaan');
-    const guide = XLSX.utils.json_to_sheet([
-      { kolom: 'No', wajib: 'YA', keterangan: 'Nomor urut soal — mulai 1, jangan dobel' },
-      { kolom: 'Tipe', wajib: 'YA', keterangan: 'PG / PGK / BS / BSK — juga menerima MCQ / MCQ_COMPLEX / TRUE_FALSE / TRUE_FALSE_COMPLEX' },
-      { kolom: 'Soal', wajib: 'YA', keterangan: 'Teks pertanyaan' },
-      { kolom: 'A–E', wajib: 'PG, PGK & BSK', keterangan: 'PG/PGK: pilihan jawaban (min. 2, maks. 5) · BSK: daftar pernyataan (min. 2, maks. 5)' },
-      { kolom: 'Kunci', wajib: 'YA', keterangan: 'PG: satu huruf · PGK: huruf-koma (A,C) · BS: B/S · BSK: B/S per pernyataan, koma (B,S,B)' },
-      { kolom: 'Bobot', wajib: 'tidak', keterangan: 'Bobot nilai soal — kosong = 1' },
-      { kolom: 'Bacaan', wajib: 'tidak', keterangan: 'Kode bacaan dari sheet "Bacaan" (mis. B1) — soal menampilkan bacaan di atasnya' },
-    ]);
-    guide['!cols'] = [{ wch: 12 }, { wch: 12 }, { wch: 90 }];
-    XLSX.utils.book_append_sheet(wb, guide, 'Petunjuk');
-    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+    const n = (v?: string) => Math.floor(Number(v) || 0);
+    const buf = this.ops.questionTemplateXlsx(gen ? { pg: n(pgQ), pgk: n(pgkQ), bs: n(bsQ), bsk: n(bskQ) } : undefined);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', 'attachment; filename="template-soal.xlsx"');
     res.send(buf);
@@ -593,10 +546,35 @@ export class OpsController {
   removeSeat(@Param('seatId') seatId: string) {
     return this.ops.removeExamSeat(seatId);
   }
+  /** Checklist hadir satu peserta — null = belum dicek. */
+  @Patch('exam-seats/:seatId/attendance')
+  @RequirePermission(PERMISSIONS.TATAUSAHA_MANAGE)
+  seatAttendance(@Param('seatId') seatId: string, @Body('present') present?: boolean | null) {
+    return this.ops.setSeatPresent(seatId, present ?? null);
+  }
+  /** Checklist hadir massal satu sesi ruang — body: { presentIds: string[] }. */
+  @Patch('exam-room-links/:linkId/attendance')
+  @RequirePermission(PERMISSIONS.TATAUSAHA_MANAGE)
+  linkAttendance(@Param('linkId') linkId: string, @Body('presentIds') presentIds?: string[]) {
+    return this.ops.setLinkAttendance(linkId, presentIds ?? []);
+  }
   @Get('exam-rooms/:id/cards')
   @RequirePermission(PERMISSIONS.TATAUSAHA_READ)
   examCards(@Param('id') id: string, @Query('linkId') linkId?: string) {
     return this.ops.examCards(id, linkId);
+  }
+  /** Kartu gabungan per siswa — satu kartu menampilkan SEMUA jadwal ujiannya. */
+  @Get('exam-room-links/:linkId/student-cards')
+  @RequirePermission(PERMISSIONS.TATAUSAHA_READ)
+  studentCards(@Param('linkId') linkId: string) {
+    return this.ops.studentCards(linkId);
+  }
+  /** Roster satu periode: semua ruang+sesi+peserta — untuk cetak daftar peserta
+   *  per ruang, rekap kelas×ruang, dan daftar semua peserta. */
+  @Get('exam-rooms/roster')
+  @RequirePermission(PERMISSIONS.TATAUSAHA_READ)
+  examRoomRoster(@Query('academicYearId') y: string, @Query('period') p: string) {
+    return this.ops.examRoomRoster(y, p);
   }
 
   /** Data calon peserta US-1/US-2 — daftar peserta & rekapitulasi per rombel. */

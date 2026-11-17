@@ -4,8 +4,9 @@ import type { PayrollItemView, PayrollRunView, School } from '@/lib/api';
 import type { CSSProperties } from 'react';
 
 export const rupiah = (n: number) => `Rp${n.toLocaleString('id-ID')}`;
-export const jam = (m: number) =>
-  `${(m / 60).toLocaleString('id-ID', { maximumFractionDigits: 1 })} jam`;
+/** Format jam pelajaran — buang .0 (203 bukan 203,0). */
+export const jp = (n: number) =>
+  `${(+n.toFixed(1)).toLocaleString('id-ID')} JP`;
 export const monthLabel = (m: string) =>
   new Date(`${m}-15T00:00:00`).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
 
@@ -156,10 +157,10 @@ export function SlipView({
           <tr>
             <td style={{ ...td, ...muted }}>Jam wajib</td>
             <td style={td}>
-              : {jam(item.requiredMinutes)}
-              <span style={{ ...muted, fontSize: 11 }}> · Jam hadir {jam(item.workedMinutes + (item.manualMinutes ?? 0))}</span>
-              {(item.manualMinutes ?? 0) !== 0 ? (
-                <span style={{ ...muted, fontSize: 11 }}> (absen {jam(item.workedMinutes)} + koreksi {jam(item.manualMinutes ?? 0)})</span>
+              : {jp(item.requiredJp)}
+              <span style={{ ...muted, fontSize: 11 }}> · JP hadir {jp(item.transportJp)}</span>
+              {(item.manualJp ?? 0) !== 0 ? (
+                <span style={{ ...muted, fontSize: 11 }}> (absen {jp(item.transportJp - (item.manualJp ?? 0))} + koreksi {jp(item.manualJp ?? 0)})</span>
               ) : null}
             </td>
             <td colSpan={2} style={td} />

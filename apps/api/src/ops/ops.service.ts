@@ -562,6 +562,48 @@ export class OpsService {
     });
   }
 
+  // ---- Soal per-ujian (model baru — asesmen hanya payung periode) ----
+
+  listExamQuestions(examId: string) {
+    return this.prisma.assessmentQuestion.findMany({
+      where: { examId },
+      orderBy: { number: 'asc' },
+      include: { _count: { select: { answers: true } } },
+    });
+  }
+
+  /** Simpan seluruh butir soal satu ujian — bacaan tetap milik asesmen induk
+   *  (exam.assessmentId) agar semua ujian se-payung bisa merujuk kode bacaan. */
+  async setExamQuestions(examId: string, questions: QuestionDto[], passages?: PassageDto[]) {
+    const exam = await this.prisma.exam.findUniqueOrThrow({ where: { id: examId }, select: { id: true, assessmentId: true } });
+    return this.prisma.$transaction(async (tx) => {
+      await tx.assessmentQuestion.deleteMany({ where: { examId } });
+      const created = await tx.assessmentQuestion.createMany({
+        data: questions.map((q) => ({
+          examId, assessmentId: null, number: q.number, type: q.type as never,
+          weight: q.weight ?? 1,
+          key: q.key === undefined ? Prisma.JsonNull : (q.key as Prisma.InputJsonValue),
+          prompt: q.prompt ?? null,
+          options: q.options === undefined ? Prisma.JsonNull : (q.options as Prisma.InputJsonValue),
+          passageCode: q.passageCode ?? null,
+          media: q.media === undefined ? Prisma.JsonNull : (q.media as Prisma.InputJsonValue),
+        })),
+      });
+      if (passages?.length) {
+        const codes = new Set(passages.map((p) => p.code));
+        await tx.assessmentPassage.deleteMany({ where: { assessmentId: exam.assessmentId, code: { notIn: [...codes] } } });
+        for (const [i, p] of passages.entries()) {
+          await tx.assessmentPassage.upsert({
+            where: { assessmentId_code: { assessmentId: exam.assessmentId, code: p.code } },
+            update: { content: p.content, sortOrder: i, ...(p.media ? { media: p.media as Prisma.InputJsonValue } : {}) },
+            create: { assessmentId: exam.assessmentId, code: p.code, content: p.content, sortOrder: i, media: p.media === undefined ? Prisma.JsonNull : (p.media as Prisma.InputJsonValue) },
+          });
+        }
+      }
+      return { count: created.count, passages: passages?.length ?? 0 };
+    });
+  }
+
   listPassages(assessmentId: string) {
     return this.prisma.assessmentPassage.findMany({ where: { assessmentId }, orderBy: { sortOrder: 'asc' } });
   }
@@ -581,6 +623,60 @@ export class OpsService {
       }
     });
     return { count: passages.length };
+  }
+
+  /** Template Excel import soal — dipakai asesmen & ujian; `counts` → baris
+   *  kosong bernomor per tipe (generator), tanpa counts → contoh terisi. */
+  questionTemplateXlsx(counts?: { pg?: number; pgk?: number; bs?: number; bsk?: number }): Buffer {
+    const n = (v?: number) => Math.min(200, Math.max(0, Math.floor(v || 0)));
+    const rows: string[][] = [
+      ['TEMPLATE IMPORT SOAL — isi kolom Soal, A–E, Kunci mulai BARIS 6 (baris keterangan jangan diubah)'],
+      ['Tipe : PG = pilihan ganda · PGK = pilihan ganda kompleks (centang ≥1) · BS = benar/salah · BSK = benar/salah kompleks (beberapa pernyataan)'],
+      ['Kunci: PG → satu huruf (C) · PGK → huruf dipisah koma (A,C) · BS → B atau S · BSK → B/S per pernyataan dipisah koma (B,S,B)'],
+      ['Kolom A–E: PG/PGK = pilihan jawaban · BSK = daftar pernyataan'],
+      [],
+      ['No', 'Tipe', 'Soal', 'A', 'B', 'C', 'D', 'E', '', 'Kunci', 'Bobot'],
+    ];
+    let no = 1;
+    if (counts) {
+      for (const [tipe, cnt] of [['PG', n(counts.pg)], ['PGK', n(counts.pgk)], ['BS', n(counts.bs)], ['BSK', n(counts.bsk)]] as const) {
+        for (let i = 0; i < cnt; i++) rows.push([String(no++), tipe, '', '', '', '', '', '', '', '', '1']);
+      }
+      if (no === 1) rows.push(['1', 'PG', '', '', '', '', '', '', '', '', '', '1']);
+    } else {
+      rows.push(
+        ['CONTOH 1 (hapus)', 'PG', 'Ibu kota Indonesia adalah…', 'Surabaya', 'Bandung', 'Jakarta', 'Medan', '', '', 'C', '1'],
+        ['CONTOH 2 (hapus)', 'PGK', 'Pilih semua bilangan prima:', '2', '4', '5', '9', '', '', '', 'A,C', '2'],
+        ['CONTOH 3 (hapus)', 'BS', 'Indonesia merdeka tahun 1945.', '', '', '', '', '', '', 'B', '1'],
+        ['CONTOH 4 (hapus)', 'BSK', 'Tentukan benar/salah tiap pernyataan:', 'Air mendidih pada 100°C', 'Es lebih padat dari air', 'Bandung di Jawa Barat', '', '', '', 'B,S,B', '2', ''],
+        ['CONTOH 5 (hapus)', 'PG', 'Berdasarkan bacaan B1, tokoh utama cerita adalah…', 'Siti', 'Budi', 'Andi', 'Rina', '', '', 'A', '1', 'B1'],
+      );
+    }
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [
+      { wch: 4 }, { wch: 7 }, { wch: 44 }, { wch: 20 }, { wch: 20 },
+      { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 2 }, { wch: 10 }, { wch: 6 }, { wch: 8 },
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Soal');
+    const bacaan = XLSX.utils.aoa_to_sheet([
+      ['Kode', 'Teks'],
+      ['B1', '(contoh — hapus) Siti adalah siswa kelas 9 yang rajin. Setiap pagi ia berangkat ke sekolah naik sepeda. Ia gemar membaca buku cerita di perpustakaan.'],
+    ]);
+    bacaan['!cols'] = [{ wch: 8 }, { wch: 100 }];
+    XLSX.utils.book_append_sheet(wb, bacaan, 'Bacaan');
+    const guide = XLSX.utils.json_to_sheet([
+      { kolom: 'No', wajib: 'YA', keterangan: 'Nomor urut soal — mulai 1, jangan dobel' },
+      { kolom: 'Tipe', wajib: 'YA', keterangan: 'PG / PGK / BS / BSK — juga menerima MCQ / MCQ_COMPLEX / TRUE_FALSE / TRUE_FALSE_COMPLEX' },
+      { kolom: 'Soal', wajib: 'YA', keterangan: 'Teks pertanyaan' },
+      { kolom: 'A–E', wajib: 'PG, PGK & BSK', keterangan: 'PG/PGK: pilihan jawaban (min. 2, maks. 5) · BSK: daftar pernyataan (min. 2, maks. 5)' },
+      { kolom: 'Kunci', wajib: 'YA', keterangan: 'PG: satu huruf · PGK: huruf-koma (A,C) · BS: B/S · BSK: B/S per pernyataan, koma (B,S,B)' },
+      { kolom: 'Bobot', wajib: 'tidak', keterangan: 'Bobot nilai soal — kosong = 1' },
+      { kolom: 'Bacaan', wajib: 'tidak', keterangan: 'Kode bacaan dari sheet "Bacaan" (mis. B1) — soal menampilkan bacaan di atasnya' },
+    ]);
+    guide['!cols'] = [{ wch: 12 }, { wch: 12 }, { wch: 90 }];
+    XLSX.utils.book_append_sheet(wb, guide, 'Petunjuk');
+    return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
   }
 
   /** Template Word import soal — tabel per soal + bacaan, contoh semua tipe. */
@@ -659,7 +755,7 @@ export class OpsService {
     const clsOf = new Map(enrolls.map((e) => [e.studentId, e.class]));
     const map = new Map(answers.map((a) => [`${a.questionId}:${a.studentId}`, a]));
     return {
-      assessment: { id: assessment.id, name: assessment.name, subject: assessment.subject.name, class: assessment.class?.name },
+      assessment: { id: assessment.id, name: assessment.name, subject: assessment.subject?.name ?? null, class: assessment.class?.name },
       questions: questions.map((q) => ({ id: q.id, number: q.number, type: q.type, weight: q.weight, key: q.key })),
       students: students.map((s) => ({
         id: s.id, name: s.name, nis: s.nis,
@@ -684,22 +780,33 @@ export class OpsService {
     });
     const grades = await this.prisma.grade.findMany({
       where: {
-        assessment: { academicYearId },
+        OR: [{ assessment: { academicYearId } }, { exam: { academicYearId } }],
         studentId: { in: students.map((s) => s.studentId) },
       },
-      include: { assessment: { include: { subject: { select: { id: true, name: true, code: true } } } } },
+      include: {
+        assessment: { include: { subject: { select: { id: true, name: true, code: true } } } },
+        exam: { include: { subject: { select: { id: true, name: true, code: true } } } },
+      },
     });
-    // Mapel kolom diambil dari nilai + SEMUA asesmen kelas ini — kolom
-    // tetap tampil walau nilai belum diisi (tabel tidak tampak kosong).
-    const assessments = await this.prisma.assessment.findMany({
-      where: { academicYearId, OR: [{ classId }, { classId: null }] },
-      select: { subject: { select: { id: true, name: true, code: true } } },
-    });
+    // Mapel kolom diambil dari nilai + asesmen kelas + SEMUA ujian bermapel
+    // yang mencakup kelas ini — kolom tetap tampil walau nilai belum diisi.
+    const [assessments, exams] = await Promise.all([
+      this.prisma.assessment.findMany({
+        where: { academicYearId, OR: [{ classId }, { classId: null }], subjectId: { not: null } },
+        select: { subject: { select: { id: true, name: true, code: true } } },
+      }),
+      this.prisma.exam.findMany({
+        where: { academicYearId, subjectId: { not: null } },
+        select: { classIds: true, subject: { select: { id: true, name: true, code: true } } },
+      }),
+    ]);
     const subjects = new Map<string, { id: string; name: string; code: string }>();
-    for (const a of assessments) subjects.set(a.subject.id, a.subject);
+    for (const a of assessments) if (a.subject) subjects.set(a.subject.id, a.subject);
+    for (const e of exams) if (e.subject && (e.classIds as string[]).includes(classId)) subjects.set(e.subject.id, e.subject);
     const cell = new Map<string, number[]>();
     for (const g of grades) {
-      const sub = g.assessment.subject;
+      const sub = g.exam?.subject ?? g.assessment?.subject;
+      if (!sub) continue;
       subjects.set(sub.id, sub);
       const key = `${g.studentId}:${sub.id}`;
       (cell.get(key) ?? cell.set(key, []).get(key)!).push(g.score);
@@ -767,29 +874,29 @@ export class OpsService {
     return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
   }
 
-  /** Statistik per mapel dalam satu kelas: avg/min/max + jumlah penilai. */
+  /** Statistik per mapel dalam satu kelas: avg/min/max + jumlah penilai.
+      Nilai dibaca dari Grade — menempel ke ujian (baru) maupun asesmen (lama). */
   async classSubjectStats(classId: string, academicYearId: string) {
-    const rows = await this.prisma.grade.groupBy({
-      by: ['assessmentId'],
+    const students = await this.prisma.enrollment.findMany({
+      where: { classId, academicYearId, student: { status: 'ACTIVE' } },
+      select: { studentId: true },
+    });
+    const grades = await this.prisma.grade.findMany({
       where: {
-        assessment: { academicYearId, classId },
+        studentId: { in: students.map((s) => s.studentId) },
+        OR: [{ assessment: { academicYearId } }, { exam: { academicYearId } }],
       },
-      _avg: { score: true }, _min: { score: true }, _max: { score: true }, _count: { _all: true },
+      include: {
+        assessment: { select: { subject: { select: { id: true, name: true, code: true } } } },
+        exam: { select: { subject: { select: { id: true, name: true, code: true } } } },
+      },
     });
-    const assessments = await this.prisma.assessment.findMany({
-      where: { id: { in: rows.map((r) => r.assessmentId) } },
-      include: { subject: { select: { id: true, name: true, code: true } } },
-    });
-    const aMap = new Map(assessments.map((a) => [a.id, a]));
     const perSubject = new Map<string, { subject: { id: string; name: string; code: string }; scores: number[] }>();
-    for (const r of rows) {
-      const a = aMap.get(r.assessmentId);
-      if (!a) continue;
-      const g = await this.prisma.grade.findMany({
-        where: { assessmentId: a.id }, select: { score: true },
-      });
-      const entry = perSubject.get(a.subject.id) ?? perSubject.set(a.subject.id, { subject: a.subject, scores: [] }).get(a.subject.id)!;
-      entry.scores.push(...g.map((x) => x.score));
+    for (const g of grades) {
+      const sub = g.exam?.subject ?? g.assessment?.subject;
+      if (!sub) continue;
+      const entry = perSubject.get(sub.id) ?? perSubject.set(sub.id, { subject: sub, scores: [] }).get(sub.id)!;
+      entry.scores.push(g.score);
     }
     return [...perSubject.values()].map(({ subject, scores }) => ({
       subject,
@@ -928,10 +1035,12 @@ export class OpsService {
     for (const a of attempts) {
       if (a.score == null || a.maxScore == null || a.maxScore <= 0) continue;
       const gradeScore = Math.round((a.score / a.maxScore) * scale);
+      // Nilai menempel ke UJIAN (model baru) — assessmentId ikut diisi agar
+      // pembaca ledger lama tetap menjangkaunya.
       await this.prisma.grade.upsert({
-        where: { assessmentId_studentId: { assessmentId: exam.assessmentId, studentId: a.studentId } },
-        update: { score: gradeScore },
-        create: { assessmentId: exam.assessmentId, studentId: a.studentId, score: gradeScore },
+        where: { examId_studentId: { examId, studentId: a.studentId } },
+        update: { score: gradeScore, assessmentId: exam.assessmentId },
+        create: { examId, assessmentId: exam.assessmentId, studentId: a.studentId, score: gradeScore },
       });
       synced++;
     }
@@ -1503,18 +1612,18 @@ export class OpsService {
       const p = await this.prisma.prasarana.findUnique({ where: { id: dto.prasaranaId } });
       if (p) name = p.name;
     }
-    return this.prisma.examRoom.create({ data: { name, period: dto.period, academicYearId: dto.academicYearId, capacity: dto.capacity ?? 24, examId: dto.examId ?? null, prasaranaId: dto.prasaranaId ?? null } });
+    return this.prisma.examRoom.create({ data: { name, period: dto.period, academicYearId: dto.academicYearId, capacity: dto.capacity ?? 24, participantCode: dto.participantCode?.trim() || '145', examId: dto.examId ?? null, prasaranaId: dto.prasaranaId ?? null } });
   }
   async listExamRooms(academicYearId: string, period?: string) {
     // Backfill kode peserta untuk kursi lama yang belum punya.
     const missing = await this.prisma.examSeat.findMany({
       where: { room: { academicYearId }, code: null },
-      select: { id: true, room: { select: { period: true } } },
+      select: { id: true, room: { select: { period: true, participantCode: true } }, class: { select: { gradeLevel: true } } },
     });
     for (const s of missing) {
       await this.prisma.examSeat.update({
         where: { id: s.id },
-        data: { code: await this.nextSeatCode(academicYearId, s.room.period) },
+        data: { code: await this.nextSeatCode(academicYearId, s.room.period, s.class?.gradeLevel, s.room.participantCode) },
       });
     }
     return this.prisma.examRoom.findMany({
@@ -1600,8 +1709,9 @@ export class OpsService {
         throw new ConflictException(`${sesi}: siswa sudah duduk di ${dup.room.name}.`);
       }
     }
+    const cls = dto.classId ? await this.prisma.class.findUnique({ where: { id: dto.classId }, select: { gradeLevel: true } }) : null;
     return this.prisma.examSeat.create({
-      data: { roomId, linkId, studentId: dto.studentId, classId: dto.classId ?? null, seatNo: dto.seatNo ?? seatCount + 1, code: await this.nextSeatCode(room.academicYearId, room.period) },
+      data: { roomId, linkId, studentId: dto.studentId, classId: dto.classId ?? null, seatNo: dto.seatNo ?? seatCount + 1, code: await this.nextSeatCode(room.academicYearId, room.period, cls?.gradeLevel, room.participantCode) },
     });
   }
 
@@ -1679,28 +1789,28 @@ export class OpsService {
     // Kode peserta dibuat satu per satu (sequence per tahun ajaran) agar unik.
     for (const s of toAdd) {
       await this.prisma.examSeat.create({
-        data: { roomId, linkId: linkId ?? null, studentId: s.studentId, classId, seatNo: ++seat, code: await this.nextSeatCode(room.academicYearId, room.period) },
+        data: { roomId, linkId: linkId ?? null, studentId: s.studentId, classId, seatNo: ++seat, code: await this.nextSeatCode(room.academicYearId, room.period, cls.gradeLevel, room.participantCode) },
       });
     }
     const unseated = students.length - skip.size - toAdd.length;
     return { added: toAdd.length, skipped: students.length - toAdd.length, free: free - toAdd.length, remaining: Math.max(unseated, 0) };
   }
 
-  /** Kode peserta: {PERIODE}-{nomor urut 4 digit} — unik per tahun ajaran,
-   *  tercetak di kartu & jadi kode masuk ujian siswa (sinkron CBT). */
-  private async nextSeatCode(academicYearId: string, period: string) {
-    const prefix = period.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6) || 'UJIAN';
-    const count = await this.prisma.examSeat.count({
-      where: { room: { academicYearId }, code: { startsWith: `${prefix}-` } },
-    });
+  /** Kode peserta: {jenjang:2d}-{kode tengah}-{urut:3d}, mis. "07-145-001" —
+   *  jenjang dari rombel si siswa, kode tengah dari ruang (participant_code),
+   *  urut berlanjut lintas ruang dalam satu periode. Tercetak di kartu &
+   *  kartu meja (sinkron CBT). */
+  private async nextSeatCode(academicYearId: string, period: string, gradeLevel: number | null | undefined, mid: string) {
+    const grade = String(gradeLevel ?? 0).padStart(2, '0');
+    const count = await this.prisma.examSeat.count({ where: { room: { academicYearId, period } } });
     for (let i = count + 1; ; i++) {
-      const code = `${prefix}-${String(i).padStart(4, '0')}`;
+      const code = `${grade}-${mid}-${String(i).padStart(3, '0')}`;
       const clash = await this.prisma.examSeat.findUnique({ where: { code } });
       if (!clash) return code;
     }
   }
 
-  async updateExamRoom(id: string, dto: { name?: string; period?: string; capacity?: number; examId?: string | null; prasaranaId?: string | null }) {
+  async updateExamRoom(id: string, dto: { name?: string; period?: string; capacity?: number; participantCode?: string; examId?: string | null; prasaranaId?: string | null }) {
     const room = await this.prisma.examRoom.findUniqueOrThrow({ where: { id }, include: { _count: { select: { seats: true } } } });
     if (dto.capacity !== undefined && dto.capacity < room._count.seats) {
       throw new ConflictException(`Kapasitas tak boleh di bawah jumlah peserta (${room._count.seats}).`);
@@ -1711,6 +1821,7 @@ export class OpsService {
         ...(dto.name !== undefined ? { name: dto.name } : {}),
         ...(dto.period !== undefined ? { period: dto.period } : {}),
         ...(dto.capacity !== undefined ? { capacity: dto.capacity } : {}),
+        ...(dto.participantCode !== undefined ? { participantCode: dto.participantCode.trim() || '145' } : {}),
         ...(dto.examId !== undefined ? { examId: dto.examId } : {}),
         ...(dto.prasaranaId !== undefined ? { prasaranaId: dto.prasaranaId } : {}),
       },
@@ -1787,6 +1898,148 @@ export class OpsService {
     }
     const school = await this.prisma.school.findFirst();
     return { room: { ...room, exam }, link, credentials, school, seatExam };
+  }
+
+  /** Checklist hadir satu peserta (pengawas) — checklist saja, tak mengunci CBT. */
+  async setSeatPresent(seatId: string, present: boolean | null) {
+    return this.prisma.examSeat.update({ where: { id: seatId }, data: { present } });
+  }
+
+  /** Checklist hadir massal satu sesi ruang: yang terdaftar → hadir, sisanya → tidak. */
+  async setLinkAttendance(linkId: string, presentIds: string[]) {
+    const ids = new Set(presentIds);
+    return this.prisma.$transaction(async (tx) => {
+      await tx.examSeat.updateMany({ where: { linkId }, data: { present: false } });
+      const res = await tx.examSeat.updateMany({ where: { linkId, studentId: { in: [...ids] } }, data: { present: true } });
+      return { present: res.count };
+    });
+  }
+
+  /** Kartu gabungan per siswa — satu kartu menampilkan SEMUA jadwal ujiannya:
+   *  tiap baris = satu slot duduk (sesi/ujian, waktu, ruang, kursi, kode peserta).
+   *  Dicetak dari satu sesi ruang — mencakup kursi siswa itu di semua ruang
+   *  se-periode (ujian serentak, ruang bisa beda-beda per sesi). */
+  async studentCards(linkId: string) {
+    const link = await this.prisma.examRoomExam.findUniqueOrThrow({
+      where: { id: linkId },
+      include: {
+        room: { include: { academicYear: true } },
+        exam: { select: { id: true, title: true } },
+        session: { select: { id: true, name: true, startAt: true, endAt: true } },
+        seats: {
+          include: {
+            student: { select: { id: true, name: true, nis: true, password: true } },
+            class: { select: { id: true, name: true } },
+          },
+          orderBy: { seatNo: 'asc' },
+        },
+      },
+    });
+    const year = link.room.academicYearId;
+    const period = link.room.period;
+    const studentIds = link.seats.map((s) => s.studentId);
+    // Seluruh kursi siswa-siswa ini di semua ruang se-periode — satu kartu
+    // menampilkan semua slotnya.
+    const allSeats = await this.prisma.examSeat.findMany({
+      where: { studentId: { in: studentIds }, room: { academicYearId: year, period } },
+      include: {
+        room: { select: { id: true, name: true } },
+        class: { select: { id: true, name: true } },
+        link: {
+          include: {
+            exam: { select: { title: true } },
+            session: { select: { name: true, startAt: true, endAt: true } },
+          },
+        },
+      },
+    });
+    // Judul ujian untuk sesi umum — diturunkan dari sesi CBT yang mencakup
+    // kelas si pemilik kursi & beririsan waktu dengan jendela slotnya.
+    const sessions = await this.prisma.examSession.findMany({
+      where: { exam: { academicYearId: year } },
+      include: { exam: { select: { title: true } } },
+    });
+    const examTitleOf = (seat: (typeof allSeats)[number]) => {
+      if (seat.link?.exam?.title) return seat.link.exam.title;
+      const start = seat.link?.session?.startAt ?? seat.link?.startsAt ?? null;
+      const end = seat.link?.session?.endAt ?? seat.link?.endsAt ?? null;
+      const hit =
+        sessions.find((s) => (s.classIds as string[]).includes(seat.classId ?? '') && (!start || !end || (s.startAt < end && s.endAt > start)))
+        ?? sessions.find((s) => (s.classIds as string[]).includes(seat.classId ?? ''));
+      return hit?.exam.title ?? null;
+    };
+    // Password CBT — buat malas bila belum ada (satu password semua ujian).
+    const credentials: Record<string, string> = {};
+    for (const seat of link.seats) {
+      let pw = seat.student.password;
+      if (!pw) {
+        pw = genStudentPassword();
+        await this.prisma.student.update({ where: { id: seat.studentId }, data: { password: pw } });
+        await this.prisma.examCredential.updateMany({ where: { studentId: seat.studentId }, data: { password: pw } });
+      }
+      credentials[seat.studentId] = pw;
+    }
+    const seatsByStudent = new Map<string, typeof allSeats>();
+    for (const s of allSeats) seatsByStudent.set(s.studentId, [...(seatsByStudent.get(s.studentId) ?? []), s]);
+    const school = await this.prisma.school.findFirst();
+    return {
+      room: { id: link.room.id, name: link.room.name, period, academicYear: link.room.academicYear },
+      school,
+      cards: link.seats.map((seat) => ({
+        seatId: seat.id,
+        student: { id: seat.student.id, name: seat.student.name, nis: seat.student.nis },
+        className: seat.class?.name ?? null,
+        password: credentials[seat.studentId] ?? null,
+        rows: (seatsByStudent.get(seat.studentId) ?? [])
+          .map((s) => ({
+            examTitle: examTitleOf(s),
+            sessionName: s.link?.session?.name ?? s.link?.sessionLabel ?? 'Sesi',
+            startAt: s.link?.session?.startAt ?? s.link?.startsAt ?? null,
+            endAt: s.link?.session?.endAt ?? s.link?.endsAt ?? null,
+            roomName: s.room.name,
+            seatNo: s.seatNo,
+            code: s.code,
+          }))
+          .sort((a, b) => String(a.startAt ?? '').localeCompare(String(b.startAt ?? ''))),
+      })),
+    };
+  }
+
+  /** Roster satu periode — semua ruang + sesi + peserta berikut jenjang/L-P.
+   *  Dipakai cetak: daftar peserta per ruang, rekap kelas×ruang, daftar semua
+   *  peserta (mirror format Excel: REKAP, R.XX, SEMUA PESERTA). */
+  async examRoomRoster(academicYearId: string, period: string) {
+    const rooms = await this.prisma.examRoom.findMany({
+      where: { academicYearId, period },
+      include: {
+        links: {
+          include: {
+            exam: { select: { id: true, title: true } },
+            session: { select: { id: true, name: true, startAt: true, endAt: true } },
+            seats: {
+              include: {
+                student: { select: { id: true, name: true, nis: true, gender: true } },
+                class: { select: { id: true, name: true, gradeLevel: true } },
+              },
+              orderBy: { seatNo: 'asc' },
+            },
+          },
+          orderBy: [{ startsAt: 'asc' }, { sessionLabel: 'asc' }],
+        },
+        seats: {
+          where: { linkId: null },
+          include: {
+            student: { select: { id: true, name: true, nis: true, gender: true } },
+            class: { select: { id: true, name: true, gradeLevel: true } },
+          },
+          orderBy: { seatNo: 'asc' },
+        },
+      },
+      orderBy: { name: 'asc' },
+    });
+    const school = await this.prisma.school.findFirst();
+    const academicYear = await this.prisma.academicYear.findUnique({ where: { id: academicYearId }, select: { name: true } });
+    return { period, academicYear, school, rooms };
   }
 
   /** Data calon peserta ujian (US-1/US-2) — per rombel jenjang tertentu (default kelas akhir 9). */

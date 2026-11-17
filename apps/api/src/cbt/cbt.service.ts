@@ -110,10 +110,24 @@ export class CbtService {
   private async examForScope(examId: string) {
     const exam = await this.prisma.exam.findUnique({
       where: { id: examId },
-      include: { assessment: { include: { subject: { select: { code: true, name: true } } } } },
+      include: {
+        subject: { select: { code: true, name: true } },
+        assessment: { include: { subject: { select: { code: true, name: true } } } },
+      },
     });
     if (!exam) throw new NotFoundException('Ujian tidak ditemukan.');
     return exam;
+  }
+
+  /** Mapel efektif ujian — model baru di exam, legacy di asesmen. */
+  private subjectOf<T extends { subject?: { name: string } | null; assessment?: { subject?: { name: string } | null } }>(e: T) {
+    return e.subject ?? e.assessment?.subject ?? null;
+  }
+
+  /** Filter soal ujian: prefer yang menempel ke exam; fallback soal legacy asesmen. */
+  private async examQuestionWhere(exam: { id: string; assessmentId: string }) {
+    const own = await this.prisma.assessmentQuestion.count({ where: { examId: exam.id } });
+    return own ? { examId: exam.id } : { assessmentId: exam.assessmentId, examId: null };
   }
 
   private async targetGrades(classIds: string[]) {
@@ -131,7 +145,7 @@ export class CbtService {
     if (user.permissions.includes(PERMISSIONS.ACADEMIC_MANAGE)) return exam;
     const scope = await this.teacherScope(user);
     if (scope) {
-      if (!scope.familyIds.has(exam.assessment.subjectId)) {
+      if (!scope.familyIds.has(exam.subjectId ?? exam.assessment.subjectId ?? '')) {
         throw new ForbiddenException('Ujian ini di luar mapel/jenjang yang Anda ajar.');
       }
       const gs = await this.targetGrades(exam.classIds as string[]);
@@ -151,6 +165,7 @@ export class CbtService {
     const exams = await this.prisma.exam.findMany({
       where: academicYearId ? { academicYearId } : {},
       include: {
+        subject: { select: { name: true, code: true } },
         assessment: {
           select: {
             id: true, name: true, type: true, subjectId: true,
@@ -159,7 +174,7 @@ export class CbtService {
           },
         },
         sessions: { orderBy: { startAt: 'asc' } },
-        _count: { select: { attempts: true } },
+        _count: { select: { attempts: true, questions: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -174,7 +189,7 @@ export class CbtService {
     const gOf = new Map(grades.map((c) => [c.id, c.gradeLevel]));
     return exams.filter(
       (e) =>
-        scope.familyIds.has(e.assessment.subjectId) &&
+        scope.familyIds.has(e.subjectId ?? e.assessment.subjectId ?? '') &&
         (e.classIds as string[]).some((cid) => scope.grades.has(gOf.get(cid) ?? -1)),
     ).map((e) => byId.get(e.id)!);
   }
@@ -184,6 +199,7 @@ export class CbtService {
     const exams = await this.prisma.exam.findMany({
       where: academicYearId ? { academicYearId } : {},
       include: {
+        subject: { select: { name: true } },
         assessment: { select: { name: true, subject: { select: { name: true } } } },
         _count: { select: { attempts: true } },
       },
@@ -202,24 +218,23 @@ export class CbtService {
   }
 
   async createExam(dto: CreateExamDto, actorId: string) {
+    // Asesmen = payung periode saja (nama) — soal disusun di ujian sesudah dibuat.
     const assessment = await this.prisma.assessment.findUnique({
       where: { id: dto.assessmentId },
-      include: {
-        subject: { select: { name: true } },
-        _count: { select: { questions: true } },
-      },
+      select: { id: true, name: true, academicYearId: true, subjectId: true },
     });
     if (!assessment) throw new NotFoundException('Asesmen tidak ditemukan.');
-    if (assessment._count.questions === 0) {
-      throw new ConflictException('Asesmen belum punya butir soal — susun dulu di halaman asesmen.');
-    }
     const classes = await this.prisma.class.findMany({
       where: { id: { in: dto.classIds }, academicYearId: assessment.academicYearId },
-      select: { id: true },
+      select: { id: true, gradeLevel: true },
     });
     if (classes.length !== dto.classIds.length) {
       throw new BadRequestException('Ada kelas yang tidak dikenal / beda tahun ajaran dengan asesmen.');
     }
+    const subjectId = dto.subjectId ?? assessment.subjectId ?? null;
+    // Jenjang: dari dto, atau diturunkan bila semua rombel seragam.
+    const levels = [...new Set(classes.map((c) => c.gradeLevel))];
+    const gradeLevel = dto.gradeLevel ?? (levels.length === 1 ? levels[0]! : null);
     const start = new Date(dto.startAt);
     const end = new Date(dto.endAt);
     if (!(end > start)) throw new BadRequestException('Waktu selesai harus setelah waktu mulai.');
@@ -229,6 +244,8 @@ export class CbtService {
         title: dto.title?.trim() || assessment.name,
         instructions: dto.instructions ?? null,
         assessmentId: assessment.id,
+        subjectId,
+        gradeLevel,
         academicYearId: assessment.academicYearId,
         classIds: dto.classIds,
         startAt: start,
@@ -238,7 +255,7 @@ export class CbtService {
         showScore: dto.showScore ?? true,
         createdBy: actorId,
       },
-      include: { assessment: { select: { name: true, subject: { select: { name: true } } } } },
+      include: { subject: { select: { name: true } }, assessment: { select: { name: true } } },
     });
     await this.audit.log({ actorId, action: 'exam.create', entity: 'exam', entityId: exam.id });
     return exam;
@@ -249,10 +266,12 @@ export class CbtService {
     const exam = await this.prisma.exam.findUnique({
       where: { id },
       include: {
+        subject: { select: { name: true, code: true } },
+        questions: { orderBy: { number: 'asc' } },
         assessment: {
           include: {
             subject: { select: { name: true, code: true } },
-            questions: { orderBy: { number: 'asc' } },
+            questions: { where: { examId: null }, orderBy: { number: 'asc' } },
           },
         },
         sessions: { orderBy: { startAt: 'asc' } },
@@ -282,7 +301,7 @@ export class CbtService {
         canManage = true;
       } else {
         const scope = await this.teacherScope(user);
-        if (scope?.familyIds.has(exam.assessment.subjectId)) {
+        if (scope?.familyIds.has(exam.subjectId ?? exam.assessment.subjectId ?? '')) {
           const gs = await this.targetGrades(exam.classIds as string[]);
           canManage = gs.some((g) => scope.grades.has(g));
         }
@@ -314,6 +333,8 @@ export class CbtService {
         ...(dto.endAt !== undefined ? { endAt: end } : {}),
         ...(dto.durationMin !== undefined ? { durationMin: dto.durationMin } : {}),
         ...(dto.classIds !== undefined ? { classIds: dto.classIds } : {}),
+        ...(dto.subjectId !== undefined ? { subjectId: dto.subjectId || null } : {}),
+        ...(dto.gradeLevel !== undefined ? { gradeLevel: dto.gradeLevel } : {}),
         ...(dto.shuffle !== undefined ? { shuffle: dto.shuffle } : {}),
         ...(dto.showScore !== undefined ? { showScore: dto.showScore } : {}),
         ...(dto.status !== undefined ? { status: dto.status } : {}),
@@ -547,6 +568,7 @@ export class CbtService {
     const open = await this.prisma.exam.findMany({
       where: { status: 'OPEN' },
       include: {
+        subject: { select: { name: true } },
         assessment: { include: { subject: { select: { name: true } } } },
         attempts: { where: { studentId: student.id }, select: { status: true } },
       },
@@ -556,7 +578,7 @@ export class CbtService {
       .filter((e) => (e.classIds as string[]).some((cid) => classIds.includes(cid)))
       .map((e) => ({
         title: e.title,
-        subject: e.assessment.subject.name,
+        subject: this.subjectOf(e)?.name ?? '—',
         startAt: e.startAt,
         endAt: e.endAt,
         attemptStatus: e.attempts[0]?.status ?? null,
@@ -565,11 +587,11 @@ export class CbtService {
     if (!exams.length && cred) {
       const exam = await this.prisma.exam.findUniqueOrThrow({
         where: { id: cred.exam.id },
-        include: { assessment: { include: { subject: { select: { name: true } } } } },
+        include: { subject: { select: { name: true } }, assessment: { include: { subject: { select: { name: true } } } } },
       });
       exams.push({
         title: exam.title,
-        subject: exam.assessment.subject.name,
+        subject: this.subjectOf(exam)?.name ?? '—',
         startAt: exam.startAt,
         endAt: exam.endAt,
         attemptStatus: null,
@@ -580,6 +602,7 @@ export class CbtService {
     const scheduled = await this.prisma.exam.findMany({
       where: { startAt: { gte: since } },
       include: {
+        subject: { select: { name: true } },
         assessment: { include: { subject: { select: { name: true } } } },
         attempts: { where: { studentId: student.id }, select: { status: true, score: true, maxScore: true, submittedAt: true } },
       },
@@ -589,7 +612,7 @@ export class CbtService {
     const myExams = scheduled.filter((e) => (e.classIds as string[]).some((cid) => classIds.includes(cid)));
     const schedule = myExams.map((e) => ({
       title: e.title,
-      subject: e.assessment.subject.name,
+      subject: this.subjectOf(e)?.name ?? '—',
       status: e.status,
       startAt: e.startAt,
       endAt: e.endAt,
@@ -599,7 +622,7 @@ export class CbtService {
       .filter((e) => e.attempts[0]?.submittedAt)
       .map((e) => ({
         title: e.title,
-        subject: e.assessment.subject.name,
+        subject: this.subjectOf(e)?.name ?? '—',
         submittedAt: e.attempts[0]!.submittedAt,
         score: e.showScore ? e.attempts[0]!.score : null,
         maxScore: e.attempts[0]!.maxScore,
@@ -622,6 +645,7 @@ export class CbtService {
     const exam = await this.prisma.exam.findUnique({
       where: { code },
       include: {
+        subject: { select: { name: true } },
         assessment: { include: { subject: { select: { name: true } } } },
         sessions: { orderBy: { startAt: 'asc' } },
       },
@@ -712,19 +736,20 @@ export class CbtService {
     exam: {
       id: string; assessmentId: string; title: string; instructions: string | null;
       durationMin: number; startAt: Date; endAt: Date; showScore: boolean;
-      assessment: { name: string; subject: { name: string } };
+      subject?: { name: string } | null;
+      assessment: { name: string; subject: { name: string } | null };
     },
     student: { name: string; nis: string | null },
     className: string,
   ) {
     const qCount = await this.prisma.assessmentQuestion.count({
-      where: { assessmentId: exam.assessmentId },
+      where: await this.examQuestionWhere(exam),
     });
     return {
       token: attempt.token,
       exam: {
         title: exam.title,
-        subject: exam.assessment.subject.name,
+        subject: exam.subject?.name ?? exam.assessment.subject?.name ?? '—',
         instructions: exam.instructions,
         durationMin: exam.durationMin,
         startAt: exam.startAt,
@@ -746,7 +771,7 @@ export class CbtService {
     const attempt = await this.attemptOrThrow(token);
     const exam = await this.prisma.exam.findUniqueOrThrow({
       where: { id: attempt.examId },
-      include: { assessment: { include: { subject: { select: { name: true } } } } },
+      include: { subject: { select: { name: true } }, assessment: { include: { subject: { select: { name: true } } } } },
     });
     const student = await this.prisma.student.findUniqueOrThrow({
       where: { id: attempt.studentId },
@@ -785,7 +810,7 @@ export class CbtService {
     const exam = await this.prisma.exam.findUniqueOrThrow({ where: { id: attempt.examId } });
     const [questions, answers] = await Promise.all([
       this.prisma.assessmentQuestion.findMany({
-        where: { assessmentId: exam.assessmentId },
+        where: await this.examQuestionWhere(exam),
         orderBy: { number: 'asc' },
         select: { id: true, number: true, type: true, weight: true, prompt: true, options: true, passageCode: true, media: true },
       }),
@@ -835,7 +860,7 @@ export class CbtService {
     await this.ensureLive(attempt);
     const exam = await this.prisma.exam.findUniqueOrThrow({ where: { id: attempt.examId } });
     const q = await this.prisma.assessmentQuestion.findFirst({
-      where: { id: dto.questionId, assessmentId: exam.assessmentId },
+      where: { id: dto.questionId, OR: [{ examId: exam.id }, { assessmentId: exam.assessmentId, examId: null }] },
     });
     if (!q) throw new BadRequestException('Soal tidak dikenal.');
     await this.prisma.examAnswer.upsert({
@@ -869,8 +894,9 @@ export class CbtService {
       if (attempt.status === 'SUBMITTED') {
         return { submitted: true, score: attempt.exam.showScore ? attempt.score : null, maxScore: attempt.maxScore };
       }
+      const hasOwn = await tx.assessmentQuestion.count({ where: { examId: attempt.examId } });
       const questions = await tx.assessmentQuestion.findMany({
-        where: { assessmentId: attempt.exam.assessmentId },
+        where: hasOwn ? { examId: attempt.examId } : { assessmentId: attempt.exam.assessmentId, examId: null },
       });
       const answers = await tx.examAnswer.findMany({ where: { attemptId } });
       const byQ = new Map(answers.map((a) => [a.questionId, a]));
@@ -907,10 +933,10 @@ export class CbtService {
       const gradeScore = maxScore > 0 ? Math.round((score / maxScore) * scale) : 0;
       await tx.grade.upsert({
         where: {
-          assessmentId_studentId: { assessmentId: attempt.exam.assessmentId, studentId: attempt.studentId },
+          examId_studentId: { examId: attempt.examId, studentId: attempt.studentId },
         },
-        update: { score: gradeScore },
-        create: { assessmentId: attempt.exam.assessmentId, studentId: attempt.studentId, score: gradeScore },
+        update: { score: gradeScore, assessmentId: attempt.exam.assessmentId },
+        create: { examId: attempt.examId, assessmentId: attempt.exam.assessmentId, studentId: attempt.studentId, score: gradeScore },
       });
       await tx.examAttempt.update({
         where: { id: attemptId },
@@ -930,13 +956,13 @@ export class CbtService {
     const attempt = await this.attemptOrThrow(token);
     const exam = await this.prisma.exam.findUniqueOrThrow({
       where: { id: attempt.examId },
-      include: { assessment: { include: { subject: { select: { name: true } } } } },
+      include: { subject: { select: { name: true } }, assessment: { include: { subject: { select: { name: true } } } } },
     });
     return {
       status: attempt.status,
       submittedAt: attempt.submittedAt,
       examTitle: exam.title,
-      subject: exam.assessment.subject.name,
+      subject: exam.subject?.name ?? exam.assessment.subject?.name ?? '—',
       score: attempt.status === 'SUBMITTED' && exam.showScore ? attempt.score : null,
       maxScore: attempt.status === 'SUBMITTED' && exam.showScore ? attempt.maxScore : null,
     };
@@ -1037,9 +1063,15 @@ export class CbtService {
     });
     const byStudent = new Map(attempts.map((a) => [a.studentId, a]));
     const grades = await this.prisma.grade.findMany({
-      where: { assessmentId: exam.assessmentId, studentId: { in: enrollments.map((e) => e.studentId) } },
+      where: {
+        studentId: { in: enrollments.map((e) => e.studentId) },
+        OR: [{ examId }, { assessmentId: exam.assessmentId, examId: null }],
+      },
     });
-    const gradeOf = new Map(grades.map((g) => [g.studentId, g.score]));
+    // Prefer nilai bertaut ke ujian; grade lama (assesmen saja) jadi cadangan.
+    const gradeOf = new Map<string, number>();
+    for (const g of grades) if (!g.examId) gradeOf.set(g.studentId, g.score);
+    for (const g of grades) if (g.examId) gradeOf.set(g.studentId, g.score);
     const maxScore = attempts.reduce((m, a) => Math.max(m, a.maxScore ?? 0), 0);
     const scale = exam.assessment.maxScore || 100;
     // Fallback: Grade belum tertulis (attempt lama) → hitung dari skor mentah.
@@ -1082,7 +1114,7 @@ export class CbtService {
   async analysis(examId: string, classId: string | undefined, user: AuthUser) {
     const exam = await this.scopeOk(user, examId, false);
     const questions = await this.prisma.assessmentQuestion.findMany({
-      where: { assessmentId: exam.assessmentId },
+      where: await this.examQuestionWhere(exam),
       orderBy: { number: 'asc' },
     });
     let studentIds: string[] | undefined;
@@ -1129,7 +1161,7 @@ export class CbtService {
   async answerMatrix(examId: string, classId: string, user: AuthUser) {
     const exam = await this.scopeOk(user, examId, false);
     const questions = await this.prisma.assessmentQuestion.findMany({
-      where: { assessmentId: exam.assessmentId },
+      where: await this.examQuestionWhere(exam),
       orderBy: { number: 'asc' },
       select: { id: true, number: true, type: true, weight: true, key: true, prompt: true },
     });
@@ -1221,41 +1253,49 @@ export class CbtService {
       throw new BadRequestException(`Nilai harus 0–${scale}.`);
     }
     const grade = await this.prisma.grade.upsert({
-      where: { assessmentId_studentId: { assessmentId: exam.assessmentId, studentId } },
-      update: { score: Math.round(score) },
-      create: { assessmentId: exam.assessmentId, studentId, score: Math.round(score) },
+      where: { examId_studentId: { examId, studentId } },
+      update: { score: Math.round(score), assessmentId: exam.assessmentId },
+      create: { examId, assessmentId: exam.assessmentId, studentId, score: Math.round(score) },
     });
     await this.audit.log({
       actorId: user.id, action: 'exam.grade-update', entity: 'exam', entityId: examId,
-      metadata: { studentId, score: Math.round(score), assessmentId: exam.assessmentId },
+      metadata: { studentId, score: Math.round(score) },
     });
     return grade;
   }
 
-  // ================= Soal ujian (milik asesmen terkait) =================
+  // ================= Soal ujian (milik ujian — model baru) =================
 
   async examQuestions(examId: string, user: AuthUser) {
-    const exam = await this.scopeOk(user, examId, false);
-    return this.ops.listQuestions(exam.assessmentId);
+    await this.scopeOk(user, examId, false);
+    const own = await this.ops.listExamQuestions(examId);
+    if (own.length) return own;
+    // Fallback: ujian legacy tanpa soal sendiri — pakai bank asesmen.
+    const exam = await this.prisma.exam.findUniqueOrThrow({ where: { id: examId }, select: { assessmentId: true } });
+    return this.prisma.assessmentQuestion.findMany({
+      where: { assessmentId: exam.assessmentId, examId: null },
+      orderBy: { number: 'asc' },
+      include: { _count: { select: { answers: true } } },
+    });
   }
 
-  async setExamQuestions(examId: string, questions: Parameters<OpsService['setQuestions']>[1], user: AuthUser) {
-    const exam = await this.scopeOk(user, examId, true);
+  async setExamQuestions(examId: string, questions: Parameters<OpsService['setExamQuestions']>[1], user: AuthUser) {
+    await this.scopeOk(user, examId, true);
     for (const q of questions) {
       if (!['MCQ', 'MCQ_COMPLEX', 'TRUE_FALSE', 'TRUE_FALSE_COMPLEX'].includes(q.type)) {
         throw new BadRequestException(`Tipe soal ${q.type} tidak didukung — hanya PG/PGK/BS/BSK.`);
       }
     }
-    const r = await this.ops.setQuestions(exam.assessmentId, questions);
+    const r = await this.ops.setExamQuestions(examId, questions);
     await this.audit.log({ actorId: user.id, action: 'exam.questions-set', entity: 'exam', entityId: examId, metadata: { count: r.count } });
     return r;
   }
 
   async importExamQuestions(examId: string, file: Express.Multer.File, user: AuthUser) {
-    const exam = await this.scopeOk(user, examId, true);
+    await this.scopeOk(user, examId, true);
     const name = file.originalname.toLowerCase();
-    let questions: Parameters<OpsService['setQuestions']>[1];
-    let passages: Parameters<OpsService['setQuestions']>[2];
+    let questions: Parameters<OpsService['setExamQuestions']>[1];
+    let passages: Parameters<OpsService['setExamQuestions']>[2];
     if (name.endsWith('.docx')) {
       const r = await this.ops.parseQuestionDocx(file);
       questions = r.questions; passages = r.passages;
@@ -1268,7 +1308,7 @@ export class CbtService {
         throw new BadRequestException(`Tipe soal ${q.type} tidak didukung — hanya PG/PGK/BS/BSK.`);
       }
     }
-    const r = await this.ops.setQuestions(exam.assessmentId, questions, passages);
+    const r = await this.ops.setExamQuestions(examId, questions, passages);
     await this.audit.log({ actorId: user.id, action: 'exam.questions-import', entity: 'exam', entityId: examId, metadata: { count: r.count } });
     return r;
   }
@@ -1276,6 +1316,21 @@ export class CbtService {
   async examPassages(examId: string, user: AuthUser) {
     const exam = await this.scopeOk(user, examId, false);
     return this.ops.listPassages(exam.assessmentId);
+  }
+
+  /** Template impor soal ujian — pakai generator yang sama dengan asesmen. */
+  examQuestionTemplate(format: 'xlsx' | 'docx', counts?: { pg?: number; pgk?: number; bs?: number; bsk?: number }) {
+    return format === 'docx'
+      ? this.ops.questionTemplateDocx()
+      : this.ops.questionTemplateXlsx(counts);
+  }
+
+  /** Preview impor soal ujian (tanpa menyimpan). */
+  async previewImportExamQuestions(file: Express.Multer.File, user: AuthUser, examId: string) {
+    await this.scopeOk(user, examId, true);
+    const name = file.originalname.toLowerCase();
+    if (name.endsWith('.docx')) return this.ops.parseQuestionDocx(file);
+    return { questions: this.ops.parseQuestionWorkbook(file), passages: this.ops.parsePassageSheet(file) };
   }
 
   /** Gambar soal/bacaan hasil impor — key `qmedia/<uuid>.<ext>`. */

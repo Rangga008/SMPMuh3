@@ -96,7 +96,7 @@ export default function MonitorCbtPage() {
                     <p className="font-extrabold text-sand-900">{x.title}</p>
                     <Badge tone={STATUS[x.status].tone}>{STATUS[x.status].label}</Badge>
                   </div>
-                  <p className="mt-1 text-xs text-sand-500">{x.assessment.subject.name} · {x.assessment.name}</p>
+                  <p className="mt-1 text-xs text-sand-500">{x.subject?.name ?? x.assessment.subject?.name ?? '—'} · {x.assessment.name}</p>
                   <p className="mt-1 text-xs text-sand-500">{dt(x.startAt)} → {dt(x.endAt)}</p>
                   <p className="mt-2 text-xs text-sand-600">
                     {x.classes.map((c) => c.name).join(', ')} · {x._count?.attempts ?? 0} masuk
@@ -115,7 +115,7 @@ export default function MonitorCbtPage() {
             <button onClick={() => { setExamId(''); setClassId(null); }} className="text-sm font-semibold text-primary-700 hover:underline">← Ujian lain</button>
             <div className="min-w-0 flex-1">
               <p className="truncate font-extrabold text-sand-900">{exam.title} <span className="font-mono text-sm font-bold text-primary-700">{exam.code}</span></p>
-              <p className="text-xs text-sand-500">{exam.assessment.subject.name} · {dt(exam.startAt)}–{dt(exam.endAt)} · durasi {exam.durationMin} mnt</p>
+              <p className="text-xs text-sand-500">{exam.subject?.name ?? exam.assessment.subject?.name ?? '—'} · {dt(exam.startAt)}–{dt(exam.endAt)} · durasi {exam.durationMin} mnt</p>
             </div>
             <Badge tone={STATUS[exam.status].tone}>{STATUS[exam.status].label}</Badge>
             {canReadAcademic ? <Link href={`/kurikulum/ujian/${exam.id}`}><Button size="sm" variant="outline">Halaman ujian →</Button></Link> : null}

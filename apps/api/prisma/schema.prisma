@@ -928,8 +928,8 @@ model PayScale {
   name          String  // e.g. "0–4 tahun"
   minYears      Int     @map("min_years")
   maxYears      Int?    @map("max_years") // null = tak terbatas
-  hourlyRate    Int     @map("hourly_rate")    // per jam wajib
-  transportRate Int     @map("transport_rate") // per jam transport
+  hourlyRate    Int     @map("hourly_rate")    // tarif per jam pelajaran (gaji pokok)
+  transportRate Int     @map("transport_rate") // tarif per JP transport
   isActive      Boolean @default(true) @map("is_active")
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
@@ -939,14 +939,14 @@ model PayScale {
   @@map("pay_scales")
 }
 
-/** Absensi harian guru — status + menit mengajar yang dihitung. */
+/** Absensi harian pegawai — status + jam pelajaran (JP) efektif hari itu. */
 model EmployeeAttendance {
   id              String          @id @default(uuid()) @db.Uuid
   employeeId      String          @map("employee_id") @db.Uuid
   date            DateTime        @db.Date
   status          EmpAttendanceStatus
   leaveCategory   LeaveCategory?  @map("leave_category") // kategori izin — SAKIT/DINAS/WORKSHOP/LAINNYA
-  teachingMinutes Int             @default(0) @map("teaching_minutes")
+  teachingJp      Float           @default(0) @map("teaching_jp") // JP efektif hari itu — entri manual langsung JP; otomatis dari jadwal/tap dikonversi ÷ menit-per-JP
   note            String?
   checkInAt       DateTime?       @map("check_in_at")  // tap masuk (mesin/manual)
   checkOutAt      DateTime?       @map("check_out_at") // tap pulang
@@ -1068,11 +1068,12 @@ model AcademicCalendarEvent {
   @@map("academic_calendar_events")
 }
 
-/** Pengaturan payroll global — potongan otomatis dari data absensi. */
+/** Pengaturan payroll global — potongan otomatis dari data absensi + satuan jam pelajaran. */
 model PayrollSetting {
   id                  String   @id @default("global")
   lateDeductionPerDay Int      @default(0) @map("late_deduction_per_day") // potongan per hari telat
   lateDeductionPerMin Int      @default(0) @map("late_deduction_per_min") // potongan per menit telat
+  lessonMinutes       Int      @default(40) @map("lesson_minutes") // 1 jam pelajaran = N menit (untuk konversi absen → JP)
   updatedAt           DateTime @updatedAt @map("updated_at")
 
   @@map("payroll_settings")
@@ -1235,10 +1236,11 @@ model PayrollItem {
   id              String   @id @default(uuid()) @db.Uuid
   runId           String   @map("run_id") @db.Uuid
   employeeId      String   @map("employee_id") @db.Uuid
-  workedMinutes   Int      @default(0) @map("worked_minutes")  // Σ menit hadir (otomatis dari absensi)
-  manualMinutes   Int      @default(0) @map("manual_minutes")  // koreksi manual keuangan — ditambah ke worked (boleh negatif)
+  workedMinutes   Int      @default(0) @map("worked_minutes")  // Σ menit hadir mentah (referensi — dari absensi)
+  transportJp     Float    @default(0) @map("transport_jp")    // Σ jam pelajaran transport (absen + koreksi manual)
+  manualJp        Float    @default(0) @map("manual_jp")       // koreksi manual keuangan dalam JP (boleh negatif)
   manualNote      String?  @map("manual_note")                 // alasan koreksi manual
-  requiredMinutes Int      @default(0) @map("required_minutes") // jam wajib × minggu
+  requiredJp      Float    @default(0) @map("required_jp")     // jam wajib per bulan dalam JP
   requiredManual  Boolean  @default(false) @map("required_manual") // true bila jam wajib dioverride manual (dipertahankan saat hitung ulang)
   basePay         Int      @default(0) @map("base_pay")
   transportPay    Int      @default(0) @map("transport_pay")
@@ -1397,9 +1399,9 @@ model Employee {
   // payroll
   payScaleId           String?  @map("pay_scale_id") @db.Uuid
   workStartDate        DateTime? @map("work_start_date") @db.Date // masa kerja → golongan
-  monthlyRequiredMinutes Int     @default(0) @map("monthly_required_minutes") // jam wajib per bulan (mis. 44 jam)
-  hourlyRate           Int?     @map("hourly_rate")     // override tarif/jam
-  transportRate        Int?     @map("transport_rate")  // override transport/jam
+  requiredJp           Float    @default(0) @map("required_jp") // jam wajib per bulan dalam jam pelajaran (mis. 44 JP)
+  hourlyRate           Int?     @map("hourly_rate")     // override tarif per JP (gaji pokok)
+  transportRate        Int?     @map("transport_rate")  // override tarif transport per JP
   isCertified          Boolean  @default(false) @map("is_certified") // sertifikasi (BOS)
   fingerPin            String?  @unique @map("finger_pin") // user id di mesin absensi
   department           String?  // bidang: KURIKULUM|KESISWAAN|TATA_USAHA|KEUANGAN|HUMAS|LAINNYA
@@ -1469,6 +1471,7 @@ model Subject {
   curriculum  Curriculum?          @relation(fields: [curriculumId], references: [id], onDelete: SetNull)
   assignments TeachingAssignment[]
   assessments Assessment[]
+  exams       Exam[]
 
   @@map("subjects")
 }
@@ -1650,15 +1653,15 @@ model ExtracurricularMember {
 
 model Assessment {
   id             String         @id @default(uuid()) @db.Uuid
-  subjectId      String         @map("subject_id") @db.Uuid
+  subjectId      String?        @map("subject_id") @db.Uuid // legacy: dulu asesmen = bank soal per mapel
   classId        String?        @map("class_id") @db.Uuid
   academicYearId String         @map("academic_year_id") @db.Uuid
-  name           String // e.g. "Sumatif Bab 1"
+  name           String // e.g. "ASAS Ganjil 2026" — kini payung periode ujian
   type           AssessmentType
   maxScore       Int            @default(100) @map("max_score")
   createdAt      DateTime       @default(now()) @map("created_at")
 
-  subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  subject      Subject?     @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   class        Class?       @relation(fields: [classId], references: [id], onDelete: SetNull)
   academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
   grades       Grade[]
@@ -1686,16 +1689,19 @@ model AssessmentPassage {
 
 model Grade {
   id           String  @id @default(uuid()) @db.Uuid
-  assessmentId String  @map("assessment_id") @db.Uuid
+  assessmentId String? @map("assessment_id") @db.Uuid // nilai lama (per asesmen)
+  examId       String? @map("exam_id") @db.Uuid // nilai baru — per ujian (mapel+jenjang)
   studentId    String  @map("student_id") @db.Uuid
   score        Int
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
-  assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
-  student    Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  assessment Assessment? @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  exam       Exam?       @relation(fields: [examId], references: [id], onDelete: SetNull)
+  student    Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
   @@unique([assessmentId, studentId])
+  @@unique([examId, studentId])
   @@map("grades")
 }
 
@@ -1953,7 +1959,8 @@ enum QuestionType {
 /** Butir soal per asesmen — kunci + bobot untuk analisis. */
 model AssessmentQuestion {
   id           String       @id @default(uuid()) @db.Uuid
-  assessmentId String       @map("assessment_id") @db.Uuid
+  assessmentId String?      @map("assessment_id") @db.Uuid // soal lama (bank per mapel)
+  examId       String?      @map("exam_id") @db.Uuid // soal baru — milik satu ujian
   number       Int // nomor soal
   type         QuestionType @default(MCQ)
   weight       Int          @default(1) // bobot nilai
@@ -1963,11 +1970,13 @@ model AssessmentQuestion {
   passageCode  String?      @map("passage_code") // kode bacaan → AssessmentPassage.code
   media        Json? // gambar soal dari impor Word — [{key, name}]
 
-  assessment  Assessment      @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  assessment  Assessment?     @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  exam        Exam?           @relation(fields: [examId], references: [id], onDelete: Cascade)
   answers     StudentAnswer[]
   examAnswers ExamAnswer[]
 
   @@unique([assessmentId, number])
+  @@unique([examId, number])
   @@map("assessment_questions")
 }
 
@@ -2009,6 +2018,8 @@ model Exam {
   code           String         @unique // kode masuk — dibagikan pengawas, mis. "X4K2-Q7MP"
   title          String // judul tampil ke siswa
   assessmentId   String         @map("assessment_id") @db.Uuid
+  subjectId      String?        @map("subject_id") @db.Uuid // mapel ujian — model baru (dulu di asesmen)
+  gradeLevel     Int?           @map("grade_level") // jenjang sasaran (7/8/9); null = campuran
   academicYearId String         @map("academic_year_id") @db.Uuid
   classIds       Json // array uuid kelas yang boleh ikut
   instructions   String? // instruksi di halaman persiapan
@@ -2023,6 +2034,9 @@ model Exam {
   updatedAt      DateTime       @updatedAt @map("updated_at")
 
   assessment Assessment    @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  subject    Subject?      @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  questions  AssessmentQuestion[]
+  grades     Grade[]
   attempts   ExamAttempt[]
   sessions   ExamSession[]
   rooms      ExamRoom[]
@@ -2267,6 +2281,7 @@ model ExamRoom {
   period         String // label periode ujian, e.g. "US 2026" / "PTS Ganjil"
   academicYearId String  @map("academic_year_id") @db.Uuid
   capacity       Int     @default(24)
+  participantCode String @default("145") @map("participant_code") // kode tengah no peserta — format {jenjang:2d}-{kode}-{urut:3d}, mis. "07-145-001"
   examId         String?  @map("exam_id") @db.Uuid // legacy: tautan tunggal (digantikan links)
   prasaranaId    String?  @map("prasarana_id") @db.Uuid // ruangan dari data Sarpras/Prasarana
   createdAt      DateTime @default(now()) @map("created_at")
@@ -2309,6 +2324,7 @@ model ExamSeat {
   classId   String? @map("class_id") @db.Uuid
   seatNo    Int?    @map("seat_no")
   code      String? @unique // kode peserta ujian — tercetak di kartu, dipakai masuk CBT
+  present   Boolean? // checklist hadir pengawas — null belum dicek, true hadir, false tidak
 
   room    ExamRoom      @relation(fields: [roomId], references: [id], onDelete: Cascade)
   link    ExamRoomExam? @relation(fields: [linkId], references: [id], onDelete: Cascade)

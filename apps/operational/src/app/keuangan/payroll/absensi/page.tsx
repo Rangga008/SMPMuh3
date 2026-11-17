@@ -7,12 +7,14 @@ import { DataTable } from '@/components/data-table';
 import { PageTitle, Widget } from '@/components/widgets';
 import { PERMISSIONS } from '@smpmuh3/types';
 import {
+  getPayrollSettings,
   listEmpAttendance,
   listPayrollEmployees,
   me,
   saveEmpAttendance,
   type EmpAttendance,
   type EmployeePayroll,
+  type PayrollSettings,
 } from '@/lib/api';
 
 const STATUSES = ['HADIR', 'TELAT', 'IZIN', 'SAKIT', 'ALPHA'] as const;
@@ -36,6 +38,7 @@ export default function AbsensiPage() {
   const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [rows, setRows] = useState<Record<string, Row>>({});
   const [monthly, setMonthly] = useState<EmpAttendance[]>([]);
+  const [settings, setSettings] = useState<PayrollSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -60,7 +63,7 @@ export default function AbsensiPage() {
         for (const e of employees) {
           const r = dayRows.find((x) => x.employeeId === e.id);
           next[e.id] = r
-            ? { status: r.status, minutes: String(r.teachingMinutes || ''), note: r.note ?? '' }
+            ? { status: r.status, minutes: String(r.teachingJp || ''), note: r.note ?? '' }
             : { status: 'HADIR', minutes: '', note: '' };
         }
         setRows(next);
@@ -71,6 +74,7 @@ export default function AbsensiPage() {
 
   useEffect(() => {
     listPayrollEmployees().then(setEmployees).catch(() => undefined);
+    getPayrollSettings().then(setSettings).catch(() => undefined);
     me().then((u) => setCanManage(u.permissions.includes(PERMISSIONS.PAYROLL_MANAGE))).catch(() => undefined);
   }, []);
 
@@ -94,7 +98,7 @@ export default function AbsensiPage() {
         .map(([employeeId, r]) => ({
           employeeId,
           status: r.status,
-          teachingMinutes: Number(r.minutes) || 0,
+          teachingJp: Number(r.minutes) || 0,
           ...(r.note ? { note: r.note } : {}),
         }));
       if (entries.length === 0) { setNotice('Tidak ada perubahan untuk disimpan.'); return; }
@@ -109,14 +113,30 @@ export default function AbsensiPage() {
     }
   }
 
+  const lessonMin = Math.max(1, settings?.lessonMinutes ?? 40);
+  // JP hadir satu hari — sama dengan payroll: JP tersimpan, selain itu tap ÷ menit-per-JP.
+  const dayJp = (r: EmpAttendance) =>
+    r.teachingJp > 0
+      ? r.teachingJp
+      : r.checkInAt && r.checkOutAt
+        ? Math.round(
+            Math.max(0, Math.round((new Date(r.checkOutAt).getTime() - new Date(r.checkInAt).getTime()) / 60000)) / lessonMin,
+          )
+        : 0;
+  const dayMin = (r: EmpAttendance) =>
+    r.teachingJp > 0
+      ? Math.round(r.teachingJp * lessonMin)
+      : r.checkInAt && r.checkOutAt
+        ? Math.max(0, Math.round((new Date(r.checkOutAt).getTime() - new Date(r.checkInAt).getTime()) / 60000))
+        : 0;
   const summary = employees.map((e) => {
     const recs = monthly.filter((a) => a.employeeId === e.id);
     const count = (s: string) => recs.filter((r) => r.status === s).length;
-    const minutes = recs
-      .filter((r) => r.status === 'HADIR' || r.status === 'TELAT')
-      .reduce((s, r) => s + r.teachingMinutes, 0);
+    const present = recs.filter((r) => r.status === 'HADIR' || r.status === 'TELAT');
+    const minutes = present.reduce((s, r) => s + dayMin(r), 0);
+    const jpTotal = present.reduce((s, r) => s + dayJp(r), 0);
     const lateMin = recs.reduce((s, r) => s + (r.lateMinutes || 0), 0);
-    return { emp: e, hadir: count('HADIR'), telat: count('TELAT'), izin: count('IZIN'), sakit: count('SAKIT'), alpha: count('ALPHA'), minutes, lateMin };
+    return { emp: e, hadir: count('HADIR'), telat: count('TELAT'), izin: count('IZIN'), sakit: count('SAKIT'), alpha: count('ALPHA'), minutes, jpTotal, lateMin };
   });
 
   return (
@@ -206,7 +226,7 @@ export default function AbsensiPage() {
           </div>
         </div>
         <DataTable
-          head={['Pegawai', 'Masuk', 'Pulang', 'Status', 'Menit ngajar', 'Catatan']}
+          head={['Pegawai', 'Masuk', 'Pulang', 'Status', 'JP ngajar', 'Catatan']}
           loading={loading}
           error={null}
           empty={employees.length === 0 ? 'Belum ada pegawai aktif.' : 'Tidak ada pegawai cocok dengan pencarian.'}
@@ -289,7 +309,7 @@ export default function AbsensiPage() {
         {canManage ? (
           <>
             <p className="mt-3 text-[11px] text-sand-400">
-              Menit ngajar terisi otomatis dari jadwal hari itu saat disimpan — isi manual hanya untuk koreksi (mis. guru pengganti).
+              JP ngajar terisi otomatis dari jadwal hari itu saat disimpan (dikonversi {lessonMin} mnt = 1 JP) — isi manual hanya untuk koreksi (mis. guru pengganti).
             </p>
             <div className="mt-2 flex justify-end">
               <Button size="sm" onClick={save} disabled={busy}>{busy ? 'Menyimpan…' : 'Simpan Perubahan'}</Button>
@@ -308,7 +328,7 @@ export default function AbsensiPage() {
             </Field>
           </div>
           <DataTable
-            head={['Pegawai', 'Hadir', 'Telat', 'Izin', 'Sakit', 'Alpha', 'Akumulasi telat', 'Menit efektif']}
+            head={['Pegawai', 'Hadir', 'Telat', 'Izin', 'Sakit', 'Alpha', 'Akumulasi telat', `Transport (JP @${lessonMin} mnt)`]}
             loading={false}
             error={null}
             empty={employees.length === 0 ? '—' : undefined}
@@ -325,7 +345,7 @@ export default function AbsensiPage() {
                   {s.lateMin ? `${s.lateMin} mnt` : '—'}
                 </td>
                 <td className="whitespace-nowrap px-5 py-2.5 font-semibold text-sand-900">
-                  {(s.minutes / 60).toLocaleString('id-ID', { maximumFractionDigits: 1 })} jam
+                  {s.jpTotal} JP
                   <span className="ml-1 text-xs font-normal text-sand-400">({s.minutes} mnt)</span>
                 </td>
               </tr>

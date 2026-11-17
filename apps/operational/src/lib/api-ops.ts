@@ -267,8 +267,10 @@ export const upsertUniform = (dto: { day: number; name: string; note?: string })
 
 export interface ExamSeatView {
   id: string; seatNo?: number | null; code?: string | null;
-  student: { id: string; name: string; nis?: string | null };
-  class?: { id: string; name: string } | null;
+  student: { id: string; name: string; nis?: string | null; gender?: string | null };
+  class?: { id: string; name: string; gradeLevel?: number | null } | null;
+  /** Checklist hadir oleh pengawas — null = belum dicek. */
+  present?: boolean | null;
 }
 export interface ExamRoomLinkView {
   id: string; examId?: string | null; sessionId?: string | null;
@@ -286,6 +288,8 @@ export const linkSessionStart = (l: ExamRoomLinkView) => l.session?.startAt ?? l
 export const linkSessionEnd = (l: ExamRoomLinkView) => l.session?.endAt ?? l.endsAt ?? null;
 export interface ExamRoomView {
   id: string; name: string; period: string; capacity: number; examId?: string | null;
+  /** Kode tengah nomor peserta — format {jenjang}-{kode}-{urut}, mis. "145". */
+  participantCode?: string;
   prasaranaId?: string | null;
   prasarana?: { id: string; name: string } | null;
   exam?: { id: string; code: string; title: string; startAt: string; endAt: string } | null;
@@ -295,9 +299,9 @@ export interface ExamRoomView {
 }
 export const listExamRooms = (academicYearId: string, period?: string) =>
   req<ExamRoomView[]>(`/ops/exam-rooms?academicYearId=${academicYearId}${period ? `&period=${period}` : ''}`);
-export const createExamRoom = (dto: { name: string; period: string; academicYearId: string; capacity?: number; examId?: string; prasaranaId?: string }) =>
+export const createExamRoom = (dto: { name: string; period: string; academicYearId: string; capacity?: number; participantCode?: string; examId?: string; prasaranaId?: string }) =>
   req('/ops/exam-rooms', { method: 'POST', json: dto });
-export const updateExamRoom = (id: string, dto: { name?: string; period?: string; capacity?: number; examId?: string | null; prasaranaId?: string | null }) =>
+export const updateExamRoom = (id: string, dto: { name?: string; period?: string; capacity?: number; participantCode?: string; examId?: string | null; prasaranaId?: string | null }) =>
   req(`/ops/exam-rooms/${id}`, { method: 'PATCH', json: dto });
 export const deleteExamRoom = (id: string) => req(`/ops/exam-rooms/${id}`, { method: 'DELETE' });
 export const removeExamSeat = (seatId: string) => req(`/ops/exam-seats/${seatId}`, { method: 'DELETE' });
@@ -321,6 +325,40 @@ export const getExamCards = (roomId: string, linkId?: string) =>
     seatExam?: Record<string, string>;
     school: { name: string; logoUrl?: string | null; npsn?: string | null } | null;
   }>(`/ops/exam-rooms/${roomId}/cards${linkId ? `?linkId=${linkId}` : ''}`);
+/** Checklist hadir satu peserta oleh pengawas. */
+export const setSeatAttendance = (seatId: string, present: boolean | null) =>
+  req(`/ops/exam-seats/${seatId}/attendance`, { method: 'PATCH', json: { present } });
+/** Checklist hadir massal satu sesi ruang. */
+export const setLinkAttendance = (linkId: string, presentIds: string[]) =>
+  req<{ present: number }>(`/ops/exam-room-links/${linkId}/attendance`, { method: 'PATCH', json: { presentIds } });
+/** Satu kartu per siswa — memuat SEMUA jadwal ujiannya se-periode. */
+export const getStudentCards = (linkId: string) =>
+  req<{
+    room: { id: string; name: string; period: string; academicYear: AcademicYear };
+    school: { name: string; logoUrl?: string | null; npsn?: string | null } | null;
+    cards: {
+      seatId: string;
+      student: { id: string; name: string; nis?: string | null };
+      className: string | null;
+      password: string | null;
+      rows: {
+        examTitle: string | null; sessionName: string;
+        startAt: string | null; endAt: string | null;
+        roomName: string; seatNo: number; code: string;
+      }[];
+    }[];
+  }>(`/ops/exam-room-links/${linkId}/student-cards`);
+
+/** Roster satu periode — semua ruang+sesi+peserta dengan gender & jenjang,
+ *  untuk cetak daftar peserta per ruang, rekap kelas×ruang, dan semua peserta. */
+export interface ExamRoster {
+  period: string;
+  academicYear: { name: string } | null;
+  school: { name: string; logoUrl?: string | null; npsn?: string | null; address?: string | null } | null;
+  rooms: (ExamRoomView & { links: (ExamRoomLinkView & { seats: ExamSeatView[] })[] })[];
+}
+export const getExamRoomRoster = (academicYearId: string, period: string) =>
+  req<ExamRoster>(`/ops/exam-rooms/roster?academicYearId=${academicYearId}&period=${encodeURIComponent(period)}`);
 
 // ---- US-1 / US-2: calon peserta ujian ----
 export interface UsCandidate {
@@ -478,15 +516,20 @@ export interface ExamView {
   academicYearId: string;
   status: 'DRAFT' | 'OPEN' | 'CLOSED';
   classIds: string[]; classNames?: string[];
+  /** Model baru — ujian = per mapel per jenjang. */
+  subjectId?: string | null; gradeLevel?: number | null;
+  subject?: { name: string; code: string } | null;
+  /** Soal milik ujian ini (model baru); kosong → pakai bank asesmen (legacy). */
+  questions?: AssessmentQuestion[];
   startAt: string; endAt: string; durationMin: number;
   shuffle: boolean; showScore: boolean; createdAt: string;
   assessment: {
     id: string; name: string; type: string;
-    subject: { name: string; code: string };
+    subject?: { name: string; code: string } | null;
     _count?: { questions: number };
     questions?: AssessmentQuestion[];
   };
-  _count?: { attempts: number };
+  _count?: { attempts: number; questions?: number };
   sessions?: ExamSessionView[];
   canManage?: boolean;
   attempts?: {
@@ -498,7 +541,8 @@ export interface ExamView {
 export const listExams = (academicYearId?: string) =>
   req<ExamView[]>(`/cbt/exams${academicYearId ? `?academicYearId=${academicYearId}` : ''}`);
 export const createExam = (dto: {
-  assessmentId: string; classIds: string[]; startAt: string; endAt: string;
+  assessmentId: string; subjectId?: string | undefined; gradeLevel?: number | undefined;
+  classIds: string[]; startAt: string; endAt: string;
   durationMin: number; title?: string | undefined; instructions?: string | undefined;
   shuffle?: boolean | undefined; showScore?: boolean | undefined;
 }) => req<ExamView>('/cbt/exams', { method: 'POST', json: dto });
@@ -506,6 +550,7 @@ export const getExam = (id: string) => req<ExamView>(`/cbt/exams/${id}`);
 export const updateExam = (id: string, dto: Partial<{
   title: string; instructions: string | null; startAt: string; endAt: string;
   durationMin: number; classIds: string[]; shuffle: boolean; showScore: boolean;
+  subjectId: string | null; gradeLevel: number | null;
   status: 'DRAFT' | 'OPEN' | 'CLOSED';
 }>) => req<ExamView>(`/cbt/exams/${id}`, { method: 'PATCH', json: dto });
 export const regenerateExamCode = (id: string) =>
@@ -593,3 +638,15 @@ export const importExamQuestions = (id: string, file: File) => {
   const fd = new FormData(); fd.append('file', file);
   return req<{ count: number }>(`/cbt/exams/${id}/questions/import`, { method: 'POST', body: fd });
 };
+export const previewExamImportQuestions = (id: string, file: File) => {
+  const fd = new FormData(); fd.append('file', file);
+  return req<{ questions: (Omit<ExamQuestion, 'id'> & { id?: string })[]; passages: Omit<AssessmentPassage, 'id'>[] }>(
+    `/cbt/exams/${id}/questions/import-preview`, { method: 'POST', body: fd },
+  );
+};
+export const downloadExamQuestionTemplate = (id: string, counts?: { pg: number; pgk: number; bs: number; bsk: number }) =>
+  counts
+    ? downloadFile(`/cbt/exams/${id}/questions/template?pg=${counts.pg}&pgk=${counts.pgk}&bs=${counts.bs}&bsk=${counts.bsk}`, 'template-soal.xlsx')
+    : downloadFile(`/cbt/exams/${id}/questions/template`, 'template-soal.xlsx');
+export const downloadExamQuestionTemplateDocx = (id: string) =>
+  downloadFile(`/cbt/exams/${id}/questions/template.docx`, 'template-import-soal.docx');

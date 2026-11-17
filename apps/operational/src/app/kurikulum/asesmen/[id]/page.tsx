@@ -1,31 +1,36 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { PageTitle, Widget } from '@/components/widgets';
-import { DataTable } from '@/components/data-table';
-import { API, ApiError, listClasses, listSubjects, updateAssessment, type ClassView } from '@/lib/api';
+import { ExamPanel } from '@/components/exam-panel';
+import {
+  API,
+  ApiError,
+  ensureAssessmentExam,
+  getAssessment,
+  listClasses,
+  listSubjects,
+  updateAssessment,
+  type AssessmentView,
+  type ClassView,
+} from '@/lib/api';
 import { richHtml } from '@/lib/math';
 import {
-  downloadGenTemplate,
-  downloadDocxTemplate,
-  getAnswerMatrix,
+  downloadExamQuestionTemplate,
+  downloadExamQuestionTemplateDocx,
+  examQuestions,
   getAssessmentPassages,
-  getAssessmentQuestions,
-  getQuestionAnalysis,
-  listExams,
-  previewImportQuestions,
-  saveQuestionAnswers,
+  previewExamImportQuestions,
   setAssessmentPassages,
-  setAssessmentQuestions,
-  updateExam,
+  setExamQuestions,
   uploadQuestionMedia,
   type AssessmentPassage,
   type AssessmentQuestion,
-  type ExamView,
+  type ExamQuestion,
 } from '@/lib/api-ops';
 
 const TYPE_LABEL: Record<string, string> = {
@@ -113,21 +118,26 @@ function toApi(d: QDraft): Partial<AssessmentQuestion> {
   };
 }
 
-type Matrix = Awaited<ReturnType<typeof getAnswerMatrix>>;
 type PassageDraft = { code: string; content: string; media?: { key: string; name: string }[] | null };
-const toLocalInput = (iso: string) => {
-  const d = new Date(iso);
-  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-  return d.toISOString().slice(0, 16);
-};
-const dt = (s: string) => new Date(s).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 
 export default function AsesmenDetailPage() {
+  return (
+    <Suspense fallback={null}>
+      <AsesmenDetailInner />
+    </Suspense>
+  );
+}
+
+function AsesmenDetailInner() {
   const { id } = useParams<{ id: string }>();
+  /** Asesmen = ujian: tab utama Ujian & Monitor memakai ExamPanel pada ujian
+   *  pendamping; tab Soal mengedit butir milik ujian itu (bacaan tetap di asesmen). */
+  const params = useSearchParams();
+  const [assessment, setAssessment] = useState<AssessmentView | null>(null);
+  const [examId, setExamId] = useState<string | null>(null);
+  const [mainTab, setMainTab] = useState<'ujian' | 'soal'>(params.get('tab') === 'soal' ? 'soal' : 'ujian');
   const [drafts, setDrafts] = useState<QDraft[]>([]);
-  const [matrix, setMatrix] = useState<Matrix | null>(null);
-  const [analysis, setAnalysis] = useState<Awaited<ReturnType<typeof getQuestionAnalysis>>['questions']>([]);
-  const [tab, setTab] = useState<'soal' | 'bacaan' | 'jawaban' | 'analisis'>('soal');
+  const [tab, setTab] = useState<'soal' | 'bacaan'>('soal');
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -150,25 +160,21 @@ export default function AsesmenDetailPage() {
   const [previewBusy, setPreviewBusy] = useState(false);
   const [tplCount, setTplCount] = useState({ pg: 10, pgk: 0, bs: 0, bsk: 0 });
 
-  // ---- Modal edit asesmen & ujian terkait ----
+  // ---- Modal edit asesmen ----
   const [editAsm, setEditAsm] = useState(false);
   const [subjects, setSubjects] = useState<{ id: string; name: string; code: string }[]>([]);
   const [classes, setClasses] = useState<ClassView[]>([]);
-  const [linkedExams, setLinkedExams] = useState<ExamView[]>([]);
-  const [ujianModal, setUjianModal] = useState<ExamView | null>(null);
-  const [ujianForm, setUjianForm] = useState<{ title: string; startAt: string; endAt: string; durationMin: number; classIds: Set<string>; shuffle: boolean; showScore: boolean } | null>(null);
   const [modalErr, setModalErr] = useState<string | null>(null);
 
-  // ---- Filter rekap jawaban ----
-  const [jSearch, setJSearch] = useState('');
-  const [jClass, setJClass] = useState('');
-
   const load = useCallback(() => {
-    Promise.all([getAssessmentQuestions(id), getAnswerMatrix(id), getQuestionAnalysis(id), getAssessmentPassages(id)])
-      .then(([q, m, a, p]) => {
+    getAssessment(id)
+      .then(async (a) => {
+        setAssessment(a);
+        let exId = a.exams?.[0]?.id ?? null;
+        if (!exId) exId = (await ensureAssessmentExam(id)).examId;
+        setExamId(exId);
+        const [q, p] = await Promise.all([examQuestions(exId), getAssessmentPassages(id)]);
         setDrafts(q.map(toDraft));
-        setMatrix(m);
-        setAnalysis(a.questions);
         setPassages(p.map((x) => ({ code: x.code, content: x.content, media: x.media ?? null })));
         setDirty(false);
         setPassagesDirty(false);
@@ -251,7 +257,7 @@ export default function AsesmenDetailPage() {
     setBusy(true);
     setError(null);
     try {
-      await setAssessmentQuestions(id, drafts.map(toApi));
+      await setExamQuestions(examId!, drafts.map(toApi) as Omit<ExamQuestion, 'id'>[]);
       flash('Butir soal tersimpan.');
       load();
     } catch (e) {
@@ -267,7 +273,7 @@ export default function AsesmenDetailPage() {
     setPreviewBusy(true);
     setModalErr(null);
     try {
-      setPreview(await previewImportQuestions(id, f));
+      setPreview(await previewExamImportQuestions(examId!, f));
     } catch (e) {
       setPreview(null);
       setModalErr(e instanceof ApiError ? e.message : 'Gagal membaca file.');
@@ -281,7 +287,7 @@ export default function AsesmenDetailPage() {
     setBusy(true);
     setModalErr(null);
     try {
-      await setAssessmentQuestions(id, preview.questions);
+      await setExamQuestions(examId!, preview.questions as Omit<ExamQuestion, 'id'>[]);
       if (preview.passages.length) {
         await setAssessmentPassages(id, preview.passages.map((p) => ({
           code: p.code, content: p.content, ...(p.media?.length ? { media: p.media } : {}),
@@ -351,89 +357,6 @@ export default function AsesmenDetailPage() {
       load();
     } catch (err) {
       setModalErr(err instanceof ApiError ? err.message : 'Gagal menyimpan.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  // ---------- Modal edit ujian terkait ----------
-  const openUjian = async () => {
-    setModalErr(null);
-    try {
-      const [exs, c] = await Promise.all([listExams(), listClasses()]);
-      const linked = exs.filter((x) => x.assessment.id === id);
-      setClasses(c);
-      setLinkedExams(linked);
-      if (!linked.length) { setError('Asesmen ini belum dipakai ujian — buat dulu di menu Ujian CBT.'); return; }
-      const ex = linked[0];
-      if (!ex) { setError('Asesmen ini belum dipakai ujian.'); return; }
-      setUjianModal(ex);
-      setUjianForm({
-        title: ex.title, startAt: toLocalInput(ex.startAt), endAt: toLocalInput(ex.endAt),
-        durationMin: ex.durationMin, classIds: new Set(ex.classIds), shuffle: ex.shuffle, showScore: ex.showScore,
-      });
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Gagal memuat ujian.');
-    }
-  };
-  const saveUjian = async () => {
-    if (!ujianModal || !ujianForm) return;
-    if (!ujianForm.classIds.size) { setModalErr('Pilih minimal satu rombel peserta.'); return; }
-    setBusy(true);
-    setModalErr(null);
-    try {
-      await updateExam(ujianModal.id, {
-        title: ujianForm.title.trim(),
-        startAt: new Date(ujianForm.startAt).toISOString(),
-        endAt: new Date(ujianForm.endAt).toISOString(),
-        durationMin: ujianForm.durationMin,
-        classIds: [...ujianForm.classIds],
-        shuffle: ujianForm.shuffle,
-        showScore: ujianForm.showScore,
-      });
-      flash('Ujian diperbarui — kartu & rekap ikut sinkron.');
-      setUjianModal(null);
-    } catch (e) {
-      setModalErr(e instanceof ApiError ? e.message : 'Gagal menyimpan ujian.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  // ---------- Jawaban siswa ----------
-  const setCell = (sId: string, qId: string, correct: boolean | null, weight: number) => {
-    if (!matrix) return;
-    setMatrix({
-      ...matrix,
-      students: matrix.students.map((s) =>
-        s.id !== sId ? s : {
-          ...s,
-          cells: s.cells.map((c, i) =>
-            matrix.questions[i]?.id === qId
-              ? { score: correct === null ? 0 : correct ? weight : 0, isCorrect: correct, answer: c?.answer }
-              : c,
-          ),
-        },
-      ),
-    });
-  };
-
-  const saveAnswers = async () => {
-    if (!matrix) return;
-    setBusy(true);
-    setError(null);
-    try {
-      for (const [qi, q] of matrix.questions.entries()) {
-        const rows = matrix.students
-          .map((s) => ({ studentId: s.id, cell: s.cells[qi] }))
-          .filter((r) => r.cell)
-          .map((r) => ({ studentId: r.studentId, score: r.cell!.score, isCorrect: r.cell!.isCorrect ?? null, answer: r.cell!.answer ?? null }));
-        if (rows.length) await saveQuestionAnswers(q.id, rows);
-      }
-      setNotice('Semua jawaban tersimpan.');
-      load();
-    } catch {
-      setError('Sebagian jawaban gagal disimpan.');
     } finally {
       setBusy(false);
     }
@@ -677,32 +600,52 @@ export default function AsesmenDetailPage() {
     );
   };
 
+  const ex = assessment?.exams?.[0];
   return (
     <Shell>
       <PageTitle
-        title={matrix?.assessment.name ?? 'Asesmen'}
-        subtitle={matrix ? `${matrix.assessment.subject} · ${matrix.assessment.class ?? 'semua kelas'}` : ''}
+        title={assessment?.name ?? 'Asesmen'}
+        subtitle={assessment ? `${assessment.subject?.name ?? '—'}${ex?.gradeLevel ? ` · Kelas ${ex.gradeLevel}` : ''} · ${assessment.type} · maks ${assessment.maxScore}` : ''}
+        actions={
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => void openEditAsm()}>✏️ Edit Asesmen</Button>
+            <Link href="/kurikulum/asesmen" className="text-sm font-bold text-primary-700 hover:underline">← Semua Asesmen</Link>
+          </div>
+        }
       />
       {error ? <p className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p> : null}
       {notice ? <p className="mb-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{notice}</p> : null}
 
+      {/* ---------- Tab utama: Ujian & Monitor | Soal ---------- */}
+      <div className="mb-4 flex gap-1 rounded-2xl border border-sand-200 bg-white p-1 shadow-card">
+        {([['ujian', '⚙️ Ujian & Monitor'], ['soal', `📝 Soal & Bacaan${drafts.length ? ` (${drafts.length})` : ''}`]] as const).map(([k, l]) => (
+          <button key={k} type="button" onClick={() => setMainTab(k)}
+            className={`flex-1 rounded-xl px-3 py-2 text-sm font-bold transition ${mainTab === k ? 'bg-primary-700 text-white' : 'text-sand-600 hover:bg-sand-50'}`}>
+            {l}
+          </button>
+        ))}
+      </div>
+
+      {mainTab === 'ujian' ? (
+        examId ? <ExamPanel id={examId} embedded /> : <p className="py-10 text-center text-sm text-sand-400">Menyiapkan ujian…</p>
+      ) : null}
+
+      {mainTab === 'soal' ? (
+      <>
       <div className="mb-4 flex gap-2 overflow-x-auto">
-        {(['soal', 'bacaan', 'jawaban', 'analisis'] as const).map((t) => (
+        {(['soal', 'bacaan'] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
             className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm font-bold transition ${tab === t ? 'bg-primary-700 text-white' : 'bg-white text-sand-600 hover:bg-sand-100'}`}
           >
-            {t === 'soal' ? `Butir Soal (${drafts.length})` : t === 'bacaan' ? `Bacaan (${passages.length})` : t === 'jawaban' ? 'Jawaban Siswa' : 'Analisis Butir'}
+            {t === 'soal' ? `Butir Soal (${drafts.length})` : `Bacaan (${passages.length})`}
           </button>
         ))}
-        <div className="ml-auto flex gap-2">
-          <Button size="sm" variant="outline" onClick={() => void openEditAsm()}>✏️ Edit Asesmen</Button>
-          <Button size="sm" variant="outline" onClick={() => void openUjian()}>🗓 Edit Ujian</Button>
-        </div>
       </div>
 
-      {tab === 'soal' && (
+      {!examId ? <p className="py-10 text-center text-sm text-sand-400">Menyiapkan ujian…</p> : null}
+      {examId && tab === 'soal' && (
         <Widget
           title={`Kelola Butir Soal`}
           subtitle="Teks, pilihan, kunci, bobot & bacaan — boleh bergambar (🖼) & rumus $…$. Simpan setelah selesai."
@@ -819,7 +762,7 @@ export default function AsesmenDetailPage() {
         </Widget>
       )}
 
-      {tab === 'bacaan' && (
+      {examId && tab === 'bacaan' && (
         <Widget
           title="Kelola Bacaan"
           subtitle="Teks bacaan yang dirujuk soal (kolom BACAAN). Soal memilih bacaan lewat dropdown di kartu soal."
@@ -865,176 +808,8 @@ export default function AsesmenDetailPage() {
           )}
         </Widget>
       )}
-
-      {tab === 'jawaban' && matrix && (
-        <Widget
-          title="Rekap Jawaban per Siswa"
-          subtitle="Klik sel untuk tandai Benar / Salah / kosong. Simpan untuk merekap."
-          action={<Button size="sm" onClick={saveAnswers} disabled={busy}>{busy ? 'Menyimpan…' : 'Simpan Semua Jawaban'}</Button>}
-        >
-          {(() => {
-            const jClasses = [...new Map(matrix.students.filter((s) => s.classId).map((s) => [s.classId!, s.className ?? '—'])).entries()]
-              .sort((a, b) => a[1].localeCompare(b[1]));
-            const jq = jSearch.toLowerCase();
-            const jStudents = matrix.students.filter((s) =>
-              (!jClass || s.classId === jClass) &&
-              (!jq || s.name.toLowerCase().includes(jq) || (s.nis ?? '').includes(jq)));
-            return (
-              <>
-          <div className="flex flex-wrap items-center gap-2 border-b border-sand-100 px-4 py-3">
-            <Input value={jSearch} onChange={(e) => setJSearch(e.target.value)} placeholder="Cari nama / NIS…" className="w-52" />
-            <Select value={jClass} onChange={(e) => setJClass(e.target.value)} className="w-40" searchable>
-              <option value="">Semua rombel</option>
-              {jClasses.map(([cid, cname]) => <option key={cid} value={cid}>{cname}</option>)}
-            </Select>
-            <p className="ml-auto text-xs text-sand-500">{jStudents.length} siswa{jSearch || jClass ? ` (dari ${matrix.students.length})` : ''}</p>
-          </div>
-          {!jStudents.length ? (
-            <p className="px-5 py-8 text-center text-sm text-sand-400">Tidak ada siswa yang cocok dengan filter.</p>
-          ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-sand-200 text-sand-500">
-                  <th className="px-3 py-2 font-bold">Siswa</th>
-                  {matrix.questions.map((q) => (
-                    <th key={q.id} className="px-1 py-2 text-center font-bold" title={`${TYPE_LABEL[q.type]} · bobot ${q.weight}`}>
-                      {q.number}<span className="block text-[9px] font-normal text-sand-400">b{q.weight}</span>
-                    </th>
-                  ))}
-                  <th className="px-3 py-2 text-right font-bold">Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {jStudents.map((s) => (
-                  <tr key={s.id} className="border-b border-sand-50 hover:bg-sand-50">
-                    <td className="whitespace-nowrap px-3 py-2 font-medium text-sand-900">
-                      {s.name}
-                      <span className="ml-1 text-[10px] text-sand-400">{s.nis ?? ''}</span>
-                      {s.className ? <span className="ml-1 rounded bg-sand-100 px-1 py-0.5 text-[9px] font-bold text-sand-500">{s.className}</span> : null}
-                    </td>
-                    {matrix.questions.map((q, qi) => {
-                      const c = s.cells[qi];
-                      return (
-                        <td key={q.id} className="px-0.5 py-1 text-center">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setCell(
-                                s.id, q.id,
-                                c?.isCorrect === true ? false : c?.isCorrect === false ? null : true,
-                                q.weight,
-                              )
-                            }
-                            className={`mx-auto block size-6 rounded text-[10px] font-bold ${
-                              c?.isCorrect === true
-                                ? 'bg-emerald-600 text-white'
-                                : c?.isCorrect === false
-                                  ? 'bg-red-500 text-white'
-                                  : 'bg-sand-100 text-sand-400 hover:bg-sand-200'
-                            }`}
-                          >
-                            {c?.isCorrect === true ? '✓' : c?.isCorrect === false ? '✗' : '·'}
-                          </button>
-                        </td>
-                      );
-                    })}
-                    <td className="px-3 py-2 text-right font-bold text-sand-900">
-                      {s.cells.reduce((a, c) => a + (c?.score ?? 0), 0)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          )}
-              </>
-            );
-          })()}
-        </Widget>
-      )}
-
-      {tab === 'analisis' && (
-        <div className="space-y-4">
-        <Widget title="Analisis Butir Soal" subtitle="Ketepatan & tingkat kesukaran per nomor.">
-          <DataTable head={['No', 'Tipe', 'Bobot', 'Terjawab', 'Benar', '% Benar', 'Rata-rata Skor', 'Kategori']}
-            empty={!analysis.length ? 'Belum ada butir/jawaban.' : undefined}>
-            {analysis.map((a) => (
-              <tr key={a.id}>
-                <td className="px-5 py-2.5 font-bold text-sand-900">{a.number}</td>
-                <td className="px-5 py-2.5 text-sand-600">{TYPE_LABEL[a.type]}</td>
-                <td className="px-5 py-2.5 text-sand-600">{a.weight}</td>
-                <td className="px-5 py-2.5 text-sand-600">{a.answered}</td>
-                <td className="px-5 py-2.5 text-sand-600">{a.correct}</td>
-                <td className="px-5 py-2.5">
-                  <div className="flex items-center gap-2">
-                    <div className="h-1.5 w-16 overflow-hidden rounded-full bg-sand-100">
-                      <div className="h-full bg-primary-600" style={{ width: `${a.correctPct ?? 0}%` }} />
-                    </div>
-                    <span className="text-xs font-bold">{a.correctPct ?? '—'}%</span>
-                  </div>
-                </td>
-                <td className="px-5 py-2.5 text-sand-600">{a.avgScore}</td>
-                <td className="px-5 py-2.5">
-                  <Badge tone={a.difficulty === 'Mudah' ? 'primary' : a.difficulty === 'Sedang' ? 'accent' : 'danger'}>
-                    {a.difficulty ?? '—'}
-                  </Badge>
-                </td>
-              </tr>
-            ))}
-          </DataTable>
-        </Widget>
-
-        <Widget title="Analisis per Siswa" subtitle="Rekap capaian tiap siswa — cari nama, urutkan kolom, saring rombel.">
-          {matrix ? (
-            (() => {
-              const aClasses = [...new Map(matrix.students.filter((s) => s.classId).map((s) => [s.classId!, s.className ?? '—'])).entries()]
-                .sort((a, b) => a[1].localeCompare(b[1]));
-              const aStudents = matrix.students
-                .filter((s) => !jClass || s.classId === jClass)
-                .map((s) => {
-                  const answered = s.cells.filter((c) => c !== null).length;
-                  const correct = s.cells.filter((c) => c?.isCorrect === true).length;
-                  const score = s.cells.reduce((a, c) => a + (c?.score ?? 0), 0);
-                  const maxScore = matrix.questions.reduce((a, q) => a + q.weight, 0);
-                  return { ...s, answered, correct, score, pct: maxScore ? Math.round((score / maxScore) * 100) : 0 };
-                });
-              return (
-                <>
-                  <div className="flex flex-wrap items-center gap-2 border-b border-sand-100 px-4 py-3">
-                    <Select value={jClass} onChange={(e) => setJClass(e.target.value)} className="w-40" searchable>
-                      <option value="">Semua rombel</option>
-                      {aClasses.map(([cid, cname]) => <option key={cid} value={cid}>{cname}</option>)}
-                    </Select>
-                    <p className="ml-auto text-xs text-sand-500">{aStudents.length} siswa</p>
-                  </div>
-                  <DataTable head={['Siswa', 'Rombel', 'Terjawab', 'Benar', '% Benar', 'Total Skor']}
-                    empty={!aStudents.length ? 'Belum ada siswa/jawaban.' : undefined}>
-                    {aStudents.map((s) => (
-                      <tr key={s.id}>
-                        <td className="px-5 py-2.5 font-medium text-sand-900">{s.name} <span className="text-[10px] text-sand-400">{s.nis ?? ''}</span></td>
-                        <td className="px-5 py-2.5 text-sand-600">{s.className ?? '—'}</td>
-                        <td className="px-5 py-2.5 text-sand-600">{s.answered}/{matrix.questions.length}</td>
-                        <td className="px-5 py-2.5 text-sand-600">{s.correct}</td>
-                        <td className="px-5 py-2.5">
-                          <div className="flex items-center gap-2">
-                            <div className="h-1.5 w-16 overflow-hidden rounded-full bg-sand-100">
-                              <div className={`h-full ${s.pct >= 75 ? 'bg-emerald-500' : s.pct >= 40 ? 'bg-amber-500' : 'bg-red-400'}`} style={{ width: `${s.pct}%` }} />
-                            </div>
-                            <span className="text-xs font-bold">{s.pct}%</span>
-                          </div>
-                        </td>
-                        <td className="px-5 py-2.5 font-bold text-sand-900">{s.score}</td>
-                      </tr>
-                    ))}
-                  </DataTable>
-                </>
-              );
-            })()
-          ) : <p className="p-5 text-sm text-sand-400">Memuat…</p>}
-        </Widget>
-        </div>
-      )}
+      </>
+      ) : null}
 
       {/* ---------- Modal Import + Preview ---------- */}
       <Modal open={importModal} onClose={() => setImportModal(false)} title="Impor Soal dari File" size="xl">
@@ -1066,13 +841,13 @@ export default function AsesmenDetailPage() {
                   <Button
                     size="sm" variant="outline"
                     disabled={!tplCount.pg && !tplCount.pgk && !tplCount.bs && !tplCount.bsk}
-                    onClick={() => void downloadGenTemplate(id, tplCount).then(() => flash('Template diunduh.')).catch((e) => setModalErr(e instanceof ApiError ? e.message : 'Gagal unduh template.'))}
+                    onClick={() => void downloadExamQuestionTemplate(examId!, tplCount).then(() => flash('Template diunduh.')).catch((e) => setModalErr(e instanceof ApiError ? e.message : 'Gagal unduh template.'))}
                   >
                     ⬇ Template Excel
                   </Button>
                   <Button
                     size="sm" variant="outline"
-                    onClick={() => void downloadDocxTemplate(id).then(() => flash('Template Word diunduh.')).catch((e) => setModalErr(e instanceof ApiError ? e.message : 'Gagal unduh template.'))}
+                    onClick={() => void downloadExamQuestionTemplateDocx(examId!).then(() => flash('Template Word diunduh.')).catch((e) => setModalErr(e instanceof ApiError ? e.message : 'Gagal unduh template.'))}
                   >
                     ⬇ Template Word
                   </Button>
@@ -1144,13 +919,13 @@ export default function AsesmenDetailPage() {
       <Modal open={editAsm} onClose={() => setEditAsm(false)} title="Edit Asesmen">
         <form onSubmit={saveAsm} className="space-y-4">
           {modalErr ? <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{modalErr}</p> : null}
-          <Field label="Nama Asesmen"><Input name="name" defaultValue={matrix?.assessment.name ?? ''} required /></Field>
+          <Field label="Nama Asesmen"><Input name="name" defaultValue={assessment?.name ?? ''} required /></Field>
           <Field label="Mata Pelajaran">
             <Select name="subjectId" defaultValue="" searchable>
               <option value="">— tidak diubah —</option>
               {subjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </Select>
-            <p className="mt-1 text-[11px] text-sand-400">Saat ini: {matrix?.assessment.subject ?? '—'}</p>
+            <p className="mt-1 text-[11px] text-sand-400">Saat ini: {assessment?.subject?.name ?? '—'}</p>
           </Field>
           <Field label="Kelas (opsional)">
             <Select name="classId" defaultValue="" searchable>
@@ -1163,71 +938,6 @@ export default function AsesmenDetailPage() {
             <Button type="submit" disabled={busy}>{busy ? 'Menyimpan…' : 'Simpan'}</Button>
           </div>
         </form>
-      </Modal>
-
-      {/* ---------- Modal Edit Ujian (jadwal + rombel) ---------- */}
-      <Modal open={!!ujianModal} onClose={() => setUjianModal(null)} title={`Edit Ujian — ${ujianModal?.assessment.subject.name ?? ''}`} size="xl">
-        {ujianModal && ujianForm ? (
-          <div className="space-y-4">
-            {modalErr ? <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{modalErr}</p> : null}
-            {linkedExams.length > 1 ? (
-              <Field label="Ujian yang diedit">
-                <Select
-                  value={ujianModal.id}
-                  onChange={(e) => {
-                    const ex = linkedExams.find((x) => x.id === e.target.value);
-                    if (!ex) return;
-                    setUjianModal(ex);
-                    setUjianForm({ title: ex.title, startAt: toLocalInput(ex.startAt), endAt: toLocalInput(ex.endAt), durationMin: ex.durationMin, classIds: new Set(ex.classIds), shuffle: ex.shuffle, showScore: ex.showScore });
-                  }}
-                 searchable>
-                  {linkedExams.map((x) => <option key={x.id} value={x.id}>{x.title} · {x.status}</option>)}
-                </Select>
-              </Field>
-            ) : null}
-            <Field label="Judul Ujian"><Input value={ujianForm.title} onChange={(e) => setUjianForm({ ...ujianForm, title: e.target.value })} /></Field>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              <Field label="Mulai"><Input type="datetime-local" value={ujianForm.startAt} onChange={(e) => setUjianForm({ ...ujianForm, startAt: e.target.value })} /></Field>
-              <Field label="Selesai"><Input type="datetime-local" value={ujianForm.endAt} onChange={(e) => setUjianForm({ ...ujianForm, endAt: e.target.value })} /></Field>
-              <Field label="Durasi (menit)"><Input type="number" min={1} value={ujianForm.durationMin} onChange={(e) => setUjianForm({ ...ujianForm, durationMin: Number(e.target.value) || 1 })} /></Field>
-            </div>
-            <Field label="Rombel Peserta">
-              <div className="flex flex-wrap gap-2 rounded-xl border border-sand-200 p-3">
-                {classes.map((c) => (
-                  <label key={c.id} className="flex items-center gap-1.5 rounded-lg bg-sand-50 px-2.5 py-1.5 text-xs font-medium">
-                    <input
-                      type="checkbox"
-                      checked={ujianForm.classIds.has(c.id)}
-                      onChange={(e) => {
-                        const next = new Set(ujianForm.classIds);
-                        if (e.target.checked) next.add(c.id); else next.delete(c.id);
-                        setUjianForm({ ...ujianForm, classIds: next });
-                      }}
-                    />
-                    {c.name}
-                  </label>
-                ))}
-              </div>
-            </Field>
-            <div className="flex gap-4 text-sm">
-              <label className="flex items-center gap-1.5 text-xs font-medium"><input type="checkbox" checked={ujianForm.shuffle} onChange={(e) => setUjianForm({ ...ujianForm, shuffle: e.target.checked })} /> Acak soal</label>
-              <label className="flex items-center gap-1.5 text-xs font-medium"><input type="checkbox" checked={ujianForm.showScore} onChange={(e) => setUjianForm({ ...ujianForm, showScore: e.target.checked })} /> Tampilkan skor ke siswa</label>
-            </div>
-
-            <p className="rounded-xl bg-sky-50 px-4 py-2.5 text-xs text-sky-800">
-              Sesi per kelompok rombel, kode akses, monitor &amp; hasil diatur di <b>halaman ujian</b> — gunakan tautan di bawah.
-            </p>
-            <div className="flex items-center justify-between gap-2">
-              <Link href={`/kurikulum/ujian/${ujianModal.id}`} className="text-xs font-bold text-primary-700 hover:underline">
-                Buka halaman ujian penuh →
-              </Link>
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={() => setUjianModal(null)}>Tutup</Button>
-                <Button onClick={() => void saveUjian()} disabled={busy}>{busy ? 'Menyimpan…' : 'Simpan Ujian'}</Button>
-              </div>
-            </div>
-          </div>
-        ) : null}
       </Modal>
 
       <input

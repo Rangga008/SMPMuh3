@@ -160,6 +160,32 @@ export class CbtController {
     if (!file) throw new BadRequestException('File wajib diunggah.');
     return this.cbt.importExamQuestions(id, file, u);
   }
+  @Post('exams/:id/questions/import-preview')
+  @RequirePermission(PERMISSIONS.ACADEMIC_READ)
+  @UseInterceptors(FileInterceptor('file'))
+  previewImportQuestions(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @UploadedFile() file: Express.Multer.File) {
+    if (!file) throw new BadRequestException('File wajib diunggah.');
+    return this.cbt.previewImportExamQuestions(file, u, id);
+  }
+  /** Template Excel import soal ujian — ?pg=&pgk=&bs=&bsk= untuk generator. */
+  @Get('exams/:id/questions/template')
+  @RequirePermission(PERMISSIONS.ACADEMIC_READ)
+  questionTemplate(@Param('id', ParseUUIDPipe) id: string, @Res() res: Response, @Query('pg') pgQ?: string, @Query('pgk') pgkQ?: string, @Query('bs') bsQ?: string, @Query('bsk') bskQ?: string) {
+    const gen = pgQ !== undefined || pgkQ !== undefined || bsQ !== undefined || bskQ !== undefined;
+    const n = (v?: string) => Math.floor(Number(v) || 0);
+    const buf = this.cbt.examQuestionTemplate('xlsx', gen ? { pg: n(pgQ), pgk: n(pgkQ), bs: n(bsQ), bsk: n(bskQ) } : undefined);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="template-soal.xlsx"');
+    res.send(buf);
+  }
+  @Get('exams/:id/questions/template.docx')
+  @RequirePermission(PERMISSIONS.ACADEMIC_READ)
+  async questionTemplateDocx(@Param('id', ParseUUIDPipe) id: string, @Res() res: Response) {
+    const buf = await this.cbt.examQuestionTemplate('docx');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', 'attachment; filename="template-import-soal.docx"');
+    res.send(buf);
+  }
 
   /** Acak ulang password login satu siswa — cetak ulang kartu setelah ini. */
   @Post('exams/:id/credentials/:studentId/regen')

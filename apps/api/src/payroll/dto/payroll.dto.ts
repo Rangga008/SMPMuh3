@@ -108,12 +108,13 @@ export class EmployeePayrollSettingsDto {
   @IsDateString()
   workStartDate?: string;
 
+  /** Jam wajib per bulan dalam jam pelajaran — gaji pokok = requiredJp × tarif, tetap. */
   @emptyToUndefined()
   @IsOptional()
-  @IsInt()
+  @IsNumber()
   @Min(0)
-  @Max(43200)
-  monthlyRequiredMinutes?: number;
+  @Max(2000)
+  requiredJp?: number;
 
   @emptyToUndefined()
   @IsOptional()
@@ -142,12 +143,13 @@ export class AttendanceEntryDto {
   @IsIn(['HADIR', 'TELAT', 'IZIN', 'SAKIT', 'ALPHA'])
   status!: 'HADIR' | 'TELAT' | 'IZIN' | 'SAKIT' | 'ALPHA';
 
+  /** JP efektif hari itu — isian langsung dalam jam pelajaran (mis. 9). */
   @emptyToUndefined()
   @IsOptional()
-  @IsInt()
+  @IsNumber()
   @Min(0)
-  @Max(1440)
-  teachingMinutes?: number;
+  @Max(24)
+  teachingJp?: number;
 
   @emptyToUndefined()
   @IsOptional()
@@ -439,22 +441,22 @@ export class PayRunDto {
   cashAccountId!: string;
 }
 
-/** Koreksi manual satu item payroll — jam wajib boleh dioverride,
-    manualMinutes DITAMBAH ke menit hadir otomatis (boleh negatif untuk mengurangi). */
+/** Koreksi manual satu item payroll — jam wajib (JP) boleh dioverride,
+    manualJp DITAMBAH ke JP hadir otomatis (boleh negatif untuk mengurangi). */
 export class UpdatePayrollItemDto {
   @emptyToUndefined()
   @IsOptional()
-  @IsInt()
+  @IsNumber()
   @Min(0)
-  @Max(100_000)
-  requiredMinutes?: number;
+  @Max(2000)
+  requiredJp?: number;
 
   @emptyToUndefined()
   @IsOptional()
-  @IsInt()
-  @Min(-100_000)
-  @Max(100_000)
-  manualMinutes?: number;
+  @IsNumber()
+  @Min(-2000)
+  @Max(2000)
+  manualJp?: number;
 
   @emptyToUndefined()
   @IsOptional()
@@ -477,4 +479,11 @@ export class PayrollSettingsDto {
   @Min(0)
   @Max(1_000_000)
   lateDeductionPerMin?: number;
+
+  /** 1 jam pelajaran = N menit — konversi menit hadir → JP untuk transport & rekap. */
+  @IsOptional()
+  @IsInt()
+  @Min(5)
+  @Max(240)
+  lessonMinutes?: number;
 }

@@ -160,17 +160,9 @@ export const NAV: NavItem[] = [
       },
       {
         key: 'asesmen',
-        label: 'Bank Asesmen',
+        label: 'Asesmen & Ujian',
         icon: '📝',
         href: '/kurikulum/asesmen',
-        permission: PERMISSIONS.ACADEMIC_READ,
-        enabled: true,
-      },
-      {
-        key: 'ujian-cbt',
-        label: 'Ujian CBT',
-        icon: '💻',
-        href: '/kurikulum/ujian',
         permission: PERMISSIONS.ACADEMIC_READ,
         enabled: true,
       },
@@ -308,7 +300,7 @@ export const NAV: NavItem[] = [
       },
       {
         key: 'us',
-        label: 'US 1 & 2',
+        label: 'Administrasi US Kelas 9',
         icon: '🧮',
         href: '/tata-usaha/us',
         permission: PERMISSIONS.TATAUSAHA_READ,
@@ -316,7 +308,7 @@ export const NAV: NavItem[] = [
       },
       {
         key: 'ujian',
-        label: 'Ruang & Kartu Ujian',
+        label: 'Administrasi Asesmen Sumatif',
         icon: '🪪',
         href: '/tata-usaha/ujian',
         permission: PERMISSIONS.TATAUSAHA_READ,

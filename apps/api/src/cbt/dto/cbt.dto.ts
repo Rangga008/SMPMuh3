@@ -15,8 +15,21 @@ import {
 } from 'class-validator';
 
 export class CreateExamDto {
+  /** Asesmen payung (UTS/UAS/ASAS) — hanya nama periode. */
   @IsUUID()
   assessmentId!: string;
+
+  /** Mapel ujian — model baru: ujian = per-mapel per-jenjang. */
+  @IsOptional()
+  @IsUUID()
+  subjectId?: string;
+
+  /** Jenjang sasaran (7/8/9) — diisi otomatis dari rombel bila seragam. */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(12)
+  gradeLevel?: number;
 
   /** Kelas yang boleh ikut — minimal satu. */
   @IsArray()
@@ -84,6 +97,16 @@ export class UpdateExamDto {
   @ArrayMinSize(1)
   @IsUUID('4', { each: true })
   classIds?: string[];
+
+  @IsOptional()
+  @IsUUID()
+  subjectId?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(12)
+  gradeLevel?: number;
 
   @IsOptional()
   @IsBoolean()

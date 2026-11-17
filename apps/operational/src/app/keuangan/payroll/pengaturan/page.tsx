@@ -275,8 +275,41 @@ export default function PayrollPengaturanPage() {
 
       {tab === 'Pegawai' ? (
         <Widget title="Pengaturan Payroll per Pegawai">
+          <form
+            className="mb-4 flex flex-wrap items-end gap-3 rounded-xl border border-sand-200 bg-sand-50 p-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const f = new FormData(e.currentTarget);
+              void run(
+                () =>
+                  updatePayrollSettings({
+                    lessonMinutes: Number(f.get('lessonMinutes')) || 40,
+                  }),
+                'Satuan jam pelajaran disimpan.',
+              );
+            }}
+          >
+            <div className="w-52">
+              <Field label="1 Jam Pelajaran = … menit" hint="Untuk konversi absen → JP transport">
+                <Input
+                  key={`lm${payrollSettings?.lessonMinutes ?? 40}`}
+                  name="lessonMinutes"
+                  type="number"
+                  min={5}
+                  max={240}
+                  step={1}
+                  defaultValue={payrollSettings?.lessonMinutes ?? 40}
+                  disabled={!canManage}
+                />
+              </Field>
+            </div>
+            {canManage ? <Button type="submit" size="sm" disabled={busy}>Simpan</Button> : null}
+            <p className="pb-1 text-[11px] text-sand-400">
+              Contoh: {payrollSettings?.lessonMinutes ?? 40} menit → hadir 12.00–17.00 (300 mnt) = {Math.round(300 / (payrollSettings?.lessonMinutes || 40))} JP transport.
+            </p>
+          </form>
           <DataTable
-            head={['Pegawai', 'Masa kerja', 'Golongan', 'Jam wajib/bln', 'Tarif/jam', 'Transport/jam', 'Sertifikasi', ...(canManage ? [''] : [])]}
+            head={['Pegawai', 'Masa kerja', 'Golongan', 'JP wajib/bln', 'Tarif/JP', 'Transport/JP', 'Sertifikasi', ...(canManage ? [''] : [])]}
             loading={false}
             error={null}
             empty={employees.length === 0 ? 'Belum ada pegawai.' : undefined}
@@ -289,7 +322,7 @@ export default function PayrollPengaturanPage() {
                 </td>
                 <td className="px-5 py-3 text-sand-600">{e.serviceYears !== null && e.serviceYears !== undefined ? `${e.serviceYears} th` : '—'}</td>
                 <td className="px-5 py-3 text-sand-800">{e.payScale?.name ?? '—'}</td>
-                <td className="px-5 py-3 text-sand-600">{(e.monthlyRequiredMinutes / 60).toLocaleString('id-ID', { maximumFractionDigits: 1 })} jam</td>
+                <td className="px-5 py-3 text-sand-600">{(+e.requiredJp.toFixed(1)).toLocaleString('id-ID')} JP</td>
                 <td className="whitespace-nowrap px-5 py-3 text-sand-600">
                   {e.hourlyRate != null ? rupiah(e.hourlyRate) : (e.payScale ? `${rupiah(e.payScale.hourlyRate)} (gol.)` : '—')}
                 </td>
@@ -313,7 +346,7 @@ export default function PayrollPengaturanPage() {
           title="Golongan Masa Kerja"
           action={canManage ? <Button size="sm" onClick={async () => setScaleModal({} as PayScaleView)}>+ Golongan</Button> : undefined}
 >
-          <DataTable head={['Nama', 'Masa kerja', 'Tarif/jam', 'Transport/jam', 'Pegawai', 'Status', ...(canManage ? [''] : [])]} loading={false} error={null} empty={scales.length === 0 ? 'Belum ada golongan.' : undefined}>
+          <DataTable head={['Nama', 'Masa kerja', 'Tarif/JP', 'Transport/JP', 'Pegawai', 'Status', ...(canManage ? [''] : [])]} loading={false} error={null} empty={scales.length === 0 ? 'Belum ada golongan.' : undefined}>
             {scales.map((s) => (
               <tr key={s.id}>
                 <td className="px-5 py-3 font-medium text-sand-900">{s.name}</td>
@@ -603,7 +636,7 @@ export default function PayrollPengaturanPage() {
                   updateEmployeePayrollSettings(empModal.id, {
                     ...(f.get('payScaleId') ? { payScaleId: String(f.get('payScaleId')) } : {}),
                     ...(f.get('workStartDate') ? { workStartDate: String(f.get('workStartDate')) } : {}),
-                    monthlyRequiredMinutes: Math.round(Number(f.get('monthlyHours') || 0) * 60),
+                    requiredJp: Number(f.get('requiredJp')) || 0,
                     hourlyRate: hourly ? Number(hourly) : null,
                     transportRate: transport ? Number(transport) : null,
                     isCertified: f.get('isCertified') === 'on',
@@ -616,7 +649,7 @@ export default function PayrollPengaturanPage() {
               <Select name="payScaleId" defaultValue={empModal.payScaleId ?? ''} searchable>
                 <option value="">— Auto dari masa kerja —</option>
                 {scales.filter((s) => s.isActive).map((s) => (
-                  <option key={s.id} value={s.id}>{s.name} ({rupiah(s.hourlyRate)}/jam)</option>
+                  <option key={s.id} value={s.id}>{s.name} ({rupiah(s.hourlyRate)}/JP)</option>
                 ))}
               </Select>
             </Field>
@@ -624,13 +657,13 @@ export default function PayrollPengaturanPage() {
               <Input name="workStartDate" type="date" defaultValue={empModal.workStartDate?.slice(0, 10) ?? ''} />
             </Field>
             <div className="grid gap-3 sm:grid-cols-3">
-              <Field label="Jam wajib/bulan" hint="Akumulasi sebulan — mis. 44">
-                <Input name="monthlyHours" type="number" min={0} step={0.5} defaultValue={empModal.monthlyRequiredMinutes / 60} />
+              <Field label="JP wajib/bulan" hint="Jam pelajaran — gaji pokok TETAP, tak dipotong absen. Mis. 44">
+                <Input name="requiredJp" type="number" min={0} step={0.5} defaultValue={empModal.requiredJp} />
               </Field>
-              <Field label="Tarif/jam (override)">
+              <Field label="Tarif/JP (override)" hint="gaji pokok per jam pelajaran">
                 <RpInput name="hourlyRate" placeholder="ikut golongan" defaultValue={empModal.hourlyRate ?? ''} />
               </Field>
-              <Field label="Transport/jam (override)">
+              <Field label="Transport/JP (override)">
                 <RpInput name="transportRate" placeholder="ikut golongan" defaultValue={empModal.transportRate ?? ''} />
               </Field>
             </div>
@@ -674,8 +707,8 @@ export default function PayrollPengaturanPage() {
               <Field label="Maks. tahun (kosong = ∞)"><Input name="maxYears" type="number" min={0} defaultValue={(scaleModal as PayScaleView).maxYears ?? ''} /></Field>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Tarif/jam wajib (Rp)"><RpInput name="hourlyRate" defaultValue={(scaleModal as PayScaleView).hourlyRate ?? ''} /></Field>
-              <Field label="Tarif transport/jam (Rp)"><RpInput name="transportRate" defaultValue={(scaleModal as PayScaleView).transportRate ?? ''} /></Field>
+              <Field label="Tarif gaji pokok/JP (Rp)"><RpInput name="hourlyRate" defaultValue={(scaleModal as PayScaleView).hourlyRate ?? ''} /></Field>
+              <Field label="Tarif transport/JP (Rp)"><RpInput name="transportRate" defaultValue={(scaleModal as PayScaleView).transportRate ?? ''} /></Field>
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="ghost" onClick={async () => setScaleModal(false)}>Batal</Button>
