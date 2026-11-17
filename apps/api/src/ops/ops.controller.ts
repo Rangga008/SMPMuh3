@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Param,
   Patch,
@@ -16,7 +17,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import * as XLSX from 'xlsx';
-import { PERMISSIONS, type AuthUser } from '@smpmuh3/types';
+import { PERMISSIONS, type AuthUser, type PermissionKey } from '@smpmuh3/types';
 import { CurrentUser } from '../identity/decorators/current-user.decorator';
 import { Public } from '../identity/decorators/public.decorator';
 import { RequirePermission } from '../identity/decorators/require-permission.decorator';
@@ -404,38 +405,57 @@ export class OpsController {
     sendFile(res, await this.ops.submissionFile(id));
   }
 
-  // ---- Arsip ----
+  // ---- Arsip — tersekat per bidang (tiap bidang punya arsip & kategori sendiri) ----
+  /** Bidang → permission baca/kelola arsipnya. */
+  private static readonly ARCHIVE_PERMS: Record<string, { read: PermissionKey; manage: PermissionKey }> = {
+    TATAUSAHA: { read: PERMISSIONS.TATAUSAHA_READ, manage: PERMISSIONS.TATAUSAHA_MANAGE },
+    KURIKULUM: { read: PERMISSIONS.ACADEMIC_READ, manage: PERMISSIONS.ACADEMIC_MANAGE },
+    KESISWAAN: { read: PERMISSIONS.STUDENT_READ, manage: PERMISSIONS.STUDENT_MANAGE },
+    KEUANGAN: { read: PERMISSIONS.FINANCE_READ, manage: PERMISSIONS.FINANCE_MANAGE },
+    GTK: { read: PERMISSIONS.EMPLOYEE_READ, manage: PERMISSIONS.EMPLOYEE_MANAGE },
+    SARPRAS: { read: PERMISSIONS.SARPRAS_READ, manage: PERMISSIONS.SARPRAS_MANAGE },
+    SPMB: { read: PERMISSIONS.SPMB_REGISTRATION_READ, manage: PERMISSIONS.SPMB_REGISTRATION_MANAGE },
+  };
+  private assertArchive(u: AuthUser, section: string | undefined, action: 'read' | 'manage'): string {
+    const s = (section || 'TATAUSAHA').toUpperCase();
+    const perms = OpsController.ARCHIVE_PERMS[s];
+    if (!perms) throw new BadRequestException(`Bidang arsip tak dikenal: ${s}.`);
+    if (!u.permissions.includes(perms[action])) {
+      throw new ForbiddenException(`Tak ada akses ${action === 'read' ? 'lihat' : 'kelola'} arsip bidang ${s}.`);
+    }
+    return s;
+  }
+
   @Get('archives/categories')
-  archiveCats() {
-    return this.ops.listArchiveCategories();
+  archiveCats(@CurrentUser() u: AuthUser, @Query('section') s?: string) {
+    return this.ops.listArchiveCategories(this.assertArchive(u, s, 'read'));
   }
   @Post('archives/categories')
-  @RequirePermission(PERMISSIONS.TATAUSAHA_MANAGE)
-  createArchiveCat(@Body('name') name: string) {
-    return this.ops.createArchiveCategory(name);
+  createArchiveCat(@CurrentUser() u: AuthUser, @Body('name') name: string, @Body('section') s?: string) {
+    return this.ops.createArchiveCategory(name, this.assertArchive(u, s, 'manage'));
   }
   @Patch('archives/categories/:id')
-  @RequirePermission(PERMISSIONS.TATAUSAHA_MANAGE)
-  updateArchiveCat(@Param('id') id: string, @Body('name') name: string) {
+  async updateArchiveCat(@CurrentUser() u: AuthUser, @Param('id') id: string, @Body('name') name: string) {
+    this.assertArchive(u, await this.ops.archiveCategorySection(id), 'manage');
     return this.ops.updateArchiveCategory(id, name);
   }
   @Delete('archives/categories/:id')
-  @RequirePermission(PERMISSIONS.TATAUSAHA_MANAGE)
-  deleteArchiveCat(@Param('id') id: string) {
+  async deleteArchiveCat(@CurrentUser() u: AuthUser, @Param('id') id: string) {
+    this.assertArchive(u, await this.ops.archiveCategorySection(id), 'manage');
     return this.ops.deleteArchiveCategory(id);
   }
   @Get('archives')
-  archives(@Query('categoryId') c?: string, @Query('q') q?: string) {
-    return this.ops.listArchiveItems(c, q);
+  archives(@CurrentUser() u: AuthUser, @Query('section') s?: string, @Query('categoryId') c?: string, @Query('q') q?: string) {
+    return this.ops.listArchiveItems(this.assertArchive(u, s, 'read'), c, q);
   }
   @Post('archives')
-  @RequirePermission(PERMISSIONS.TATAUSAHA_MANAGE)
   @UseInterceptors(FileInterceptor('file'))
   uploadArchive(@Body() body: Record<string, string>, @UploadedFile() file: Express.Multer.File, @CurrentUser() u: AuthUser) {
     if (!file) throw new BadRequestException('File wajib.');
     return this.ops.uploadArchiveItem(
       {
         title: body.title ?? file.originalname,
+        section: this.assertArchive(u, body.section, 'manage'),
         ...(body.categoryId ? { categoryId: body.categoryId } : {}),
         ...(body.refNumber ? { refNumber: body.refNumber } : {}),
         ...(body.date ? { date: body.date } : {}),
@@ -444,17 +464,20 @@ export class OpsController {
     );
   }
   @Get('archives/:id/file')
-  async archiveFile(@Param('id') id: string, @Res() res: Response) {
-    sendFile(res, await this.ops.archiveFile(id));
+  async archiveFile(@Param('id') id: string, @CurrentUser() u: AuthUser, @Res() res: Response) {
+    const f = await this.ops.archiveFile(id);
+    this.assertArchive(u, f.section, 'read');
+    sendFile(res, f);
   }
   @Patch('archives/:id')
-  @RequirePermission(PERMISSIONS.TATAUSAHA_MANAGE)
   @UseInterceptors(FileInterceptor('file'))
-  updateArchive(
+  async updateArchive(
     @Param('id') id: string,
     @Body() body: Record<string, string>,
+    @CurrentUser() u: AuthUser,
     @UploadedFile() file?: Express.Multer.File,
   ) {
+    this.assertArchive(u, await this.ops.archiveItemSection(id), 'manage');
     return this.ops.updateArchiveItem(id, {
       ...(body.title !== undefined ? { title: body.title } : {}),
       ...(body.categoryId !== undefined ? { categoryId: body.categoryId || null } : {}),
@@ -463,8 +486,8 @@ export class OpsController {
     }, file);
   }
   @Delete('archives/:id')
-  @RequirePermission(PERMISSIONS.TATAUSAHA_MANAGE)
-  deleteArchive(@Param('id') id: string) {
+  async deleteArchive(@CurrentUser() u: AuthUser, @Param('id') id: string) {
+    this.assertArchive(u, await this.ops.archiveItemSection(id), 'manage');
     return this.ops.deleteArchiveItem(id);
   }
 
@@ -516,9 +539,37 @@ export class OpsController {
   assignClass(
     @Param('id') id: string,
     @Body('classId') classId: string,
-    @Body('count') count?: number,
+    @Body('absenFrom') absenFrom?: number,
+    @Body('absenTo') absenTo?: number,
   ) {
-    return this.ops.assignClassToRoom(id, classId, count != null ? Number(count) : undefined);
+    return this.ops.assignClassToRoom(
+      id, classId,
+      absenFrom != null && absenFrom !== ('' as never) ? Number(absenFrom) : undefined,
+      absenTo != null && absenTo !== ('' as never) ? Number(absenTo) : undefined,
+    );
+  }
+  /** Absen rombel yang masih bebas di periode ruang ini — untuk picker. */
+  @Get('exam-rooms/:id/rombel-availability')
+  @RequirePermission(PERMISSIONS.TATAUSAHA_READ)
+  rombelAvailability(@Param('id') id: string) {
+    return this.ops.rombelAvailability(id);
+  }
+  /** Susun ulang nomor meja — sequential (per rombel) atau zigzag (campur). */
+  @Patch('exam-rooms/:id/renumber')
+  @RequirePermission(PERMISSIONS.TATAUSAHA_MANAGE)
+  renumberRoom(@Param('id') id: string, @Body('mode') mode?: string) {
+    return this.ops.renumberRoom(id, mode === 'zigzag' ? 'zigzag' : 'sequential');
+  }
+  /** Kode sekolah untuk segmen tengah nomor peserta ujian (tetap). */
+  @Get('exam-config')
+  @RequirePermission(PERMISSIONS.TATAUSAHA_READ)
+  examConfig() {
+    return this.ops.getExamConfig();
+  }
+  @Patch('exam-config')
+  @RequirePermission(PERMISSIONS.TATAUSAHA_MANAGE)
+  updateExamConfig(@Body('examCode') examCode: string) {
+    return this.ops.updateExamConfig(examCode ?? '');
   }
   @Patch('exam-rooms/:id')
   @RequirePermission(PERMISSIONS.TATAUSAHA_MANAGE)

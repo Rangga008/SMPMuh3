@@ -142,6 +142,7 @@ model School {
   treasurerNip  String?  @map("treasurer_nip")
   headmasterSignatureUrl String? @map("headmaster_signature_url")
   logoUrl       String?  @map("logo_url")
+  examCode      String   @default("145") @map("exam_code") // segmen tengah nomor peserta ujian: {jenjang}-{examCode}-{urut} — tetap untuk sekolah
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
@@ -2195,15 +2196,18 @@ model ProgramSubmission {
 
 model ArchiveCategory {
   id        String        @id @default(uuid()) @db.Uuid
-  name      String        @unique
+  section   String        @default("TATAUSAHA") // bidang pemilik: TATAUSAHA/KURIKULUM/KESISWAAN/KEUANGAN/GTK/SARPRAS/SPMB — tiap bidang punya kategori sendiri
+  name      String
   createdAt DateTime      @default(now()) @map("created_at")
   items     ArchiveItem[]
 
+  @@unique([section, name])
   @@map("archive_categories")
 }
 
 model ArchiveItem {
   id         String   @id @default(uuid()) @db.Uuid
+  section    String   @default("TATAUSAHA") // bidang pemilik — arsip hanya tampil di bidangnya
   categoryId String?  @map("category_id") @db.Uuid
   title      String
   refNumber  String?  @map("ref_number") // nomor dokumen/arsip
@@ -2217,7 +2221,7 @@ model ArchiveItem {
 
   category ArchiveCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
 
-  @@index([categoryId, date])
+  @@index([section, categoryId, date])
   @@map("archive_items")
 }
 
@@ -2258,7 +2262,6 @@ model ExamRoom {
   period         String // label periode ujian, e.g. "US 2026" / "PTS Ganjil"
   academicYearId String  @map("academic_year_id") @db.Uuid
   capacity       Int     @default(24)
-  participantCode String @default("145") @map("participant_code") // kode tengah no peserta — format {jenjang:2d}-{kode}-{urut:3d}, mis. "07-145-001"
   prasaranaId    String?  @map("prasarana_id") @db.Uuid // ruangan dari data Sarpras/Prasarana
   createdAt      DateTime @default(now()) @map("created_at")
 

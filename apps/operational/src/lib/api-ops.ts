@@ -220,16 +220,19 @@ export interface ArchiveItemView {
   fileName: string; mimeType?: string | null;
   categoryId?: string | null; category?: { id: string; name: string } | null; createdAt: string;
 }
-export const listArchiveCategories = () => req<{ id: string; name: string; _count: { items: number } }[]>('/ops/archives/categories');
-export const createArchiveCategory = (name: string) =>
-  req('/ops/archives/categories', { method: 'POST', json: { name } });
+/** Bidang pemilik arsip — arsip & kategori tersekat per bidang. */
+export type ArchiveSection = 'TATAUSAHA' | 'KURIKULUM' | 'KESISWAAN' | 'KEUANGAN' | 'GTK' | 'SARPRAS' | 'SPMB';
+export const listArchiveCategories = (section: ArchiveSection) =>
+  req<{ id: string; name: string; _count: { items: number } }[]>(`/ops/archives/categories?section=${section}`);
+export const createArchiveCategory = (name: string, section: ArchiveSection) =>
+  req('/ops/archives/categories', { method: 'POST', json: { name, section } });
 export const updateArchiveCategory = (id: string, name: string) =>
   req(`/ops/archives/categories/${id}`, { method: 'PATCH', json: { name } });
 export const deleteArchiveCategory = (id: string) =>
   req(`/ops/archives/categories/${id}`, { method: 'DELETE' });
-export const listArchives = (q: { categoryId?: string | undefined; q?: string | undefined }) =>
+export const listArchives = (q: { section?: ArchiveSection | undefined; categoryId?: string | undefined; q?: string | undefined }) =>
   req<ArchiveItemView[]>(`/ops/archives${qs(q)}`);
-export const uploadArchive = (dto: { title: string; categoryId?: string | undefined; refNumber?: string | undefined; date?: string | undefined }, file: File) => {
+export const uploadArchive = (dto: { title: string; section: ArchiveSection; categoryId?: string | undefined; refNumber?: string | undefined; date?: string | undefined }, file: File) => {
   const fd = new FormData();
   Object.entries(dto).forEach(([k, v]) => { if (v) fd.append(k, v); });
   fd.append('file', file);
@@ -274,8 +277,6 @@ export interface ExamSeatView {
 }
 export interface ExamRoomView {
   id: string; name: string; period: string; capacity: number;
-  /** Kode tengah nomor peserta — format {jenjang}-{kode}-{urut}, mis. "145". */
-  participantCode?: string;
   prasaranaId?: string | null;
   prasarana?: { id: string; name: string } | null;
   seats: ExamSeatView[];
@@ -283,14 +284,30 @@ export interface ExamRoomView {
 }
 export const listExamRooms = (academicYearId: string, period?: string) =>
   req<ExamRoomView[]>(`/ops/exam-rooms?academicYearId=${academicYearId}${period ? `&period=${period}` : ''}`);
-export const createExamRoom = (dto: { name: string; period: string; academicYearId: string; capacity?: number; participantCode?: string; prasaranaId?: string }) =>
+export const createExamRoom = (dto: { name: string; period: string; academicYearId: string; capacity?: number; prasaranaId?: string }) =>
   req('/ops/exam-rooms', { method: 'POST', json: dto });
-export const updateExamRoom = (id: string, dto: { name?: string; period?: string; capacity?: number; participantCode?: string; prasaranaId?: string | null }) =>
+export const updateExamRoom = (id: string, dto: { name?: string; period?: string; capacity?: number; prasaranaId?: string | null }) =>
   req(`/ops/exam-rooms/${id}`, { method: 'PATCH', json: dto });
 export const deleteExamRoom = (id: string) => req(`/ops/exam-rooms/${id}`, { method: 'DELETE' });
 export const removeExamSeat = (seatId: string) => req(`/ops/exam-seats/${seatId}`, { method: 'DELETE' });
-export const assignClassToRoom = (roomId: string, classId: string, count?: number) =>
-  req<{ added: number; skipped: number; free: number; remaining: number }>(`/ops/exam-rooms/${roomId}/assign-class`, { method: 'POST', json: { classId, ...(count ? { count } : {}) } });
+/** Tempatkan rombel — rentang nomor absen opsional (absenTo kosong = sisa). */
+export const assignClassToRoom = (roomId: string, classId: string, absenFrom?: number, absenTo?: number) =>
+  req<{ added: number; skipped: number; free: number }>(`/ops/exam-rooms/${roomId}/assign-class`, {
+    method: 'POST',
+    json: { classId, ...(absenFrom ? { absenFrom } : {}), ...(absenTo ? { absenTo } : {}) },
+  });
+/** Absen yang masih bebas per rombel di periode ruang ini. */
+export const getRombelAvailability = (roomId: string) =>
+  req<{ classId: string; name: string; gradeLevel: number | null; total: number; freeAbsen: number[]; seatedAbsen: number[] }[]>(
+    `/ops/exam-rooms/${roomId}/rombel-availability`,
+  );
+/** Susun ulang nomor meja — kode peserta tak berubah. */
+export const renumberRoom = (roomId: string, mode: 'sequential' | 'zigzag') =>
+  req<{ count: number; mode: string }>(`/ops/exam-rooms/${roomId}/renumber`, { method: 'PATCH', json: { mode } });
+/** Kode sekolah — segmen tengah nomor peserta (tetap, mis. "145"). */
+export const getExamConfig = () => req<{ examCode: string }>('/ops/exam-config');
+export const updateExamConfig = (examCode: string) =>
+  req<{ examCode: string }>('/ops/exam-config', { method: 'PATCH', json: { examCode } });
 /** Hapus seluruh absen satu rombel di satu tanggal (salah absen). */
 export const clearClassAttendance = (classId: string, date: string) =>
   req<{ removed: number }>(`/ops/class-attendance?classId=${classId}&date=${date}`, { method: 'DELETE' });

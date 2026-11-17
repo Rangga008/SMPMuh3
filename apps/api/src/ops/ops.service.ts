@@ -1503,12 +1503,16 @@ export class OpsService {
     return { buf, mime: 'application/octet-stream', name: sub.fileName ?? 'file' };
   }
 
-  // ================= Arsip =================
-  listArchiveCategories() {
-    return this.prisma.archiveCategory.findMany({ include: { _count: { select: { items: true } } }, orderBy: { name: 'asc' } });
+  // ================= Arsip — tersekat per bidang =================
+  listArchiveCategories(section: string) {
+    return this.prisma.archiveCategory.findMany({
+      where: { section },
+      include: { _count: { select: { items: true } } },
+      orderBy: { name: 'asc' },
+    });
   }
-  createArchiveCategory(name: string) {
-    return this.prisma.archiveCategory.create({ data: { name } });
+  createArchiveCategory(name: string, section: string) {
+    return this.prisma.archiveCategory.create({ data: { name: name.trim(), section } });
   }
   updateArchiveCategory(id: string, name: string) {
     return this.prisma.archiveCategory.update({ where: { id }, data: { name: name.trim() } });
@@ -1517,21 +1521,32 @@ export class OpsService {
     // Arsip di dalamnya TIDAK ikut terhapus — jadi "tanpa kategori" (SetNull).
     return this.prisma.archiveCategory.delete({ where: { id } });
   }
-  async uploadArchiveItem(dto: { title: string; categoryId?: string; refNumber?: string; date?: string }, file: Express.Multer.File, uploadedBy?: string) {
-    const key = `archive/${Date.now()}-${file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+  /** Bidang pemilik kategori — untuk cek izin sebelum ubah/hapus. */
+  async archiveCategorySection(id: string) {
+    const c = await this.prisma.archiveCategory.findUniqueOrThrow({ where: { id }, select: { section: true } });
+    return c.section;
+  }
+  /** Bidang pemilik arsip — untuk cek izin lihat/ubah/hapus. */
+  async archiveItemSection(id: string) {
+    const it = await this.prisma.archiveItem.findUniqueOrThrow({ where: { id }, select: { section: true } });
+    return it.section;
+  }
+  async uploadArchiveItem(dto: { title: string; section: string; categoryId?: string; refNumber?: string; date?: string }, file: Express.Multer.File, uploadedBy?: string) {
+    const key = `archive/${dto.section.toLowerCase()}/${Date.now()}-${file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
     await this.storage.putObject(key, file.buffer, file.mimetype);
     return this.prisma.archiveItem.create({
       data: {
-        title: dto.title, categoryId: dto.categoryId ?? null,
+        title: dto.title, section: dto.section, categoryId: dto.categoryId ?? null,
         refNumber: dto.refNumber ?? null, date: dto.date ? toDateOnly(dto.date) : null,
         storageKey: key, fileName: file.originalname, mimeType: file.mimetype,
         sizeBytes: file.size, uploadedBy: uploadedBy ?? null,
       },
     });
   }
-  listArchiveItems(categoryId?: string, q?: string) {
+  listArchiveItems(section: string, categoryId?: string, q?: string) {
     return this.prisma.archiveItem.findMany({
       where: {
+        section,
         ...(categoryId ? { categoryId } : {}),
         ...(q ? { OR: [{ title: { contains: q, mode: 'insensitive' } }, { refNumber: { contains: q, mode: 'insensitive' } }] } : {}),
       },
@@ -1543,7 +1558,7 @@ export class OpsService {
   async archiveFile(id: string) {
     const item = await this.prisma.archiveItem.findUniqueOrThrow({ where: { id } });
     const buf = await this.storage.getObjectBuffer(item.storageKey);
-    return { buf, mime: item.mimeType, name: item.fileName };
+    return { buf, mime: item.mimeType, name: item.fileName, section: item.section };
   }
   async updateArchiveItem(id: string, dto: { title?: string; categoryId?: string | null; refNumber?: string | null; date?: string | null }, file?: Express.Multer.File) {
     const item = await this.prisma.archiveItem.findUniqueOrThrow({ where: { id } });
@@ -1612,18 +1627,18 @@ export class OpsService {
       const p = await this.prisma.prasarana.findUnique({ where: { id: dto.prasaranaId } });
       if (p) name = p.name;
     }
-    return this.prisma.examRoom.create({ data: { name, period: dto.period, academicYearId: dto.academicYearId, capacity: dto.capacity ?? 24, participantCode: dto.participantCode?.trim() || '145', prasaranaId: dto.prasaranaId ?? null } });
+    return this.prisma.examRoom.create({ data: { name, period: dto.period, academicYearId: dto.academicYearId, capacity: dto.capacity ?? 24, prasaranaId: dto.prasaranaId ?? null } });
   }
   async listExamRooms(academicYearId: string, period?: string) {
     // Backfill kode peserta untuk kursi lama yang belum punya.
     const missing = await this.prisma.examSeat.findMany({
       where: { room: { academicYearId }, code: null },
-      select: { id: true, room: { select: { period: true, participantCode: true } }, class: { select: { gradeLevel: true } } },
+      select: { id: true, room: { select: { period: true } }, class: { select: { gradeLevel: true } } },
     });
     for (const s of missing) {
       await this.prisma.examSeat.update({
         where: { id: s.id },
-        data: { code: await this.nextSeatCode(academicYearId, s.room.period, s.class?.gradeLevel, s.room.participantCode) },
+        data: { code: await this.nextSeatCode(academicYearId, s.room.period, s.class?.gradeLevel) },
       });
     }
     return this.prisma.examRoom.findMany({
@@ -1656,51 +1671,125 @@ export class OpsService {
     if (dup) throw new ConflictException(`Siswa sudah duduk di ${dup.room.name} untuk periode ini.`);
     const cls = dto.classId ? await this.prisma.class.findUnique({ where: { id: dto.classId }, select: { gradeLevel: true } }) : null;
     return this.prisma.examSeat.create({
-      data: { roomId, studentId: dto.studentId, classId: dto.classId ?? null, seatNo: dto.seatNo ?? seatCount + 1, code: await this.nextSeatCode(room.academicYearId, room.period, cls?.gradeLevel, room.participantCode) },
+      data: { roomId, studentId: dto.studentId, classId: dto.classId ?? null, seatNo: dto.seatNo ?? seatCount + 1, code: await this.nextSeatCode(room.academicYearId, room.period, cls?.gradeLevel) },
     });
   }
 
-  /** Tempatkan rombel ke sesi/ruang — otomatis LANJUT: siswa yang sudah
-   *  duduk di sesi yang sama (ruang lain pun) dilewati, jadi satu kelas bisa
-   *  dipecah antar-ruang tanpa duplikat. */
+  /** Urutan absen rombel = urutan daftar kelas (NIS lalu nama) — nomor absen
+   *  siswa = posisi 1-based dalam daftar ini. */
+  private async classRoster(classId: string, academicYearId: string) {
+    return this.prisma.enrollment.findMany({
+      where: { classId, academicYearId, student: { status: 'ACTIVE' } },
+      orderBy: [{ student: { nis: 'asc' } }, { student: { name: 'asc' } }],
+      select: { studentId: true },
+    });
+  }
+
+  /** Absen rombel yang masih bebas di periode ruang — untuk picker di UI. */
+  async rombelAvailability(roomId: string) {
+    const room = await this.prisma.examRoom.findUniqueOrThrow({ where: { id: roomId } });
+    const classes = await this.prisma.class.findMany({
+      where: { academicYearId: room.academicYearId },
+      select: { id: true, name: true, gradeLevel: true },
+      orderBy: [{ gradeLevel: 'asc' }, { name: 'asc' }],
+    });
+    const taken = await this.prisma.examSeat.findMany({
+      where: { room: { academicYearId: room.academicYearId, period: room.period } },
+      select: { studentId: true, room: { select: { name: true } } },
+    });
+    const seatedAt = new Map(taken.map((t) => [t.studentId, t.room.name]));
+    const out: { classId: string; name: string; gradeLevel: number | null; total: number; freeAbsen: number[]; seatedAbsen: number[] }[] = [];
+    for (const c of classes) {
+      const roster = await this.classRoster(c.id, room.academicYearId);
+      const freeAbsen: number[] = [];
+      const seatedAbsen: number[] = [];
+      roster.forEach((r, i) => (seatedAt.has(r.studentId) ? seatedAbsen : freeAbsen).push(i + 1));
+      out.push({ classId: c.id, name: c.name, gradeLevel: c.gradeLevel, total: roster.length, freeAbsen, seatedAbsen });
+    }
+    return out;
+  }
+
   /** Tempatkan rombel ke ruang — ujian serentak: siswa yang sudah duduk di
    *  ruang lain SE-PERIODE dilewati, jadi satu kelas bisa dipecah antar-ruang
-   *  tanpa duplikat dan selalu melanjutkan sisa (urutan nomor absen/NIS). */
-  async assignClassToRoom(roomId: string, classId: string, count?: number) {
+   *  tanpa duplikat. Rentang nomor absen opsional: absenFrom..absenTo
+   *  (1-based, inklusif; absenTo kosong = sampai sisa). */
+  async assignClassToRoom(roomId: string, classId: string, absenFrom?: number, absenTo?: number) {
     const room = await this.prisma.examRoom.findUniqueOrThrow({ where: { id: roomId }, include: { _count: { select: { seats: true } } } });
     const cls = await this.prisma.class.findUniqueOrThrow({ where: { id: classId } });
-    const students = await this.prisma.enrollment.findMany({
-      where: { classId, academicYearId: cls.academicYearId, student: { status: 'ACTIVE' } },
-      orderBy: [{ student: { nis: 'asc' } }, { student: { name: 'asc' } }],
-    });
-    const seated = await this.prisma.examSeat.count({ where: { roomId } });
+    const roster = await this.classRoster(classId, cls.academicYearId);
+    const from = Math.max(1, absenFrom ?? 1);
+    const to = Math.min(roster.length, absenTo ?? roster.length);
+    const picked = roster.slice(from - 1, to);
     const existing = await this.prisma.examSeat.findMany({
       where: {
         room: { academicYearId: room.academicYearId, period: room.period },
-        studentId: { in: students.map((s) => s.studentId) },
+        studentId: { in: picked.map((s) => s.studentId) },
       },
       select: { studentId: true },
     });
     const skip = new Set(existing.map((e) => e.studentId));
-    const free = room.capacity - seated;
-    const limit = count != null && count > 0 ? Math.min(count, free) : free;
-    const toAdd = students.filter((s) => !skip.has(s.studentId)).slice(0, Math.max(limit, 0));
-    let seat = seated;
+    const free = room.capacity - room._count.seats;
+    const toAdd = picked.filter((s) => !skip.has(s.studentId)).slice(0, Math.max(free, 0));
+    let seat = room._count.seats;
     for (const s of toAdd) {
       await this.prisma.examSeat.create({
-        data: { roomId, studentId: s.studentId, classId, seatNo: ++seat, code: await this.nextSeatCode(room.academicYearId, room.period, cls.gradeLevel, room.participantCode) },
+        data: { roomId, studentId: s.studentId, classId, seatNo: ++seat, code: await this.nextSeatCode(room.academicYearId, room.period, cls.gradeLevel) },
       });
     }
-    const unseated = students.length - skip.size - toAdd.length;
-    return { added: toAdd.length, skipped: students.length - toAdd.length, free: free - toAdd.length, remaining: Math.max(unseated, 0) };
+    const inRangeSkipped = picked.length - toAdd.length;
+    return { added: toAdd.length, skipped: inRangeSkipped, free: free - toAdd.length };
   }
 
-  /** Kode peserta: {jenjang:2d}-{kode tengah}-{urut:3d}, mis. "07-145-001" —
-   *  jenjang dari rombel si siswa, kode tengah dari ruang (participant_code),
+  /** Susun ulang NOMOR MEJA ruang — kode peserta tak berubah (ikut kursi).
+   *  sequential: urut per kelas lalu nomor peserta (blok per rombel).
+   *  zigzag: meja berselang-seling antar-kelas (meja 1 kelas A, meja 2 kelas B…). */
+  async renumberRoom(roomId: string, mode: 'sequential' | 'zigzag') {
+    const seats = await this.prisma.examSeat.findMany({
+      where: { roomId },
+      include: { class: { select: { name: true } } },
+    });
+    const byCode = (a: (typeof seats)[number], b: (typeof seats)[number]) =>
+      (a.code ?? '').localeCompare(b.code ?? '', 'id', { numeric: true });
+    let ordered: typeof seats;
+    if (mode === 'zigzag') {
+      const groups = new Map<string, typeof seats>();
+      for (const s of seats) {
+        const k = s.class?.name ?? '—';
+        groups.set(k, [...(groups.get(k) ?? []), s]);
+      }
+      const queues = [...groups.entries()]
+        .sort(([a], [b]) => a.localeCompare(b, 'id', { numeric: true }))
+        .map(([, list]) => list.sort(byCode));
+      ordered = [];
+      let i = 0;
+      while (ordered.length < seats.length) {
+        const q = queues[i % queues.length]!;
+        const next = q.shift();
+        if (next) ordered.push(next);
+        i++;
+      }
+    } else {
+      ordered = [...seats].sort(
+        (a, b) =>
+          (a.class?.name ?? '—').localeCompare(b.class?.name ?? '—', 'id', { numeric: true }) || byCode(a, b),
+      );
+    }
+    for (let i = 0; i < ordered.length; i++) {
+      const s = ordered[i]!;
+      if (s.seatNo !== i + 1) {
+        await this.prisma.examSeat.update({ where: { id: s.id }, data: { seatNo: i + 1 } });
+      }
+    }
+    return { count: ordered.length, mode };
+  }
+
+  /** Kode peserta: {jenjang:2d}-{kode sekolah}-{urut:3d}, mis. "07-145-001" —
+   *  jenjang dari rombel si siswa, kode tengah = schools.exam_code (tetap),
    *  urut berlanjut lintas ruang dalam satu periode. Tercetak di kartu &
    *  kartu meja (sinkron CBT). */
-  private async nextSeatCode(academicYearId: string, period: string, gradeLevel: number | null | undefined, mid: string) {
+  private async nextSeatCode(academicYearId: string, period: string, gradeLevel: number | null | undefined) {
     const grade = String(gradeLevel ?? 0).padStart(2, '0');
+    const mid = (await this.prisma.school.findFirst({ select: { examCode: true } }))?.examCode?.trim() || '145';
     const count = await this.prisma.examSeat.count({ where: { room: { academicYearId, period } } });
     for (let i = count + 1; ; i++) {
       const code = `${grade}-${mid}-${String(i).padStart(3, '0')}`;
@@ -1709,7 +1798,19 @@ export class OpsService {
     }
   }
 
-  async updateExamRoom(id: string, dto: { name?: string; period?: string; capacity?: number; participantCode?: string; prasaranaId?: string | null }) {
+  /** Konfigurasi kode peserta ujian — kode sekolah (segmen tengah) tetap. */
+  async getExamConfig() {
+    const school = await this.prisma.school.findFirst({ select: { examCode: true, name: true } });
+    return { examCode: school?.examCode ?? '145' };
+  }
+  async updateExamConfig(examCode: string) {
+    const code = examCode.trim() || '145';
+    const school = await this.prisma.school.findFirst();
+    if (school) await this.prisma.school.update({ where: { id: school.id }, data: { examCode: code } });
+    return { examCode: code };
+  }
+
+  async updateExamRoom(id: string, dto: { name?: string; period?: string; capacity?: number; prasaranaId?: string | null }) {
     const room = await this.prisma.examRoom.findUniqueOrThrow({ where: { id }, include: { _count: { select: { seats: true } } } });
     if (dto.capacity !== undefined && dto.capacity < room._count.seats) {
       throw new ConflictException(`Kapasitas tak boleh di bawah jumlah peserta (${room._count.seats}).`);
@@ -1720,7 +1821,6 @@ export class OpsService {
         ...(dto.name !== undefined ? { name: dto.name } : {}),
         ...(dto.period !== undefined ? { period: dto.period } : {}),
         ...(dto.capacity !== undefined ? { capacity: dto.capacity } : {}),
-        ...(dto.participantCode !== undefined ? { participantCode: dto.participantCode.trim() || '145' } : {}),
         ...(dto.prasaranaId !== undefined ? { prasaranaId: dto.prasaranaId } : {}),
       },
     });

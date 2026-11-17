@@ -97,9 +97,6 @@ export class ExamRoomDto {
   @IsString() @IsNotEmpty() period!: string;
   @IsUUID() academicYearId!: string;
   @IsOptional() @IsInt() @Min(1) capacity?: number;
-  /** Kode tengah nomor peserta — format {jenjang}-{kode}-{urut}, mis. "145". */
-  @IsOptional() @IsString() @MaxLength(10) participantCode?: string;
-  @IsOptional() @IsUUID() examId?: string;
   /** Ruangan dari data Sarpras/Prasarana — sumber nama fisik ruang. */
   @IsOptional() @IsUUID() prasaranaId?: string;
 }
@@ -114,8 +111,6 @@ export class ExamRoomUpdateDto {
   @IsOptional() @IsString() @IsNotEmpty() name?: string;
   @IsOptional() @IsString() @IsNotEmpty() period?: string;
   @IsOptional() @IsInt() @Min(1) capacity?: number;
-  @IsOptional() @IsString() @MaxLength(10) participantCode?: string;
-  @IsOptional() @IsUUID() examId?: string | null;
   @IsOptional() @IsUUID() prasaranaId?: string | null;
 }
 

@@ -94,7 +94,7 @@ export default function DashboardPage() {
     }
     if (can(PERMISSIONS.TATAUSAHA_READ)) {
       Promise.all([
-        listLetters('IN'), listLetters('OUT'), listMutations(), listArchives({}),
+        listLetters('IN'), listLetters('OUT'), listMutations(), listArchives({ section: 'TATAUSAHA' }),
       ]).then(([mi, mo, mut, ars]) =>
         setTu({
           masuk: mi.length,

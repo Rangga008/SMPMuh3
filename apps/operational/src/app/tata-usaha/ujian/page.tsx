@@ -6,9 +6,10 @@ import { Shell } from '@/components/shell';
 import { PageTitle, Widget } from '@/components/widgets';
 import { DataTable } from '@/components/data-table';
 import {
-  assignClassToRoom, createExamRoom, deleteExamRoom, getExamCards, getExamRoomRoster,
-  listExamRooms, listPrasaranas, removeExamSeat,
-  setRoomAttendance, setSeatAttendance, updateExamRoom,
+  assignClassToRoom, createExamRoom, deleteExamRoom, getExamCards, getExamConfig,
+  getExamRoomRoster, getRombelAvailability, listExamRooms, listPrasaranas,
+  removeExamSeat, renumberRoom,
+  setRoomAttendance, setSeatAttendance, updateExamConfig, updateExamRoom,
   type ExamRoomView, type ExamSeatView, type Prasarana,
 } from '@/lib/api-ops';
 import { listAcademicYears, listClasses, type AcademicYear, type ClassView } from '@/lib/api';
@@ -92,10 +93,15 @@ export default function UjianPage() {
   const [editRoom, setEditRoom] = useState<ExamRoomView | null>(null);
   const [assignModal, setAssignModal] = useState<{ room: ExamRoomView } | null>(null);
   const [assignClassId, setAssignClassId] = useState('');
-  const [assignCount, setAssignCount] = useState('');
+  const [assignFrom, setAssignFrom] = useState('');
+  const [assignTo, setAssignTo] = useState('');
+  /** Absen bebas per rombel (diambil saat modal buka) — sisa riil se-periode. */
+  const [avail, setAvail] = useState<{ classId: string; name: string; gradeLevel: number | null; total: number; freeAbsen: number[]; seatedAbsen: number[] }[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [examCode, setExamCode] = useState('145');
+  const [examCodeEdit, setExamCodeEdit] = useState('');
 
   useEffect(() => {
     listAcademicYears().then((ys) => {
@@ -109,6 +115,7 @@ export default function UjianPage() {
     listExamRooms(yearId).then(setRooms).catch(() => {});
     listPrasaranas().then(setPrasaranas).catch(() => {});
     listClasses(yearId).then(setClasses).catch(() => {});
+    getExamConfig().then((c) => { setExamCode(c.examCode); setExamCodeEdit(c.examCode); }).catch(() => {});
   }, [yearId]);
   useEffect(load, [load]);
 
@@ -146,9 +153,9 @@ export default function UjianPage() {
         <div class="hint">Login CBT: <b>NIS</b> &amp; <b>Password</b> di atas. <b>Kode ujian diumumkan pengawas</b> di ruang. Simpan kartu ini.</div>
       </div>
       <div class="meja">
-        <div class="mt">Kartu Meja</div>
-        <div class="mc">${c.code ?? '—'}</div>
-        <div class="mi">${c.student.name}<br>${c.className ?? '—'} · ${room.name} · No. ${c.seatNo ?? '—'}</div>
+        <div class="mt">Meja Nomor</div>
+        <div class="mc">${c.seatNo ?? '—'}</div>
+        <div class="mi"><b class="kode">${c.code ?? '—'}</b><br>${c.student.name}<br>${c.className ?? '—'} · ${room.name}</div>
         <div class="mcut">✂ tempel di meja — gunting di sini</div>
       </div>
       </div>`).join('');
@@ -158,7 +165,7 @@ export default function UjianPage() {
         .card{border:1.5px solid #334155;border-radius:8px 0 0 8px;border-right:none;padding:14px;width:430px}
         .meja{width:200px;border:1.5px solid #334155;border-left:2px dashed #94a3b8;border-radius:0 8px 8px 0;padding:14px;display:flex;flex-direction:column}
         .mt{font-size:9px;letter-spacing:.12em;color:#64748b;text-transform:uppercase}
-        .mc{font-family:ui-monospace,monospace;font-size:24px;font-weight:800;letter-spacing:.03em;margin:8px 0}
+        .mc{font-family:ui-monospace,monospace;font-size:34px;font-weight:800;letter-spacing:.03em;margin:6px 0}
         .mi{font-size:11.5px;line-height:1.5}
         .mcut{margin-top:auto;padding-top:8px;font-size:9px;color:#94a3b8;border-top:1px dashed #cbd5e1}
         .peserta{font-family:ui-monospace,monospace;font-size:17px;font-weight:800;letter-spacing:.05em;margin:2px 0 8px}
@@ -175,7 +182,8 @@ export default function UjianPage() {
       </style>${html}`);
   };
 
-  /** Daftar duduk: nomor bangku → siswa, dikelompokkan kelas, untuk ditempel di pintu/dibawa pengawas. */
+  /** Daftar duduk + absensi: nomor bangku → siswa, dikelompokkan kelas, dengan
+   *  kolom tanda tangan peserta — dipakai pengawas sekaligus daftar hadir. */
   const printSeating = (r: ExamRoomView) => {
     const seats = [...(r.seats ?? [])].sort((a, b) => (a.seatNo ?? 999) - (b.seatNo ?? 999));
     const byClass = new Map<string, typeof seats>();
@@ -185,10 +193,15 @@ export default function UjianPage() {
     }
     const rows = [...byClass.entries()].map(([cls, list]) => `
       <h3>Kelas ${cls} <span class="cnt">(${list.length} siswa)</span></h3>
-      <div className="overflow-x-auto"><table><thead><tr><th>Bangku</th><th>NIS</th><th>Nama</th><th>Kode Peserta</th></tr></thead><tbody>
-      ${list.map((s) => `<tr><td class="no">${s.seatNo ?? '—'}</td><td>${s.student.nis ?? '—'}</td><td>${s.student.name}</td><td class="mono">${s.code ?? '—'}</td></tr>`).join('')}
+      <div className="overflow-x-auto"><table><thead><tr>
+        <th>Meja</th><th>NIS</th><th>Nama</th><th>Kode Peserta</th><th colspan="2">Tanda Tangan</th>
+      </tr></thead><tbody>
+      ${list.map((s) => `<tr>
+        <td class="no">${s.seatNo ?? '—'}</td><td>${s.student.nis ?? '—'}</td><td>${s.student.name}</td>
+        <td class="mono">${s.code ?? '—'}</td><td class="ttd"></td><td class="ttd"></td>
+      </tr>`).join('')}
       </tbody></table></div>`).join('');
-    printHtml(`Daftar Duduk ${r.name} — ${r.period}`, `
+    printHtml(`Daftar Duduk & Absensi ${r.name} — ${r.period}`, `
       <style>
         body{font-family:Georgia,serif;padding:24px;color:#1e293b}
         h1{font-size:18px;margin:0 0 4px}p.sub{font-size:12px;color:#64748b;margin:0 0 18px}
@@ -196,52 +209,16 @@ export default function UjianPage() {
         table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:8px}
         th,td{border:1px solid #cbd5e1;padding:4px 8px;text-align:left}
         th{background:#f1f5f9;font-size:10px;text-transform:uppercase;letter-spacing:.05em}
-        .no{font-weight:700;text-align:center;width:70px}.mono{font-family:ui-monospace,monospace;font-size:11px}
+        .no{font-weight:700;text-align:center;width:56px}.mono{font-family:ui-monospace,monospace;font-size:11px}
+        .ttd{width:70px;height:24px}
       </style>
-      <h1>Daftar Duduk — ${r.name}</h1>
-      <p class="sub">${r.period} · ${seats.length}/${r.capacity} kursi</p>
+      <h1>Daftar Duduk &amp; Absensi — ${r.name}</h1>
+      <p class="sub">${r.period} · ${seats.length}/${r.capacity} kursi · tanda tangan peserta di kolom kanan</p>
       ${rows}`);
   };
 
   /** Daftar peserta resmi per ruang — NO / NO PESERTA / NAMA / L-P / KLS
    *  (mirror sheet R.XX di Excel) dengan kop sekolah & jumlah peserta. */
-  const printDaftarPeserta = async (r: ExamRoomView) => {
-    const roster = await getExamRoomRoster(yearId, r.period);
-    const room = roster.rooms.find((x) => x.id === r.id);
-    const seats = room?.seats ?? [];
-    const male = seats.filter((s) => s.student.gender === 'MALE').length;
-    const female = seats.filter((s) => s.student.gender === 'FEMALE').length;
-    const s = roster.school;
-    const kop = `<div class="kop">
-      ${s?.logoUrl ? `<img src="/logo.png" class="logo" onerror="this.style.display='none'"/>` : ''}
-      <div class="koptxt"><b>${s?.name ?? 'SMP Muhammadiyah 3 Kota Bandung'}</b>${s?.npsn ? ` · NPSN ${s.npsn}` : ''}<br>
-      <span>${s?.address ?? ''}</span></div></div>`;
-    const rows = seats.map((x, i) => `<tr>
-      <td class="c">${i + 1}</td><td class="mono b">${x.code ?? '—'}</td><td>${x.student.name}</td>
-      <td class="c">${x.student.gender === 'MALE' ? 'L' : x.student.gender === 'FEMALE' ? 'P' : '—'}</td>
-      <td class="c">${x.class?.name ?? '—'}</td></tr>`).join('');
-    printHtml(`Daftar Peserta ${roster.period} — ${room?.name ?? r.name}`, `
-      <style>
-        body{font-family:Georgia,serif;padding:24px;color:#1e293b}
-        .kop{display:flex;gap:14px;align-items:center;justify-content:center;text-align:center;border-bottom:3px double #0f3a63;padding-bottom:10px;margin-bottom:14px}
-        .logo{height:56px}.koptxt{font-size:14px;line-height:1.45}.koptxt span{font-size:11px;color:#475569}
-        h1{font-size:16px;margin:0 0 2px;text-align:center;text-transform:uppercase}
-        p.sub{font-size:12px;color:#475569;margin:0 0 14px;text-align:center}
-        table{width:100%;border-collapse:collapse;font-size:12px}
-        th,td{border:1px solid #94a3b8;padding:4px 8px;text-align:left}
-        th{background:#e8edf3;font-size:10px;text-transform:uppercase;letter-spacing:.05em;text-align:center}
-        td.c{text-align:center}.mono{font-family:ui-monospace,monospace;font-size:11.5px}.b{font-weight:700}
-        tfoot td{font-weight:700;background:#f1f5f9}
-        @media print{body{padding:0}}
-      </style>
-      ${kop}
-      <h1>Daftar Peserta ${roster.period}</h1>
-      <p class="sub">Ruang <b>${room?.name ?? r.name}</b> · TA ${roster.academicYear?.name ?? ''} · ${seats.length} peserta</p>
-      <table><thead><tr><th style="width:36px">NO</th><th style="width:130px">NO PESERTA</th><th>NAMA SISWA</th><th style="width:40px">L/P</th><th style="width:60px">KLS</th></tr></thead>
-      <tbody>${rows || '<tr><td colspan="5" class="c"><i>Belum ada peserta.</i></td></tr>'}</tbody>
-      <tfoot><tr><td></td><td colspan="2">Jumlah</td><td class="c">L ${male} · P ${female}</td><td class="c">${seats.length}</td></tr></tfoot></table>`);
-  };
-
   /** Rekap satu periode — matriks jumlah peserta per rombel × ruang + L/P
    *  (mirror sheet REKAP di Excel). */
   const printRekap = async (period: string) => {
@@ -340,6 +317,18 @@ export default function UjianPage() {
             <Button size="sm" variant="outline" onClick={() => void printSemuaPeserta(effectivePeriod)}>Semua Peserta</Button>
           </div>
         ) : null}
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-sand-200 bg-sand-50/60 px-3 py-2" title={`Format nomor peserta: {jenjang}-${examCode}-{urut}, mis. 07-${examCode}-001 — berlaku untuk kursi baru`}>
+          <span className="text-xs font-semibold text-sand-600">Kode sekolah</span>
+          <Input value={examCodeEdit} onChange={(e) => setExamCodeEdit(e.target.value)} className="w-20" maxLength={10} />
+          <Button size="sm" variant="outline" disabled={busy || !examCodeEdit.trim() || examCodeEdit.trim() === examCode} onClick={async () => {
+            setBusy(true);
+            try {
+              const res = await updateExamConfig(examCodeEdit.trim());
+              setExamCode(res.examCode); setExamCodeEdit(res.examCode);
+              setNotice(`Kode sekolah → ${res.examCode}. Nomor peserta baru: 07-${res.examCode}-001 — kode yang sudah tercetak tidak berubah.`);
+            } catch (err) { setError(err instanceof Error ? err.message : 'Gagal menyimpan.'); } finally { setBusy(false); }
+          }}>Simpan</Button>
+        </div>
       </div>
 
       <Widget title={`Ruang Ujian (${rooms.length})`} subtitle="Klik baris untuk membuka daftar kursi tetap ruang.">
@@ -374,11 +363,34 @@ export default function UjianPage() {
                       <div className="mb-3 flex flex-wrap items-center gap-2">
                         <Badge tone="accent">Kursi tetap</Badge>
                         <span className="text-xs text-sand-500">Satu siswa satu meja sepanjang periode — berlaku untuk semua ujian.</span>
-                        <span className="ml-auto flex flex-wrap gap-1.5">
-                          <Button size="sm" variant="outline" onClick={() => { setAssignModal({ room: r }); setAssignClassId(''); setAssignCount(''); }}>+ Rombel</Button>
+                        <span className="ml-auto flex flex-wrap items-center gap-1.5">
+                          <Button size="sm" variant="outline" onClick={() => {
+                            setAssignModal({ room: r });
+                            setAssignClassId(''); setAssignFrom(''); setAssignTo(''); setAvail(null);
+                            getRombelAvailability(r.id).then(setAvail).catch(() => {});
+                          }}>+ Rombel</Button>
+                          <select
+                            className="rounded-lg border border-sand-300 bg-white px-2 py-1.5 text-xs font-semibold text-sand-700 disabled:opacity-50"
+                            defaultValue=""
+                            disabled={r.seats.length < 2}
+                            title="Susun ulang nomor meja — kode peserta tetap"
+                            onChange={async (e) => {
+                              const mode = e.target.value as 'sequential' | 'zigzag';
+                              e.target.value = '';
+                              if (!mode) return;
+                              try {
+                                const res = await renumberRoom(r.id, mode);
+                                setNotice(`Nomor meja disusun ulang ${mode === 'zigzag' ? 'zigzag (kelas berselang-seling)' : 'berurut per rombel'} — ${res.count} kursi.`);
+                                load();
+                              } catch (err) { setError(err instanceof Error ? err.message : 'Gagal menyusun meja.'); }
+                            }}
+                          >
+                            <option value="">Susun meja…</option>
+                            <option value="sequential">↕ Berurut per rombel</option>
+                            <option value="zigzag">⚡ Zigzag campur kelas</option>
+                          </select>
                           <Button size="sm" onClick={() => void printCards(r.id)} disabled={!r.seats.length} title="Kartu ujian + kartu meja dengan jadwal & nomor peserta">Cetak Kartu</Button>
-                          <Button size="sm" variant="outline" onClick={() => printSeating(r)} disabled={!r.seats.length}>Daftar Duduk</Button>
-                          <Button size="sm" variant="outline" onClick={() => void printDaftarPeserta(r)} disabled={!r.seats.length} title="Daftar peserta resmi: no peserta, L/P, kelas">Daftar Peserta</Button>
+                          <Button size="sm" variant="outline" onClick={() => printSeating(r)} disabled={!r.seats.length} title="Daftar duduk + kolom tanda tangan — sekaligus lembar absensi pengawas">Daftar Duduk &amp; Absen</Button>
                         </span>
                       </div>
                       {r.seats.length === 0
@@ -403,7 +415,6 @@ export default function UjianPage() {
               name: String(fd.get('name')) || prasaranas.find((p) => p.id === String(fd.get('prasaranaId')))?.name || 'Ruang',
               period: String(fd.get('period')),
               academicYearId: yearId, capacity: Number(fd.get('capacity')) || 24,
-              ...(String(fd.get('participantCode') ?? '').trim() ? { participantCode: String(fd.get('participantCode')).trim() } : {}),
               ...(String(fd.get('prasaranaId') ?? '') ? { prasaranaId: String(fd.get('prasaranaId')) } : {}),
             });
             setRoomModal(false); load(); setNotice('Ruang dibuat — buka barisnya lalu tempatkan rombel.');
@@ -417,10 +428,7 @@ export default function UjianPage() {
           </Field>
           <Field label="Nama ruang"><Input name="name" placeholder="otomatis dari prasarana bila dipilih" /></Field>
           <Field label="Periode ujian"><Input name="period" required placeholder="US 2026 / PTS Ganjil" /></Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Kapasitas"><Input name="capacity" type="number" min={1} defaultValue={24} /></Field>
-            <Field label="Kode peserta" hint="Segmen tengah no. peserta — hasil: 07-145-001"><Input name="participantCode" defaultValue="145" maxLength={10} /></Field>
-          </div>
+          <Field label="Kapasitas"><Input name="capacity" type="number" min={1} defaultValue={24} /></Field>
           <div className="flex justify-end"><Button type="submit" disabled={busy}>Simpan</Button></div>
         </form>
       </Modal>
@@ -435,7 +443,6 @@ export default function UjianPage() {
             await updateExamRoom(editRoom.id, {
               name: String(fd.get('name')), period: String(fd.get('period')),
               capacity: Number(fd.get('capacity')) || editRoom.capacity,
-              ...(String(fd.get('participantCode') ?? '').trim() ? { participantCode: String(fd.get('participantCode')).trim() } : {}),
               prasaranaId: String(fd.get('prasaranaId') ?? '') || null,
             });
             setEditRoom(null); load(); setNotice('Ruang diperbarui.');
@@ -443,10 +450,7 @@ export default function UjianPage() {
         }}>
           <Field label="Nama ruang"><Input name="name" required defaultValue={editRoom?.name ?? ''} /></Field>
           <Field label="Periode ujian"><Input name="period" required defaultValue={editRoom?.period ?? ''} /></Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label={`Kapasitas`}><Input name="capacity" type="number" min={1} defaultValue={editRoom?.capacity ?? 24} /></Field>
-            <Field label="Kode peserta" hint="Segmen tengah no. peserta baru — kode yang sudah tercetak tidak berubah"><Input name="participantCode" defaultValue={editRoom?.participantCode ?? '145'} maxLength={10} /></Field>
-          </div>
+          <Field label={`Kapasitas`}><Input name="capacity" type="number" min={1} defaultValue={editRoom?.capacity ?? 24} /></Field>
           <Field label="Ruangan (Prasarana)">
             <Select name="prasaranaId" defaultValue={editRoom?.prasaranaId ?? ''} searchable>
               <option value="">— tidak ditautkan —</option>
@@ -459,27 +463,61 @@ export default function UjianPage() {
 
       <Modal open={!!assignModal} onClose={() => setAssignModal(null)} title={`Masukkan rombel — ${assignModal?.room.name ?? ''}`}>
         <div className="grid gap-4">
-          <Field label="Kelas" hint="Ruang boleh campur beberapa rombel & jenjang — siswa yang sudah duduk di ruang lain otomatis dilewati.">
-            <Select value={assignClassId} onChange={(e) => setAssignClassId(e.target.value)} searchable>
+          <Field label="Kelas" hint="Menampilkan sisa siswa yang BELUM duduk di periode ini — ruang boleh campur beberapa rombel & jenjang.">
+            <Select value={assignClassId} onChange={(e) => {
+              const cid = e.target.value;
+              setAssignClassId(cid);
+              const a = avail?.find((x) => x.classId === cid);
+              // Prefill: mulai dari absen bebas pertama, sampai sisa.
+              setAssignFrom(a?.freeAbsen.length ? String(a.freeAbsen[0]) : '');
+              setAssignTo('');
+            }} searchable>
               <option value="">— pilih kelas —</option>
-              {classes
-                .map((c) => <option key={c.id} value={c.id}>{c.name} ({c.gradeLevel ?? ''}{c._count?.enrollments != null ? ` · ${c._count.enrollments} siswa` : ''})</option>)}
+              {classes.map((c) => {
+                const a = avail?.find((x) => x.classId === c.id);
+                const total = a?.total ?? c._count?.enrollments ?? 0;
+                const sisa = a?.freeAbsen.length ?? total;
+                return <option key={c.id} value={c.id} disabled={sisa === 0}>{c.name} ({c.gradeLevel ?? ''} · sisa {sisa}/{total} siswa)</option>;
+              })}
             </Select>
           </Field>
-          <Field label="Jumlah siswa (kosong = sisa)" hint="Siswa yang sudah duduk di periode ini (ruang mana pun) otomatis dilewati — isi angka untuk batasi, kosongkan untuk semua sisa sampai kursi penuh.">
-            <Input type="number" min={1} value={assignCount} onChange={(e) => setAssignCount(e.target.value)} placeholder="sisa" />
-          </Field>
+          {(() => {
+            const a = avail?.find((x) => x.classId === assignClassId);
+            if (!a) return avail === null ? <p className="text-xs text-sand-400">Memuat absen bebas…</p> : null;
+            const ranges: string[] = [];
+            let start: number | null = null;
+            a.freeAbsen.forEach((n, i) => {
+              if (start === null) start = n;
+              if (a.freeAbsen[i + 1] !== n + 1) { ranges.push(start === n ? `${n}` : `${start}–${n}`); start = null; }
+            });
+            return a.freeAbsen.length
+              ? <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800">Absen bebas: <b>{ranges.join(', ')}</b> — {a.freeAbsen.length} siswa belum dapat tempat.</p>
+              : <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">Semua siswa kelas ini sudah duduk di periode ini.</p>;
+          })()}
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Dari absen" hint="Nomor absen pertama yang ditempatkan.">
+              <Input type="number" min={1} value={assignFrom} onChange={(e) => setAssignFrom(e.target.value)} placeholder="1" />
+            </Field>
+            <Field label="Sampai absen" hint="Kosongkan = sampai sisa rombel.">
+              <Input type="number" min={1} value={assignTo} onChange={(e) => setAssignTo(e.target.value)} placeholder="sisa" />
+            </Field>
+          </div>
           <Button disabled={!assignClassId || busy} onClick={async () => {
             if (!assignModal || !assignClassId) return;
             setBusy(true);
             try {
-              const r = await assignClassToRoom(assignModal.room.id, assignClassId, assignCount ? Number(assignCount) : undefined);
-              setNotice(`${r.added} siswa ditempatkan${r.skipped ? ` · ${r.skipped} sudah ada` : ''}${r.remaining ? ` · sisa ${r.remaining} belum dapat kursi` : ''}.`);
-              setAssignClassId(''); setAssignCount('');
+              const r = await assignClassToRoom(
+                assignModal.room.id, assignClassId,
+                assignFrom ? Number(assignFrom) : undefined,
+                assignTo ? Number(assignTo) : undefined,
+              );
+              setNotice(`${r.added} siswa ditempatkan${r.skipped ? ` · ${r.skipped} dilewati (sudah duduk / kursi penuh)` : ''}.`);
+              // Refresh availability untuk penempatan lanjutan tanpa tutup modal.
+              getRombelAvailability(assignModal.room.id).then(setAvail).catch(() => {});
               load();
             } catch (err) { setError(err instanceof Error ? err.message : 'Gagal menempatkan.'); } finally { setBusy(false); }
           }}>Tempatkan Rombel</Button>
-          <p className="text-xs text-sand-500">Pecah satu kelas ke beberapa ruang: tempatkan di ruang pertama, lalu di ruang berikutnya siswa yang sudah duduk dilewati otomatis — tak ada duplikat.</p>
+          <p className="text-xs text-sand-500">Pecah satu kelas ke beberapa ruang: mis. absen 1–15 di ruang ini, lalu 16–30 (atau kosong = sisa) di ruang berikutnya — siswa yang sudah duduk dilewati otomatis, tak ada duplikat. Nomor peserta lanjut antar ruang.</p>
         </div>
       </Modal>
     </Shell>
