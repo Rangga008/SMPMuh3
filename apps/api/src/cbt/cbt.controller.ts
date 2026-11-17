@@ -26,8 +26,6 @@ import {
   AnswerDto,
   CreateExamDto,
   EnterExamDto,
-  ExamSessionDto,
-  ExamSessionUpdateDto,
   LoginCbtDto,
   UpdateExamDto,
   UpdateGradeDto,
@@ -74,23 +72,6 @@ export class CbtController {
   @RequirePermission(PERMISSIONS.ACADEMIC_READ)
   remove(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
     return this.cbt.deleteExam(id, u);
-  }
-
-  // ---- Sesi per kelompok rombel ----
-  @Post('exams/:id/sessions')
-  @RequirePermission(PERMISSIONS.ACADEMIC_READ)
-  createSession(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() dto: ExamSessionDto) {
-    return this.cbt.createSession(id, dto, u);
-  }
-  @Patch('sessions/:sid')
-  @RequirePermission(PERMISSIONS.ACADEMIC_READ)
-  updateSession(@CurrentUser() u: AuthUser, @Param('sid', ParseUUIDPipe) sid: string, @Body() dto: ExamSessionUpdateDto) {
-    return this.cbt.updateSession(sid, dto, u);
-  }
-  @Delete('sessions/:sid')
-  @RequirePermission(PERMISSIONS.ACADEMIC_READ)
-  deleteSession(@CurrentUser() u: AuthUser, @Param('sid', ParseUUIDPipe) sid: string) {
-    return this.cbt.deleteSession(sid, u);
   }
 
   // ---- Monitor (semua staf: proktor/pengawas/tendik/guru/admin) ----

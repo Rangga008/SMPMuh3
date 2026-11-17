@@ -159,39 +159,6 @@ export class AnswerDto {
   answer?: unknown;
 }
 
-/** Sesi ujian untuk kelompok rombel — mis. "Sesi 1" untuk 7A–7C. */
-export class ExamSessionDto {
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(40)
-  name!: string;
-
-  @IsArray()
-  @ArrayMinSize(1)
-  @IsUUID('4', { each: true })
-  classIds!: string[];
-
-  @IsDateString()
-  startAt!: string;
-
-  @IsDateString()
-  endAt!: string;
-}
-
-export class ExamSessionUpdateDto {
-  @IsOptional() @IsString() @IsNotEmpty() @MaxLength(40)
-  name?: string;
-
-  @IsOptional() @IsArray() @ArrayMinSize(1) @IsUUID('4', { each: true })
-  classIds?: string[];
-
-  @IsOptional() @IsDateString()
-  startAt?: string;
-
-  @IsOptional() @IsDateString()
-  endAt?: string;
-}
-
 export class UpdateGradeDto {
   @IsUUID()
   studentId!: string;

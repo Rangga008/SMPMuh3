@@ -13,15 +13,15 @@ import { PERMISSIONS } from '@smpmuh3/types';
 import { ApiError, downloadFile, listClasses, type ClassView } from '@/lib/api';
 import { richHtml } from '@/lib/math';
 import {
-  createExamSession, deleteExamSession, examAnalysis, examAnswersMatrix, examMonitor,
+  examAnalysis, examAnswersMatrix, examMonitor,
   examQuestions, examResults, exportExamResults, getExam, getExamPassages, listMonitorExams, regenerateExamCode,
-  updateExam, updateExamGrade, updateExamSession,
+  updateExam, updateExamGrade,
   type ExamQuestion, type ExamView, type ItemAnalysis, type MonitorClass,
 } from '@/lib/api-ops';
 
 const STATUS: Record<ExamView['status'], { label: string; tone: 'neutral' | 'primary' | 'danger' }> = {
   DRAFT: { label: 'Draf — siswa belum bisa masuk', tone: 'neutral' },
-  OPEN: { label: 'Dibuka — siswa masuk sesuai jadwal sesi', tone: 'primary' },
+  OPEN: { label: 'Dibuka — siswa masuk sesuai jadwal ujian', tone: 'primary' },
   CLOSED: { label: 'Ditutup', tone: 'danger' },
 };
 const TYPE_LABEL: Record<string, string> = {
@@ -45,8 +45,8 @@ export function ExamPanel({ id, embedded = false }: { id: string; embedded?: boo
   const [exam, setExam] = useState<ExamView | null>(null);
   const [monitorOnly, setMonitorOnly] = useState(false);
   const [classes, setClasses] = useState<ClassView[]>([]);
-  const [tab, setTab] = useState<'monitor' | 'sesi' | 'soal' | 'hasil'>('monitor');
-  const [monitor, setMonitor] = useState<{ examId: string; sessions: { id: string; name: string; classIds: string[]; startAt: string; endAt: string }[]; classes: MonitorClass[] } | null>(null);
+  const [tab, setTab] = useState<'monitor' | 'soal' | 'hasil'>('monitor');
+  const [monitor, setMonitor] = useState<{ examId: string; classes: MonitorClass[] } | null>(null);
   const [questions, setQuestions] = useState<ExamQuestion[]>([]);
   const [passages, setPassages] = useState<{ id: string; code: string; content: string }[]>([]);
   const [results, setResults] = useState<Awaited<ReturnType<typeof examResults>> | null>(null);
@@ -60,7 +60,6 @@ export function ExamPanel({ id, embedded = false }: { id: string; embedded?: boo
   const [notice, setNotice] = useState<string | null>(null);
   const [modalErr, setModalErr] = useState<string | null>(null);
   const [modal, setModal] = useState(false);
-  const [sesiModal, setSesiModal] = useState<{ id?: string; name: string; classIds: Set<string>; startAt: string; endAt: string } | null>(null);
   const [gradeEdit, setGradeEdit] = useState<{ studentId: string; name: string; score: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const canManage = usePermission(PERMISSIONS.ACADEMIC_MANAGE);
@@ -137,7 +136,7 @@ export function ExamPanel({ id, embedded = false }: { id: string; embedded?: boo
   };
   const setStatus = async (status: ExamView['status']) => {
     if (!exam) return;
-    const msg = status === 'OPEN' ? 'Buka ujian ini?' : status === 'CLOSED' ? 'Tutup ujian? Sesi berjalan dinilai saat deadline.' : 'Kembalikan ke draf?';
+    const msg = status === 'OPEN' ? 'Buka ujian ini?' : status === 'CLOSED' ? 'Tutup ujian? Pengerjaan berjalan dinilai saat deadline.' : 'Kembalikan ke draf?';
     if (!(await confirm(msg))) return;
     try { await updateExam(exam.id, { status }); load(); } catch (e) { err(e, 'Gagal mengubah status.'); }
   };
@@ -166,24 +165,6 @@ export function ExamPanel({ id, embedded = false }: { id: string; embedded?: boo
     finally { setBusy(false); }
   };
 
-  // ---------- Sesi ----------
-  const saveSesi = async () => {
-    if (!sesiModal || !exam) return;
-    setBusy(true);
-    try {
-      const dto = { name: sesiModal.name, classIds: [...sesiModal.classIds], startAt: new Date(sesiModal.startAt).toISOString(), endAt: new Date(sesiModal.endAt).toISOString() };
-      if (sesiModal.id) await updateExamSession(sesiModal.id, dto);
-      else await createExamSession(exam.id, dto);
-      setSesiModal(null); flash('Sesi disimpan.'); load();
-    } catch (e) { err(e, 'Gagal menyimpan sesi.'); }
-    finally { setBusy(false); }
-  };
-  const delSesi = async (sid: string, name: string) => {
-    if (!(await confirm(`Hapus sesi "${name}"? Rombelnya kembali mengikuti jendela ujian utama.`))) return;
-    try { await deleteExamSession(sid); flash('Sesi dihapus.'); load(); }
-    catch (e) { err(e, 'Gagal menghapus sesi.'); }
-  };
-
   // ---------- Soal ----------
   // Pengelolaan soal (import/edit/hapus/bacaan/gambar) disatukan di halaman
   // Bank Asesmen — ujian hanya menampilkan pratinjau & tautan ke sana.
@@ -203,7 +184,7 @@ export function ExamPanel({ id, embedded = false }: { id: string; embedded?: boo
   const done = exam?.attempts?.filter((a) => a.status === 'SUBMITTED').length ?? 0;
   const total = exam?.attempts?.length ?? 0;
   const TABS = [
-    ['monitor', '📺 Monitor'], ['sesi', '🕒 Sesi'], ['soal', '📝 Soal'], ['hasil', '📊 Hasil & Analisis'],
+    ['monitor', '📺 Monitor'], ['soal', '📝 Soal'], ['hasil', '📊 Hasil & Analisis'],
   ] as const;
 
   const keyText = (q: ExamQuestion | ItemAnalysis) => {
@@ -287,7 +268,7 @@ export function ExamPanel({ id, embedded = false }: { id: string; embedded?: boo
                       <div className="flex items-center justify-between border-b border-sand-100 px-4 py-2.5">
                         <div>
                           <p className="font-extrabold text-sand-900">{c.className}</p>
-                          {c.session ? <p className="text-[11px] text-sand-500">{c.session.name} · {dt(c.session.startAt)}–{dt(c.session.endAt)}</p> : <p className="text-[11px] text-sand-400">Jendela ujian utama</p>}
+                          <p className="text-[11px] text-sand-400">Jendela ujian utama</p>
                         </div>
                         <Badge tone={c.done === c.total && c.total > 0 ? 'primary' : 'accent'}>{c.done}/{c.total} selesai{c.working ? ` · ${c.working} mengerjakan` : ''}</Badge>
                       </div>
@@ -314,35 +295,6 @@ export function ExamPanel({ id, embedded = false }: { id: string; embedded?: boo
                     </div>
                   ))}
                 </div>
-              )}
-            </Widget>
-          )}
-
-          {/* ---------- SESI ---------- */}
-          {tab === 'sesi' && (
-            <Widget title="Sesi Ujian per Kelompok Rombel"
-              subtitle="Bagi rombel ke sesi berbeda — siswa hanya bisa masuk dalam jendela sesi rombelnya. Rombel tanpa sesi mengikuti jendela ujian utama."
-              action={examManage ? <Button size="sm" onClick={() => setSesiModal({ name: `Sesi ${(exam.sessions?.length ?? 0) + 1}`, classIds: new Set(), startAt: toLocalInput(exam.startAt), endAt: toLocalInput(exam.endAt) })}>+ Sesi</Button> : undefined}>
-              {!(exam.sessions?.length) ? (
-                <p className="p-5 text-sm text-sand-400">Belum ada sesi — semua rombel memakai jendela ujian utama ({dt(exam.startAt)}–{dt(exam.endAt)}).</p>
-              ) : (
-                <DataTable head={['Sesi', 'Rombel', 'Jendela Akses', '']}>
-                  {exam.sessions.map((s) => (
-                    <tr key={s.id}>
-                      <td className="px-5 py-3 font-bold text-sand-900">{s.name}</td>
-                      <td className="px-5 py-3 text-xs text-sand-600">{s.classIds.map(clsName).join(', ')}</td>
-                      <td className="px-5 py-3 text-xs text-sand-600">{dt(s.startAt)} → {dt(s.endAt)}</td>
-                      <td className="px-5 py-3">
-                        {examManage ? (
-                          <div className="flex gap-1.5">
-                            <RowBtn onClick={() => setSesiModal({ id: s.id, name: s.name, classIds: new Set(s.classIds), startAt: toLocalInput(s.startAt), endAt: toLocalInput(s.endAt) })}>Edit</RowBtn>
-                            <RowBtn tone="danger" onClick={() => void delSesi(s.id, s.name)}>Hapus</RowBtn>
-                          </div>
-                        ) : null}
-                      </td>
-                    </tr>
-                  ))}
-                </DataTable>
               )}
             </Widget>
           )}
@@ -610,37 +562,6 @@ export function ExamPanel({ id, embedded = false }: { id: string; embedded?: boo
               <Button type="submit" disabled={busy}>{busy ? 'Menyimpan…' : 'Simpan'}</Button>
             </div>
           </form>
-        ) : null}
-      </Modal>
-
-      {/* ---------- Modal sesi ---------- */}
-      <Modal open={!!sesiModal} onClose={() => setSesiModal(null)} title={sesiModal?.id ? 'Edit Sesi' : 'Sesi Baru'}>
-        {sesiModal && exam ? (
-          <div className="space-y-4">
-            <Field label="Nama sesi"><Input value={sesiModal.name} onChange={(e) => setSesiModal({ ...sesiModal, name: e.target.value })} placeholder="Sesi 1" /></Field>
-            <Field label="Rombel pada sesi ini">
-              <div className="flex flex-wrap gap-2 rounded-xl border border-sand-200 p-3">
-                {classes.filter((c) => exam.classIds.includes(c.id)).map((c) => (
-                  <label key={c.id} className="flex items-center gap-1.5 rounded-lg bg-sand-50 px-2.5 py-1.5 text-xs font-medium">
-                    <input type="checkbox" checked={sesiModal.classIds.has(c.id)}
-                      onChange={(e) => {
-                        const n = new Set(sesiModal.classIds);
-                        if (e.target.checked) n.add(c.id); else n.delete(c.id);
-                        setSesiModal({ ...sesiModal, classIds: n });
-                      }} /> {c.name}
-                  </label>
-                ))}
-              </div>
-            </Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Mulai"><Input type="datetime-local" value={sesiModal.startAt} onChange={(e) => setSesiModal({ ...sesiModal, startAt: e.target.value })} /></Field>
-              <Field label="Selesai"><Input type="datetime-local" value={sesiModal.endAt} onChange={(e) => setSesiModal({ ...sesiModal, endAt: e.target.value })} /></Field>
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setSesiModal(null)}>Batal</Button>
-              <Button disabled={busy || !sesiModal.classIds.size} onClick={() => void saveSesi()}>{busy ? 'Menyimpan…' : 'Simpan Sesi'}</Button>
-            </div>
-          </div>
         ) : null}
       </Modal>
 

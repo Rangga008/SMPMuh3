@@ -511,25 +511,14 @@ export class OpsController {
   assignSeat(@Param('id') id: string, @Body() dto: ExamSeatDto) {
     return this.ops.assignSeat(id, dto);
   }
-  @Post('exam-rooms/:id/links')
-  @RequirePermission(PERMISSIONS.TATAUSAHA_MANAGE)
-  addLink(@Param('id') id: string, @Body() dto: { examId?: string; sessionId?: string; sessionLabel?: string; startsAt?: string; endsAt?: string }) {
-    return this.ops.addRoomLink(id, dto);
-  }
-  @Delete('exam-room-links/:linkId')
-  @RequirePermission(PERMISSIONS.TATAUSAHA_MANAGE)
-  removeLink(@Param('linkId') linkId: string) {
-    return this.ops.removeRoomLink(linkId);
-  }
   @Post('exam-rooms/:id/assign-class')
   @RequirePermission(PERMISSIONS.TATAUSAHA_MANAGE)
   assignClass(
     @Param('id') id: string,
     @Body('classId') classId: string,
-    @Body('linkId') linkId?: string,
     @Body('count') count?: number,
   ) {
-    return this.ops.assignClassToRoom(id, classId, linkId, count != null ? Number(count) : undefined);
+    return this.ops.assignClassToRoom(id, classId, count != null ? Number(count) : undefined);
   }
   @Patch('exam-rooms/:id')
   @RequirePermission(PERMISSIONS.TATAUSAHA_MANAGE)
@@ -552,22 +541,18 @@ export class OpsController {
   seatAttendance(@Param('seatId') seatId: string, @Body('present') present?: boolean | null) {
     return this.ops.setSeatPresent(seatId, present ?? null);
   }
-  /** Checklist hadir massal satu sesi ruang — body: { presentIds: string[] }. */
-  @Patch('exam-room-links/:linkId/attendance')
+  /** Checklist hadir massal satu ruang — body: { presentIds: string[] }. */
+  @Patch('exam-rooms/:id/attendance')
   @RequirePermission(PERMISSIONS.TATAUSAHA_MANAGE)
-  linkAttendance(@Param('linkId') linkId: string, @Body('presentIds') presentIds?: string[]) {
-    return this.ops.setLinkAttendance(linkId, presentIds ?? []);
+  roomAttendance(@Param('id') id: string, @Body('presentIds') presentIds?: string[]) {
+    return this.ops.setRoomAttendance(id, presentIds ?? []);
   }
+  /** Kartu ujian serentak — satu kartu per siswa: jadwal ujiannya + kursi tetap
+   *  + nomor peserta + kartu meja di sebelahnya. */
   @Get('exam-rooms/:id/cards')
   @RequirePermission(PERMISSIONS.TATAUSAHA_READ)
-  examCards(@Param('id') id: string, @Query('linkId') linkId?: string) {
-    return this.ops.examCards(id, linkId);
-  }
-  /** Kartu gabungan per siswa — satu kartu menampilkan SEMUA jadwal ujiannya. */
-  @Get('exam-room-links/:linkId/student-cards')
-  @RequirePermission(PERMISSIONS.TATAUSAHA_READ)
-  studentCards(@Param('linkId') linkId: string) {
-    return this.ops.studentCards(linkId);
+  examCards(@Param('id') id: string) {
+    return this.ops.examCards(id);
   }
   /** Roster satu periode: semua ruang+sesi+peserta — untuk cetak daftar peserta
    *  per ruang, rekap kelas×ruang, dan daftar semua peserta. */

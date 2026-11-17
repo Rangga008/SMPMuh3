@@ -1612,7 +1612,7 @@ export class OpsService {
       const p = await this.prisma.prasarana.findUnique({ where: { id: dto.prasaranaId } });
       if (p) name = p.name;
     }
-    return this.prisma.examRoom.create({ data: { name, period: dto.period, academicYearId: dto.academicYearId, capacity: dto.capacity ?? 24, participantCode: dto.participantCode?.trim() || '145', examId: dto.examId ?? null, prasaranaId: dto.prasaranaId ?? null } });
+    return this.prisma.examRoom.create({ data: { name, period: dto.period, academicYearId: dto.academicYearId, capacity: dto.capacity ?? 24, participantCode: dto.participantCode?.trim() || '145', prasaranaId: dto.prasaranaId ?? null } });
   }
   async listExamRooms(academicYearId: string, period?: string) {
     // Backfill kode peserta untuk kursi lama yang belum punya.
@@ -1629,154 +1629,54 @@ export class OpsService {
     return this.prisma.examRoom.findMany({
       where: { academicYearId, ...(period ? { period } : {}) },
       include: {
-        exam: { select: { id: true, code: true, title: true, startAt: true, endAt: true } },
         prasarana: { select: { id: true, name: true } },
-        links: {
+        seats: {
           include: {
-            exam: { select: { id: true, code: true, title: true, startAt: true, endAt: true, status: true } },
-            session: { select: { id: true, name: true, startAt: true, endAt: true, classIds: true } },
-            seats: { include: { student: { select: { id: true, name: true, nis: true } }, class: { select: { id: true, name: true } } }, orderBy: { seatNo: 'asc' } },
-            _count: { select: { seats: true } },
+            student: { select: { id: true, name: true, nis: true } },
+            class: { select: { id: true, name: true } },
           },
-          orderBy: [{ startsAt: 'asc' }, { sessionLabel: 'asc' }],
+          orderBy: { seatNo: 'asc' },
         },
-        seats: { include: { student: { select: { id: true, name: true, nis: true } }, class: { select: { id: true, name: true } } }, orderBy: { seatNo: 'asc' } },
         _count: { select: { seats: true } },
       },
       orderBy: { name: 'asc' },
     });
   }
 
-  /** Tautkan sesi ke ruang — TANPA wajib ujian: satu sesi ruang bisa menampung
-   *  rombel campuran lintas jenjang (ujian tiap siswa mengikuti sesi CBT-nya).
-   *  `sessionId` → tautan mengikuti ExamSession (nama & jendela sinkron);
-   *  tanpa sessionId → sesi umum berlabel manual (ruang campuran). */
-  async addRoomLink(roomId: string, dto: { examId?: string; sessionId?: string; sessionLabel?: string; startsAt?: string; endsAt?: string }) {
-    await this.prisma.examRoom.findUniqueOrThrow({ where: { id: roomId } });
-    let session: { id: string; name: string; examId: string } | null = null;
-    let examId: string | null = null;
-    if (dto.sessionId) {
-      session = await this.prisma.examSession.findUnique({ where: { id: dto.sessionId }, select: { id: true, name: true, examId: true } });
-      if (!session) throw new BadRequestException('Sesi ujian tidak ditemukan.');
-      examId = session.examId;
-    } else if (dto.examId) {
-      examId = (await this.prisma.exam.findUniqueOrThrow({ where: { id: dto.examId } })).id;
-    }
-    const sessionLabel = session ? null : (dto.sessionLabel?.trim() || null);
-    // Dedup: sesi yang sama (sessionId, atau label+ujian untuk tautan manual)
-    // tak boleh dobel di ruang yang sama.
-    const dup = await this.prisma.examRoomExam.findFirst({
-      where: session
-        ? { roomId, sessionId: session.id }
-        : { roomId, sessionId: null, examId, sessionLabel: sessionLabel ? { equals: sessionLabel, mode: 'insensitive' } : null },
-    });
-    if (dup) {
-      throw new ConflictException(`Sesi "${session?.name ?? sessionLabel ?? 'tanpa nama'}" sudah tertaut ke ruang ini.`);
-    }
-    return this.prisma.examRoomExam.create({
-      data: {
-        roomId, examId,
-        sessionId: session?.id ?? null,
-        sessionLabel,
-        startsAt: session ? null : (dto.startsAt ? new Date(dto.startsAt) : null),
-        endsAt: session ? null : (dto.endsAt ? new Date(dto.endsAt) : null),
-      },
-      include: {
-        exam: { select: { id: true, code: true, title: true } },
-        session: { select: { id: true, name: true, startAt: true, endAt: true } },
-        _count: { select: { seats: true } },
-      },
-    });
-  }
-  async removeRoomLink(linkId: string) {
-    const link = await this.prisma.examRoomExam.findUniqueOrThrow({ where: { id: linkId } });
-    return this.prisma.examRoomExam.delete({ where: { id: link.id } });
-  }
   async assignSeat(roomId: string, dto: ExamSeatDto) {
     const room = await this.prisma.examRoom.findUniqueOrThrow({ where: { id: roomId } });
-    const linkId = (dto as { linkId?: string }).linkId ?? null;
-    const seatCount = await this.prisma.examSeat.count({ where: linkId ? { linkId } : { roomId, linkId: null } });
+    const seatCount = await this.prisma.examSeat.count({ where: { roomId } });
     if (seatCount >= room.capacity) throw new ConflictException(`Ruang ${room.name} penuh (${room.capacity}).`);
-    // Tolak bila siswa sudah duduk di sesi yang sama pada ruang lain.
-    if (linkId) {
-      const scope = await this.sessionScopeLinkIds(linkId);
-      const dup = await this.prisma.examSeat.findFirst({
-        where: { linkId: { in: scope }, studentId: dto.studentId },
-        include: { link: { select: { sessionLabel: true, session: { select: { name: true } } } }, room: { select: { name: true } } },
-      });
-      if (dup) {
-        const sesi = dup.link?.session?.name ?? dup.link?.sessionLabel ?? 'sesi ini';
-        throw new ConflictException(`${sesi}: siswa sudah duduk di ${dup.room.name}.`);
-      }
-    }
+    // Ujian serentak: siswa hanya punya SATU kursi per periode — tolak bila
+    // sudah duduk di ruang lain pada periode yang sama.
+    const dup = await this.prisma.examSeat.findFirst({
+      where: { room: { academicYearId: room.academicYearId, period: room.period }, studentId: dto.studentId },
+      include: { room: { select: { name: true } } },
+    });
+    if (dup) throw new ConflictException(`Siswa sudah duduk di ${dup.room.name} untuk periode ini.`);
     const cls = dto.classId ? await this.prisma.class.findUnique({ where: { id: dto.classId }, select: { gradeLevel: true } }) : null;
     return this.prisma.examSeat.create({
-      data: { roomId, linkId, studentId: dto.studentId, classId: dto.classId ?? null, seatNo: dto.seatNo ?? seatCount + 1, code: await this.nextSeatCode(room.academicYearId, room.period, cls?.gradeLevel, room.participantCode) },
+      data: { roomId, studentId: dto.studentId, classId: dto.classId ?? null, seatNo: dto.seatNo ?? seatCount + 1, code: await this.nextSeatCode(room.academicYearId, room.period, cls?.gradeLevel, room.participantCode) },
     });
-  }
-
-  /** Link-id se-scope slot yang sama — siswa hanya boleh duduk SEKALI per slot:
-   *  - tautan sesi CBT → semua link dengan sessionId sama (lintas ruang);
-   *  - sesi umum → semua link berlabel sama (case-insensitive) di tahun ajaran
-   *    yang sama ("Sesi 1" di ruang 9 = "Sesi 1" di ruang 10). */
-  private async sessionScopeLinkIds(linkId: string) {
-    const link = await this.prisma.examRoomExam.findUniqueOrThrow({
-      where: { id: linkId },
-      include: { room: { select: { academicYearId: true } } },
-    });
-    if (link.sessionId) {
-      const sib = await this.prisma.examRoomExam.findMany({
-        where: { sessionId: link.sessionId }, select: { id: true },
-      });
-      return sib.map((l) => l.id);
-    }
-    if (link.sessionLabel) {
-      const sib = await this.prisma.examRoomExam.findMany({
-        where: {
-          sessionId: null,
-          sessionLabel: { equals: link.sessionLabel, mode: 'insensitive' },
-          room: { academicYearId: link.room.academicYearId },
-        },
-        select: { id: true },
-      });
-      return sib.map((l) => l.id);
-    }
-    return [link.id];
   }
 
   /** Tempatkan rombel ke sesi/ruang — otomatis LANJUT: siswa yang sudah
    *  duduk di sesi yang sama (ruang lain pun) dilewati, jadi satu kelas bisa
    *  dipecah antar-ruang tanpa duplikat. */
-  async assignClassToRoom(roomId: string, classId: string, linkId?: string, count?: number) {
+  /** Tempatkan rombel ke ruang — ujian serentak: siswa yang sudah duduk di
+   *  ruang lain SE-PERIODE dilewati, jadi satu kelas bisa dipecah antar-ruang
+   *  tanpa duplikat dan selalu melanjutkan sisa (urutan nomor absen/NIS). */
+  async assignClassToRoom(roomId: string, classId: string, count?: number) {
     const room = await this.prisma.examRoom.findUniqueOrThrow({ where: { id: roomId }, include: { _count: { select: { seats: true } } } });
-    const link = linkId
-      ? await this.prisma.examRoomExam.findFirst({
-          where: { id: linkId, roomId },
-          include: { session: { select: { id: true, name: true, classIds: true } } },
-        })
-      : null;
-    if (linkId && !link) throw new NotFoundException('Sesi ujian ruang tidak ditemukan.');
     const cls = await this.prisma.class.findUniqueOrThrow({ where: { id: classId } });
-    // Rombel harus peserta sesi ini — tautan sesi sudah mendefinisikan rombelnya.
-    if (link?.session) {
-      const allowed = link.session.classIds as string[];
-      if (!allowed.includes(classId)) {
-        throw new BadRequestException(`${cls.name} bukan rombel peserta ${link.session.name} — atur rombel sesi di detail ujian.`);
-      }
-    }
-    // Urutan kursi mengikuti nomor absen (NIS) — kursi berlanjut antar-kelas dalam satu ruang.
     const students = await this.prisma.enrollment.findMany({
       where: { classId, academicYearId: cls.academicYearId, student: { status: 'ACTIVE' } },
       orderBy: [{ student: { nis: 'asc' } }, { student: { name: 'asc' } }],
     });
-    const seatWhere = linkId ? { linkId } : { roomId, linkId: null };
-    const seated = await this.prisma.examSeat.count({ where: seatWhere });
-    // Siswa sudah duduk di sesi yang sama (di ruang mana pun) → dilewati,
-    // sehingga pembagian satu kelas ke beberapa ruang selalu melanjutkan sisa.
-    const scopeLinkIds = linkId ? await this.sessionScopeLinkIds(linkId) : null;
+    const seated = await this.prisma.examSeat.count({ where: { roomId } });
     const existing = await this.prisma.examSeat.findMany({
       where: {
-        ...(scopeLinkIds ? { linkId: { in: scopeLinkIds } } : seatWhere),
+        room: { academicYearId: room.academicYearId, period: room.period },
         studentId: { in: students.map((s) => s.studentId) },
       },
       select: { studentId: true },
@@ -1786,10 +1686,9 @@ export class OpsService {
     const limit = count != null && count > 0 ? Math.min(count, free) : free;
     const toAdd = students.filter((s) => !skip.has(s.studentId)).slice(0, Math.max(limit, 0));
     let seat = seated;
-    // Kode peserta dibuat satu per satu (sequence per tahun ajaran) agar unik.
     for (const s of toAdd) {
       await this.prisma.examSeat.create({
-        data: { roomId, linkId: linkId ?? null, studentId: s.studentId, classId, seatNo: ++seat, code: await this.nextSeatCode(room.academicYearId, room.period, cls.gradeLevel, room.participantCode) },
+        data: { roomId, studentId: s.studentId, classId, seatNo: ++seat, code: await this.nextSeatCode(room.academicYearId, room.period, cls.gradeLevel, room.participantCode) },
       });
     }
     const unseated = students.length - skip.size - toAdd.length;
@@ -1810,7 +1709,7 @@ export class OpsService {
     }
   }
 
-  async updateExamRoom(id: string, dto: { name?: string; period?: string; capacity?: number; participantCode?: string; examId?: string | null; prasaranaId?: string | null }) {
+  async updateExamRoom(id: string, dto: { name?: string; period?: string; capacity?: number; participantCode?: string; prasaranaId?: string | null }) {
     const room = await this.prisma.examRoom.findUniqueOrThrow({ where: { id }, include: { _count: { select: { seats: true } } } });
     if (dto.capacity !== undefined && dto.capacity < room._count.seats) {
       throw new ConflictException(`Kapasitas tak boleh di bawah jumlah peserta (${room._count.seats}).`);
@@ -1822,7 +1721,6 @@ export class OpsService {
         ...(dto.period !== undefined ? { period: dto.period } : {}),
         ...(dto.capacity !== undefined ? { capacity: dto.capacity } : {}),
         ...(dto.participantCode !== undefined ? { participantCode: dto.participantCode.trim() || '145' } : {}),
-        ...(dto.examId !== undefined ? { examId: dto.examId } : {}),
         ...(dto.prasaranaId !== undefined ? { prasaranaId: dto.prasaranaId } : {}),
       },
     });
@@ -1835,142 +1733,44 @@ export class OpsService {
     const seat = await this.prisma.examSeat.findUniqueOrThrow({ where: { id: seatId } });
     return this.prisma.examSeat.delete({ where: { id: seat.id } });
   }
-  async examCards(roomId: string, linkId?: string) {
-    // Kartu dicetak per link (satu ruang bisa host beberapa ujian/sesi).
-    const link = linkId
-      ? await this.prisma.examRoomExam.findFirstOrThrow({
-          where: { id: linkId, roomId },
-          include: {
-            exam: { select: { id: true, code: true, title: true, startAt: true, endAt: true } },
-            session: { select: { id: true, name: true, startAt: true, endAt: true } },
-          },
-        })
-      : null;
+  /** Kartu ujian serentak — satu kartu per siswa memuat SEMUA jadwal ujiannya
+   *  (ujian yang mencakup rombelnya di tahun ajaran ini, difilter periode ruang)
+   *  + kursi tetap & nomor peserta + kartu meja di sebelahnya. */
+  async examCards(roomId: string, _linkId?: string) {
     const room = await this.prisma.examRoom.findUniqueOrThrow({
       where: { id: roomId },
       include: {
         academicYear: true,
         seats: {
-          where: linkId ? { linkId } : { linkId: null },
-          include: { student: { select: { id: true, name: true, nis: true, nisn: true, gender: true, password: true } }, class: { select: { name: true } } },
-          orderBy: { seatNo: 'asc' },
-        },
-      },
-    });
-    const exam = link?.exam ?? null;
-    // Sesi umum (tanpa ujian): ujian tiap siswa diturunkan dari sesi CBT yang
-    // mencakup kelasnya & beririsan waktu dengan jendela sesi ruang ini.
-    const seatExam: Record<string, string> = {};
-    if (!exam) {
-      const linkStart = link?.session?.startAt ?? link?.startsAt ?? null;
-      const linkEnd = link?.session?.endAt ?? link?.endsAt ?? null;
-      const sessions = await this.prisma.examSession.findMany({
-        where: { exam: { academicYearId: room.academicYearId } },
-        include: { exam: { select: { title: true } } },
-      });
-      const overlap = (s: { startAt: Date; endAt: Date }) =>
-        !linkStart || !linkEnd || (s.startAt < linkEnd && s.endAt > linkStart);
-      for (const seat of room.seats) {
-        const hit =
-          sessions.find((s) => (s.classIds as string[]).includes(seat.classId ?? '') && overlap(s))
-          ?? sessions.find((s) => (s.classIds as string[]).includes(seat.classId ?? ''));
-        if (hit) seatExam[seat.id] = hit.exam.title;
-      }
-    }
-    // Password CBT diambil dari data siswa — dibuat malas saat kartu dicetak
-    // untuk siswa yang belum punya (satu password per siswa, semua ujian).
-    const credentials: Record<string, string> = {};
-    for (const seat of room.seats) {
-      let pw = seat.student.password;
-      if (!pw) {
-        pw = genStudentPassword();
-        await this.prisma.student.update({
-          where: { id: seat.studentId },
-          data: { password: pw },
-        });
-        // Satu password untuk semua ujian — credential lama ikut disamakan.
-        await this.prisma.examCredential.updateMany({
-          where: { studentId: seat.studentId },
-          data: { password: pw },
-        });
-      }
-      credentials[seat.studentId] = pw;
-    }
-    const school = await this.prisma.school.findFirst();
-    return { room: { ...room, exam }, link, credentials, school, seatExam };
-  }
-
-  /** Checklist hadir satu peserta (pengawas) — checklist saja, tak mengunci CBT. */
-  async setSeatPresent(seatId: string, present: boolean | null) {
-    return this.prisma.examSeat.update({ where: { id: seatId }, data: { present } });
-  }
-
-  /** Checklist hadir massal satu sesi ruang: yang terdaftar → hadir, sisanya → tidak. */
-  async setLinkAttendance(linkId: string, presentIds: string[]) {
-    const ids = new Set(presentIds);
-    return this.prisma.$transaction(async (tx) => {
-      await tx.examSeat.updateMany({ where: { linkId }, data: { present: false } });
-      const res = await tx.examSeat.updateMany({ where: { linkId, studentId: { in: [...ids] } }, data: { present: true } });
-      return { present: res.count };
-    });
-  }
-
-  /** Kartu gabungan per siswa — satu kartu menampilkan SEMUA jadwal ujiannya:
-   *  tiap baris = satu slot duduk (sesi/ujian, waktu, ruang, kursi, kode peserta).
-   *  Dicetak dari satu sesi ruang — mencakup kursi siswa itu di semua ruang
-   *  se-periode (ujian serentak, ruang bisa beda-beda per sesi). */
-  async studentCards(linkId: string) {
-    const link = await this.prisma.examRoomExam.findUniqueOrThrow({
-      where: { id: linkId },
-      include: {
-        room: { include: { academicYear: true } },
-        exam: { select: { id: true, title: true } },
-        session: { select: { id: true, name: true, startAt: true, endAt: true } },
-        seats: {
           include: {
-            student: { select: { id: true, name: true, nis: true, password: true } },
+            student: { select: { id: true, name: true, nis: true, nisn: true, gender: true, password: true } },
             class: { select: { id: true, name: true } },
           },
           orderBy: { seatNo: 'asc' },
         },
       },
     });
-    const year = link.room.academicYearId;
-    const period = link.room.period;
-    const studentIds = link.seats.map((s) => s.studentId);
-    // Seluruh kursi siswa-siswa ini di semua ruang se-periode — satu kartu
-    // menampilkan semua slotnya.
-    const allSeats = await this.prisma.examSeat.findMany({
-      where: { studentId: { in: studentIds }, room: { academicYearId: year, period } },
-      include: {
-        room: { select: { id: true, name: true } },
-        class: { select: { id: true, name: true } },
-        link: {
-          include: {
-            exam: { select: { title: true } },
-            session: { select: { name: true, startAt: true, endAt: true } },
-          },
-        },
-      },
+    // Jadwal ujian tiap kelas — semua ujian yang mencakup rombel itu di tahun
+    // ajaran ruang; difilter ke ujian yang judul/asesmennya memuat teks periode
+    // (mis. "ASAS"), fallback semua ujian rombel bila tak ada yang cocok.
+    const exams = await this.prisma.exam.findMany({
+      where: { academicYearId: room.academicYearId },
+      select: { id: true, title: true, startAt: true, endAt: true, durationMin: true, classIds: true, assessment: { select: { name: true } } },
+      orderBy: { startAt: 'asc' },
     });
-    // Judul ujian untuk sesi umum — diturunkan dari sesi CBT yang mencakup
-    // kelas si pemilik kursi & beririsan waktu dengan jendela slotnya.
-    const sessions = await this.prisma.examSession.findMany({
-      where: { exam: { academicYearId: year } },
-      include: { exam: { select: { title: true } } },
-    });
-    const examTitleOf = (seat: (typeof allSeats)[number]) => {
-      if (seat.link?.exam?.title) return seat.link.exam.title;
-      const start = seat.link?.session?.startAt ?? seat.link?.startsAt ?? null;
-      const end = seat.link?.session?.endAt ?? seat.link?.endsAt ?? null;
-      const hit =
-        sessions.find((s) => (s.classIds as string[]).includes(seat.classId ?? '') && (!start || !end || (s.startAt < end && s.endAt > start)))
-        ?? sessions.find((s) => (s.classIds as string[]).includes(seat.classId ?? ''));
-      return hit?.exam.title ?? null;
+    const needle = room.period.trim().toLowerCase();
+    const inPeriod = (e: (typeof exams)[number]) =>
+      needle ? (e.title.toLowerCase().includes(needle) || e.assessment.name.toLowerCase().includes(needle)) : true;
+    const examsForClass = (classId: string | null) => {
+      const mine = exams.filter((e) => (e.classIds as string[]).includes(classId ?? ''));
+      const scoped = mine.filter(inPeriod);
+      return (scoped.length ? scoped : mine).map((e) => ({
+        examTitle: e.title, startAt: e.startAt, endAt: e.endAt, durationMin: e.durationMin,
+      }));
     };
     // Password CBT — buat malas bila belum ada (satu password semua ujian).
     const credentials: Record<string, string> = {};
-    for (const seat of link.seats) {
+    for (const seat of room.seats) {
       let pw = seat.student.password;
       if (!pw) {
         pw = genStudentPassword();
@@ -1979,55 +1779,45 @@ export class OpsService {
       }
       credentials[seat.studentId] = pw;
     }
-    const seatsByStudent = new Map<string, typeof allSeats>();
-    for (const s of allSeats) seatsByStudent.set(s.studentId, [...(seatsByStudent.get(s.studentId) ?? []), s]);
     const school = await this.prisma.school.findFirst();
     return {
-      room: { id: link.room.id, name: link.room.name, period, academicYear: link.room.academicYear },
+      room: { id: room.id, name: room.name, period: room.period, academicYear: room.academicYear },
       school,
-      cards: link.seats.map((seat) => ({
+      cards: room.seats.map((seat) => ({
         seatId: seat.id,
         student: { id: seat.student.id, name: seat.student.name, nis: seat.student.nis },
         className: seat.class?.name ?? null,
+        seatNo: seat.seatNo,
+        code: seat.code,
         password: credentials[seat.studentId] ?? null,
-        rows: (seatsByStudent.get(seat.studentId) ?? [])
-          .map((s) => ({
-            examTitle: examTitleOf(s),
-            sessionName: s.link?.session?.name ?? s.link?.sessionLabel ?? 'Sesi',
-            startAt: s.link?.session?.startAt ?? s.link?.startsAt ?? null,
-            endAt: s.link?.session?.endAt ?? s.link?.endsAt ?? null,
-            roomName: s.room.name,
-            seatNo: s.seatNo,
-            code: s.code,
-          }))
-          .sort((a, b) => String(a.startAt ?? '').localeCompare(String(b.startAt ?? ''))),
+        rows: examsForClass(seat.classId),
       })),
     };
   }
 
-  /** Roster satu periode — semua ruang + sesi + peserta berikut jenjang/L-P.
+  /** Checklist hadir satu peserta (pengawas) — checklist saja, tak mengunci CBT. */
+  async setSeatPresent(seatId: string, present: boolean | null) {
+    return this.prisma.examSeat.update({ where: { id: seatId }, data: { present } });
+  }
+
+  /** Checklist hadir massal satu ruang: yang terdaftar → hadir, sisanya → tidak. */
+  async setRoomAttendance(roomId: string, presentIds: string[]) {
+    const ids = new Set(presentIds);
+    return this.prisma.$transaction(async (tx) => {
+      await tx.examSeat.updateMany({ where: { roomId }, data: { present: false } });
+      const res = await tx.examSeat.updateMany({ where: { roomId, studentId: { in: [...ids] } }, data: { present: true } });
+      return { present: res.count };
+    });
+  }
+
+  /** Roster satu periode — semua ruang + peserta berikut jenjang/L-P.
    *  Dipakai cetak: daftar peserta per ruang, rekap kelas×ruang, daftar semua
    *  peserta (mirror format Excel: REKAP, R.XX, SEMUA PESERTA). */
   async examRoomRoster(academicYearId: string, period: string) {
     const rooms = await this.prisma.examRoom.findMany({
       where: { academicYearId, period },
       include: {
-        links: {
-          include: {
-            exam: { select: { id: true, title: true } },
-            session: { select: { id: true, name: true, startAt: true, endAt: true } },
-            seats: {
-              include: {
-                student: { select: { id: true, name: true, nis: true, gender: true } },
-                class: { select: { id: true, name: true, gradeLevel: true } },
-              },
-              orderBy: { seatNo: 'asc' },
-            },
-          },
-          orderBy: [{ startsAt: 'asc' }, { sessionLabel: 'asc' }],
-        },
         seats: {
-          where: { linkId: null },
           include: {
             student: { select: { id: true, name: true, nis: true, gender: true } },
             class: { select: { id: true, name: true, gradeLevel: true } },

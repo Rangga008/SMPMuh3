@@ -32,11 +32,7 @@ export default function MonitorCbtPage() {
   const [grade, setGrade] = useState<number | null>(null);
   const [examId, setExamId] = useState('');
   const [classId, setClassId] = useState<string | null>(null);
-  const [monitor, setMonitor] = useState<{
-    examId: string;
-    sessions: { id: string; name: string; classIds: string[]; startAt: string; endAt: string }[];
-    classes: MonitorClass[];
-  } | null>(null);
+  const [monitor, setMonitor] = useState<{ examId: string; classes: MonitorClass[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const canReadAcademic = usePermission(PERMISSIONS.ACADEMIC_READ);
 
@@ -132,7 +128,7 @@ export default function MonitorCbtPage() {
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <p className="font-extrabold text-sand-900">{c.className}</p>
-                      <p className="text-[11px] text-sand-500">{c.session ? `${c.session.name} · ${dt(c.session.startAt)}–${dt(c.session.endAt)}` : 'Jendela ujian utama'}</p>
+                      <p className="text-[11px] text-sand-500">{exam ? `${dt(exam.startAt)}–${dt(exam.endAt)}` : 'Jendela ujian utama'}</p>
                     </div>
                     {c.violations ? <Badge tone="danger">⚠ {c.violations}</Badge> : null}
                   </div>
@@ -149,7 +145,7 @@ export default function MonitorCbtPage() {
           {/* Detail siswa satu kelas */}
           {monitor && openClass ? (
             <Widget title={`${openClass.className} — ${openClass.done}/${openClass.total} selesai`}
-              subtitle={openClass.session ? `${openClass.session.name} · ${dt(openClass.session.startAt)}–${dt(openClass.session.endAt)}` : 'Jendela ujian utama'}
+              subtitle={exam ? `Jendela ${dt(exam.startAt)}–${dt(exam.endAt)}` : 'Jendela ujian utama'}
               action={<Button size="sm" variant="outline" onClick={() => setClassId(null)}>← Semua kelas</Button>}>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[720px] text-sm">

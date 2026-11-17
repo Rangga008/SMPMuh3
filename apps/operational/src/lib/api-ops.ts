@@ -272,67 +272,34 @@ export interface ExamSeatView {
   /** Checklist hadir oleh pengawas — null = belum dicek. */
   present?: boolean | null;
 }
-export interface ExamRoomLinkView {
-  id: string; examId?: string | null; sessionId?: string | null;
-  /** Label & jendela hasil sinkron — pakai helper `linkSession` di halaman. */
-  sessionLabel?: string | null;
-  startsAt?: string | null; endsAt?: string | null;
-  session?: { id: string; name: string; startAt: string; endAt: string; classIds?: string[] } | null;
-  exam?: { id: string; code: string; title: string; startAt: string; endAt: string; status?: string } | null;
-  seats: ExamSeatView[];
-  _count: { seats: number };
-}
-/** Label & jendela sesi tautan — ikut ExamSession bila tertaut, fallback label manual. */
-export const linkSessionName = (l: ExamRoomLinkView) => l.session?.name ?? l.sessionLabel ?? null;
-export const linkSessionStart = (l: ExamRoomLinkView) => l.session?.startAt ?? l.startsAt ?? null;
-export const linkSessionEnd = (l: ExamRoomLinkView) => l.session?.endAt ?? l.endsAt ?? null;
 export interface ExamRoomView {
-  id: string; name: string; period: string; capacity: number; examId?: string | null;
+  id: string; name: string; period: string; capacity: number;
   /** Kode tengah nomor peserta — format {jenjang}-{kode}-{urut}, mis. "145". */
   participantCode?: string;
   prasaranaId?: string | null;
   prasarana?: { id: string; name: string } | null;
-  exam?: { id: string; code: string; title: string; startAt: string; endAt: string } | null;
-  links?: ExamRoomLinkView[];
   seats: ExamSeatView[];
   _count: { seats: number };
 }
 export const listExamRooms = (academicYearId: string, period?: string) =>
   req<ExamRoomView[]>(`/ops/exam-rooms?academicYearId=${academicYearId}${period ? `&period=${period}` : ''}`);
-export const createExamRoom = (dto: { name: string; period: string; academicYearId: string; capacity?: number; participantCode?: string; examId?: string; prasaranaId?: string }) =>
+export const createExamRoom = (dto: { name: string; period: string; academicYearId: string; capacity?: number; participantCode?: string; prasaranaId?: string }) =>
   req('/ops/exam-rooms', { method: 'POST', json: dto });
-export const updateExamRoom = (id: string, dto: { name?: string; period?: string; capacity?: number; participantCode?: string; examId?: string | null; prasaranaId?: string | null }) =>
+export const updateExamRoom = (id: string, dto: { name?: string; period?: string; capacity?: number; participantCode?: string; prasaranaId?: string | null }) =>
   req(`/ops/exam-rooms/${id}`, { method: 'PATCH', json: dto });
 export const deleteExamRoom = (id: string) => req(`/ops/exam-rooms/${id}`, { method: 'DELETE' });
 export const removeExamSeat = (seatId: string) => req(`/ops/exam-seats/${seatId}`, { method: 'DELETE' });
-export const addRoomLink = (roomId: string, dto: { examId?: string; sessionId?: string; sessionLabel?: string; startsAt?: string; endsAt?: string }) =>
-  req<ExamRoomLinkView>(`/ops/exam-rooms/${roomId}/links`, { method: 'POST', json: dto });
-export const removeRoomLink = (linkId: string) => req(`/ops/exam-room-links/${linkId}`, { method: 'DELETE' });
-export const assignClassToRoom = (roomId: string, classId: string, linkId?: string, count?: number) =>
-  req<{ added: number; skipped: number; free: number; remaining: number }>(`/ops/exam-rooms/${roomId}/assign-class`, { method: 'POST', json: { classId, linkId, ...(count ? { count } : {}) } });
+export const assignClassToRoom = (roomId: string, classId: string, count?: number) =>
+  req<{ added: number; skipped: number; free: number; remaining: number }>(`/ops/exam-rooms/${roomId}/assign-class`, { method: 'POST', json: { classId, ...(count ? { count } : {}) } });
 /** Hapus seluruh absen satu rombel di satu tanggal (salah absen). */
 export const clearClassAttendance = (classId: string, date: string) =>
   req<{ removed: number }>(`/ops/class-attendance?classId=${classId}&date=${date}`, { method: 'DELETE' });
 /** Sinkron ulang Grade dari attempt SUBMITTED — untuk ujian lama. */
 export const syncExamGrades = (examId: string) =>
   req<{ synced: number; total: number }>(`/ops/exams/${examId}/sync-grades`, { method: 'POST' });
-export const getExamCards = (roomId: string, linkId?: string) =>
-  req<{
-    room: ExamRoomView & { academicYear: AcademicYear };
-    link?: ExamRoomLinkView | null;
-    credentials?: Record<string, string>;
-    /** Sesi umum: judul ujian per kursi (diturunkan dari sesi CBT kelasnya). */
-    seatExam?: Record<string, string>;
-    school: { name: string; logoUrl?: string | null; npsn?: string | null } | null;
-  }>(`/ops/exam-rooms/${roomId}/cards${linkId ? `?linkId=${linkId}` : ''}`);
-/** Checklist hadir satu peserta oleh pengawas. */
-export const setSeatAttendance = (seatId: string, present: boolean | null) =>
-  req(`/ops/exam-seats/${seatId}/attendance`, { method: 'PATCH', json: { present } });
-/** Checklist hadir massal satu sesi ruang. */
-export const setLinkAttendance = (linkId: string, presentIds: string[]) =>
-  req<{ present: number }>(`/ops/exam-room-links/${linkId}/attendance`, { method: 'PATCH', json: { presentIds } });
-/** Satu kartu per siswa — memuat SEMUA jadwal ujiannya se-periode. */
-export const getStudentCards = (linkId: string) =>
+/** Kartu ujian serentak — satu kartu per siswa: jadwal ujiannya + kursi tetap
+ *  + nomor peserta + kartu meja di sebelahnya. */
+export const getExamCards = (roomId: string) =>
   req<{
     room: { id: string; name: string; period: string; academicYear: AcademicYear };
     school: { name: string; logoUrl?: string | null; npsn?: string | null } | null;
@@ -340,22 +307,26 @@ export const getStudentCards = (linkId: string) =>
       seatId: string;
       student: { id: string; name: string; nis?: string | null };
       className: string | null;
+      seatNo?: number | null;
+      code?: string | null;
       password: string | null;
-      rows: {
-        examTitle: string | null; sessionName: string;
-        startAt: string | null; endAt: string | null;
-        roomName: string; seatNo: number; code: string;
-      }[];
+      rows: { examTitle: string; startAt: string; endAt: string; durationMin: number }[];
     }[];
-  }>(`/ops/exam-room-links/${linkId}/student-cards`);
+  }>(`/ops/exam-rooms/${roomId}/cards`);
+/** Checklist hadir satu peserta oleh pengawas. */
+export const setSeatAttendance = (seatId: string, present: boolean | null) =>
+  req(`/ops/exam-seats/${seatId}/attendance`, { method: 'PATCH', json: { present } });
+/** Checklist hadir massal satu ruang. */
+export const setRoomAttendance = (roomId: string, presentIds: string[]) =>
+  req<{ present: number }>(`/ops/exam-rooms/${roomId}/attendance`, { method: 'PATCH', json: { presentIds } });
 
-/** Roster satu periode — semua ruang+sesi+peserta dengan gender & jenjang,
+/** Roster satu periode — semua ruang+peserta dengan gender & jenjang,
  *  untuk cetak daftar peserta per ruang, rekap kelas×ruang, dan semua peserta. */
 export interface ExamRoster {
   period: string;
   academicYear: { name: string } | null;
   school: { name: string; logoUrl?: string | null; npsn?: string | null; address?: string | null } | null;
-  rooms: (ExamRoomView & { links: (ExamRoomLinkView & { seats: ExamSeatView[] })[] })[];
+  rooms: ExamRoomView[];
 }
 export const getExamRoomRoster = (academicYearId: string, period: string) =>
   req<ExamRoster>(`/ops/exam-rooms/roster?academicYearId=${academicYearId}&period=${encodeURIComponent(period)}`);
@@ -530,7 +501,6 @@ export interface ExamView {
     questions?: AssessmentQuestion[];
   };
   _count?: { attempts: number; questions?: number };
-  sessions?: ExamSessionView[];
   canManage?: boolean;
   attempts?: {
     id: string; status: string; startedAt: string; submittedAt?: string | null;
@@ -557,22 +527,10 @@ export const regenerateExamCode = (id: string) =>
   req<{ id: string; code: string }>(`/cbt/exams/${id}/regenerate-code`, { method: 'POST' });
 export const deleteExam = (id: string) => req(`/cbt/exams/${id}`, { method: 'DELETE' });
 
-// ---------- Sesi ujian per kelompok rombel ----------
-export interface ExamSessionView {
-  id: string; examId: string; name: string; classIds: string[];
-  startAt: string; endAt: string;
-}
-export const createExamSession = (examId: string, dto: { name: string; classIds: string[]; startAt: string; endAt: string }) =>
-  req<ExamSessionView>(`/cbt/exams/${examId}/sessions`, { method: 'POST', json: dto });
-export const updateExamSession = (sid: string, dto: Partial<{ name: string; classIds: string[]; startAt: string; endAt: string }>) =>
-  req<ExamSessionView>(`/cbt/sessions/${sid}`, { method: 'PATCH', json: dto });
-export const deleteExamSession = (sid: string) => req(`/cbt/sessions/${sid}`, { method: 'DELETE' });
-
 // ---------- Monitor / hasil / analisis ----------
 export type MonitorFlag = 'SELESAI_CEPAT' | 'TANPA_JAWABAN' | 'MASUK_BERKALI';
 export interface MonitorClass {
   classId: string; className: string; gradeLevel: number;
-  session: { name: string; startAt: string; endAt: string } | null;
   total: number; done: number; working: number; violations: number;
   students: {
     studentId: string; name: string; nis?: string | null;
@@ -583,7 +541,7 @@ export interface MonitorClass {
   }[];
 }
 export const examMonitor = (id: string) =>
-  req<{ examId: string; sessions: ExamSessionView[]; classes: MonitorClass[] }>(`/cbt/exams/${id}/monitor`);
+  req<{ examId: string; classes: MonitorClass[] }>(`/cbt/exams/${id}/monitor`);
 /** Daftar ujian untuk monitor — endpoint cbt.monitor (semua staf: proktor/pengawas/tendik/guru). */
 export const listMonitorExams = (academicYearId?: string) =>
   req<(ExamView & { classes: { id: string; name: string; gradeLevel: number }[] })[]>(`/cbt/monitor/exams${academicYearId ? `?academicYearId=${academicYearId}` : ''}`);

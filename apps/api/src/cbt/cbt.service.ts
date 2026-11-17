@@ -13,7 +13,7 @@ import { PrismaService } from '../core/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { OpsService } from '../ops/ops.service';
 import { StorageService } from '../core/storage/storage.service';
-import type { AnswerDto, CreateExamDto, EnterExamDto, ExamSessionDto, LoginCbtDto, UpdateExamDto } from './dto/cbt.dto';
+import type { AnswerDto, CreateExamDto, EnterExamDto, LoginCbtDto, UpdateExamDto } from './dto/cbt.dto';
 
 /** Alfabet tanpa karakter rancu (0/O/1/I/L) untuk kode ujian. */
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -173,7 +173,6 @@ export class CbtService {
             _count: { select: { questions: true } },
           },
         },
-        sessions: { orderBy: { startAt: 'asc' } },
         _count: { select: { attempts: true, questions: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -274,7 +273,6 @@ export class CbtService {
             questions: { where: { examId: null }, orderBy: { number: 'asc' } },
           },
         },
-        sessions: { orderBy: { startAt: 'asc' } },
         attempts: {
           include: {
             student: { select: { id: true, name: true, nis: true } },
@@ -391,72 +389,6 @@ export class CbtService {
     await this.prisma.exam.delete({ where: { id } });
     await this.audit.log({ actorId: actor.id, action: 'exam.delete', entity: 'exam', entityId: id });
     return { ok: true };
-  }
-
-  // ================= Sesi ujian per kelompok rombel =================
-
-  async createSession(examId: string, dto: ExamSessionDto, actor: AuthUser) {
-    const exam = await this.scopeOk(actor, examId, true);
-    this.validateSession(exam, dto);
-    const s = await this.prisma.examSession.create({
-      data: {
-        examId,
-        name: dto.name.trim(),
-        classIds: dto.classIds,
-        startAt: new Date(dto.startAt),
-        endAt: new Date(dto.endAt),
-      },
-    });
-    await this.audit.log({ actorId: actor.id, action: 'exam.session.create', entity: 'exam', entityId: examId, metadata: { session: s.name } });
-    return s;
-  }
-
-  async updateSession(sessionId: string, dto: Partial<ExamSessionDto>, actor: AuthUser) {
-    const s = await this.prisma.examSession.findUniqueOrThrow({
-      where: { id: sessionId },
-      include: { exam: { include: { assessment: { include: { subject: { select: { code: true, name: true } } } } } } },
-    });
-    await this.scopeOk(actor, s.examId, true);
-    const merged = {
-      name: dto.name ?? s.name,
-      classIds: dto.classIds ?? (s.classIds as string[]),
-      startAt: dto.startAt ?? s.startAt.toISOString(),
-      endAt: dto.endAt ?? s.endAt.toISOString(),
-    };
-    this.validateSession(s.exam, merged);
-    const updated = await this.prisma.examSession.update({
-      where: { id: sessionId },
-      data: {
-        name: merged.name.trim(),
-        classIds: merged.classIds,
-        startAt: new Date(merged.startAt),
-        endAt: new Date(merged.endAt),
-      },
-    });
-    await this.audit.log({ actorId: actor.id, action: 'exam.session.update', entity: 'exam', entityId: s.examId, metadata: { session: s.name } });
-    return updated;
-  }
-
-  async deleteSession(sessionId: string, actor: AuthUser) {
-    const s = await this.prisma.examSession.findUniqueOrThrow({ where: { id: sessionId } });
-    await this.scopeOk(actor, s.examId, true);
-    await this.prisma.examSession.delete({ where: { id: sessionId } });
-    await this.audit.log({ actorId: actor.id, action: 'exam.session.delete', entity: 'exam', entityId: s.examId, metadata: { session: s.name } });
-    return { ok: true };
-  }
-
-  private validateSession(
-    exam: { classIds: unknown },
-    dto: { name: string; classIds: string[]; startAt: string; endAt: string },
-  ) {
-    if (!dto.name?.trim()) throw new BadRequestException('Nama sesi wajib.');
-    if (!dto.classIds?.length) throw new BadRequestException('Pilih minimal satu rombel untuk sesi.');
-    const allowed = new Set(exam.classIds as string[]);
-    const bad = dto.classIds.filter((c) => !allowed.has(c));
-    if (bad.length) throw new BadRequestException('Ada rombel sesi yang bukan peserta ujian.');
-    if (!(new Date(dto.endAt) > new Date(dto.startAt))) {
-      throw new BadRequestException('Waktu selesai sesi harus setelah waktu mulai.');
-    }
   }
 
   // ================= Siswa: masuk & pengerjaan =================
@@ -647,7 +579,6 @@ export class CbtService {
       include: {
         subject: { select: { name: true } },
         assessment: { include: { subject: { select: { name: true } } } },
-        sessions: { orderBy: { startAt: 'asc' } },
       },
     });
     if (!exam) throw new NotFoundException('Kode ujian tidak dikenal.');
@@ -679,23 +610,6 @@ export class CbtService {
       );
     }
 
-    // Gate sesi: bila ujian punya sesi per kelompok rombel, siswa hanya bisa
-    // masuk dalam jendela sesi rombelnya — deadline juga mengikuti akhir sesi.
-    let windowEnd = exam.endAt;
-    if (exam.sessions.length) {
-      const session = exam.sessions.find((s) => (s.classIds as string[]).includes(enroll.class.id));
-      if (!session) {
-        throw new ForbiddenException(`Rombel ${enroll.class.name} tidak dijadwalkan pada sesi ujian ini.`);
-      }
-      if (now < session.startAt) {
-        throw new ForbiddenException(`Sesi ${session.name} untuk rombelmu baru dimulai ${fmt(session.startAt)} WIB.`);
-      }
-      if (now > session.endAt) {
-        throw new ForbiddenException(`Sesi ${session.name} untuk rombelmu sudah berakhir ${fmt(session.endAt)} WIB.`);
-      }
-      windowEnd = session.endAt;
-    }
-
     // Password ujian — di kartu peserta; terima password siswa (kartu baru)
     // maupun credential per-ujian (kartu lama).
     const pw = (dto.password ?? '').trim().toUpperCase();
@@ -717,7 +631,7 @@ export class CbtService {
     }
     if (!attempt) {
       const deadline = new Date(
-        Math.min(now.getTime() + exam.durationMin * 60_000, windowEnd.getTime()),
+        Math.min(now.getTime() + exam.durationMin * 60_000, exam.endAt.getTime()),
       );
       await this.prisma.examAttempt.create({
         data: { examId: exam.id, studentId: student.id, deadline },
@@ -993,7 +907,6 @@ export class CbtService {
     const exam = await this.prisma.exam.findUnique({
       where: { id: examId },
       include: {
-        sessions: { orderBy: { startAt: 'asc' } },
         attempts: {
           include: {
             student: { select: { id: true } },
@@ -1008,9 +921,7 @@ export class CbtService {
     const now = Date.now();
     return {
       examId,
-      sessions: exam.sessions,
       classes: classes.map((c) => {
-        const session = exam.sessions.find((s) => (s.classIds as string[]).includes(c.id));
         const students = enrollments
           .filter((e) => e.classId === c.id)
           .map((e) => {
@@ -1042,7 +953,6 @@ export class CbtService {
           classId: c.id,
           className: c.name,
           gradeLevel: c.gradeLevel,
-          session: session ? { name: session.name, startAt: session.startAt, endAt: session.endAt } : null,
           total: students.length,
           done: students.filter((s) => s.status === 'SELESAI').length,
           working: students.filter((s) => s.status === 'MENGERJAKAN').length,

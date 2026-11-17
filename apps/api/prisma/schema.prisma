@@ -2038,9 +2038,6 @@ model Exam {
   questions  AssessmentQuestion[]
   grades     Grade[]
   attempts   ExamAttempt[]
-  sessions   ExamSession[]
-  rooms      ExamRoom[]
-  roomLinks  ExamRoomExam[]
   credentials ExamCredential[]
 
   @@index([academicYearId, status])
@@ -2061,26 +2058,6 @@ model ExamCredential {
   @@unique([examId, studentId])
   @@index([examId])
   @@map("exam_credentials")
-}
-
-/** Sesi ujian per kelompok rombel — mis. 7A–7C sesi 1 (08.00–09.30),
- *  7D–7F sesi 2 (10.00–11.30). Siswa hanya bisa masuk dalam jendela sesi
- *  rombelnya; bila ujian tak punya sesi, jendela ujian dipakai. */
-model ExamSession {
-  id        String   @id @default(uuid()) @db.Uuid
-  examId    String   @map("exam_id") @db.Uuid
-  name      String   // "Sesi 1"
-  classIds  Json     @map("class_ids") // array uuid rombel yang masuk sesi ini
-  startAt   DateTime @map("start_at")
-  endAt     DateTime @map("end_at")
-  createdAt DateTime @default(now()) @map("created_at")
-
-  exam Exam @relation(fields: [examId], references: [id], onDelete: Cascade)
-
-  roomLinks ExamRoomExam[]
-
-  @@index([examId])
-  @@map("exam_sessions")
 }
 
 /** Satu kali pengerjaan ujian oleh satu siswa — token acak = "kunci" sesi CBT. */
@@ -2282,57 +2259,34 @@ model ExamRoom {
   academicYearId String  @map("academic_year_id") @db.Uuid
   capacity       Int     @default(24)
   participantCode String @default("145") @map("participant_code") // kode tengah no peserta — format {jenjang:2d}-{kode}-{urut:3d}, mis. "07-145-001"
-  examId         String?  @map("exam_id") @db.Uuid // legacy: tautan tunggal (digantikan links)
   prasaranaId    String?  @map("prasarana_id") @db.Uuid // ruangan dari data Sarpras/Prasarana
   createdAt      DateTime @default(now()) @map("created_at")
 
   academicYear AcademicYear  @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
-  exam         Exam?         @relation(fields: [examId], references: [id], onDelete: SetNull)
   prasarana    Prasarana?    @relation(fields: [prasaranaId], references: [id], onDelete: SetNull)
   seats        ExamSeat[]
-  links        ExamRoomExam[]
 
   @@unique([name, period, academicYearId])
   @@map("exam_rooms")
 }
 
-/** Sesi ujian di satu ruang — ruang bisa host beberapa ujian/kelas di waktu berbeda; satu ujian bisa pakai beberapa ruang. */
-model ExamRoomExam {
-  id           String       @id @default(uuid()) @db.Uuid
-  roomId       String       @map("room_id") @db.Uuid
-  examId       String?      @map("exam_id") @db.Uuid // null = sesi umum — campur rombel lintas ujian
-  sessionId    String?      @map("session_id") @db.Uuid // sesi rombel dari ujian — label & jendela mengikuti sesi ini
-  sessionLabel String?      @map("session_label") // "Sesi 1", "Pagi", dst — dipakai bila tak tertaut ExamSession
-  startsAt     DateTime?    @map("starts_at")     // jendela waktu sesi di ruang ini (label manual)
-  endsAt       DateTime?    @map("ends_at")
-
-  room    ExamRoom     @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  exam    Exam?        @relation(fields: [examId], references: [id], onDelete: Cascade)
-  session ExamSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
-  seats   ExamSeat[]
-
-  @@unique([roomId, examId, sessionId])
-  @@index([examId])
-  @@map("exam_room_exams")
-}
-
+/** Kursi ujian — sistem serentak: satu siswa satu kursi tetap per periode di
+ *  satu ruang (ruang boleh campur rombel & jenjang); nomor peserta tercetak di
+ *  kartu ujian + kartu meja. */
 model ExamSeat {
   id        String  @id @default(uuid()) @db.Uuid
   roomId    String  @map("room_id") @db.Uuid
-  linkId    String? @map("link_id") @db.Uuid // sesi/ujian yang diikuti di ruang ini
   studentId String  @map("student_id") @db.Uuid
   classId   String? @map("class_id") @db.Uuid
   seatNo    Int?    @map("seat_no")
-  code      String? @unique // kode peserta ujian — tercetak di kartu, dipakai masuk CBT
+  code      String? @unique // kode peserta ujian — tercetak di kartu & kartu meja
   present   Boolean? // checklist hadir pengawas — null belum dicek, true hadir, false tidak
 
   room    ExamRoom      @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  link    ExamRoomExam? @relation(fields: [linkId], references: [id], onDelete: Cascade)
   student Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
   class   Class?        @relation(fields: [classId], references: [id], onDelete: SetNull)
 
-  @@unique([linkId, studentId])
-  @@index([roomId, studentId])
+  @@unique([roomId, studentId])
   @@index([classId])
   @@map("exam_seats")
 }

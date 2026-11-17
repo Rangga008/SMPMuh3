@@ -146,7 +146,7 @@ export default function AsesmenPage() {
       };
       if (!target) {
         await createAssessment({ ...dto, academicYearId: yearId });
-        setNotice('Asesmen dibuat — buka untuk mengatur jadwal, sesi, dan soal.');
+        setNotice('Asesmen dibuat — buka untuk mengatur jadwal dan soal.');
       } else {
         await updateAssessment(target.id, dto);
         setNotice('Asesmen diperbarui.');
@@ -270,7 +270,7 @@ export default function AsesmenPage() {
     <Shell>
       <PageTitle
         title="Asesmen & Ujian"
-        subtitle="Satu asesmen = satu ujian per mapel & jenjang — jadwal, sesi, kode akses, soal, hasil & analisis dikelola di dalamnya."
+        subtitle="Satu asesmen = satu ujian per mapel & jenjang — jadwal, kode akses, soal, hasil & analisis dikelola di dalamnya."
         actions={<Button size="sm" onClick={openNew}>+ Asesmen Baru</Button>}
       />
       {error ? (
@@ -380,7 +380,7 @@ export default function AsesmenPage() {
 
       <Modal open={!!confirmDel} onClose={() => setConfirmDel(null)} title="Hapus Asesmen">
         <p className="text-sm text-sand-700">
-          Hapus asesmen <b>{confirmDel?.name}</b>? Ujian, butir soal, sesi & nilai yang terkait ikut terhapus.
+          Hapus asesmen <b>{confirmDel?.name}</b>? Ujian, butir soal & nilai yang terkait ikut terhapus.
           Asesmen yang sudah dikerjakan siswa tidak bisa dihapus.
         </p>
         <div className="mt-5 flex justify-end gap-2">
