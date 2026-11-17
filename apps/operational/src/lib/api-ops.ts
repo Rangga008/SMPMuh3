@@ -271,12 +271,12 @@ export interface ExamSeatView {
   class?: { id: string; name: string } | null;
 }
 export interface ExamRoomLinkView {
-  id: string; examId: string; sessionId?: string | null;
+  id: string; examId?: string | null; sessionId?: string | null;
   /** Label & jendela hasil sinkron — pakai helper `linkSession` di halaman. */
   sessionLabel?: string | null;
   startsAt?: string | null; endsAt?: string | null;
   session?: { id: string; name: string; startAt: string; endAt: string; classIds?: string[] } | null;
-  exam: { id: string; code: string; title: string; startAt: string; endAt: string; status?: string };
+  exam?: { id: string; code: string; title: string; startAt: string; endAt: string; status?: string } | null;
   seats: ExamSeatView[];
   _count: { seats: number };
 }
@@ -301,7 +301,7 @@ export const updateExamRoom = (id: string, dto: { name?: string; period?: string
   req(`/ops/exam-rooms/${id}`, { method: 'PATCH', json: dto });
 export const deleteExamRoom = (id: string) => req(`/ops/exam-rooms/${id}`, { method: 'DELETE' });
 export const removeExamSeat = (seatId: string) => req(`/ops/exam-seats/${seatId}`, { method: 'DELETE' });
-export const addRoomLink = (roomId: string, dto: { examId: string; sessionId?: string; sessionLabel?: string; startsAt?: string; endsAt?: string }) =>
+export const addRoomLink = (roomId: string, dto: { examId?: string; sessionId?: string; sessionLabel?: string; startsAt?: string; endsAt?: string }) =>
   req<ExamRoomLinkView>(`/ops/exam-rooms/${roomId}/links`, { method: 'POST', json: dto });
 export const removeRoomLink = (linkId: string) => req(`/ops/exam-room-links/${linkId}`, { method: 'DELETE' });
 export const assignClassToRoom = (roomId: string, classId: string, linkId?: string, count?: number) =>
@@ -317,6 +317,8 @@ export const getExamCards = (roomId: string, linkId?: string) =>
     room: ExamRoomView & { academicYear: AcademicYear };
     link?: ExamRoomLinkView | null;
     credentials?: Record<string, string>;
+    /** Sesi umum: judul ujian per kursi (diturunkan dari sesi CBT kelasnya). */
+    seatExam?: Record<string, string>;
     school: { name: string; logoUrl?: string | null; npsn?: string | null } | null;
   }>(`/ops/exam-rooms/${roomId}/cards${linkId ? `?linkId=${linkId}` : ''}`);
 

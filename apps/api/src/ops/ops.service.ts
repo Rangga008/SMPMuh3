@@ -1538,32 +1538,37 @@ export class OpsService {
     });
   }
 
-  /** Tautkan satu ujian/sesi ke ruang — ruang bisa host banyak ujian di waktu berbeda.
-   *  Bila `sessionId` diisi, tautan mengikuti ExamSession (nama & jendela selalu sinkron). */
-  async addRoomLink(roomId: string, dto: { examId: string; sessionId?: string; sessionLabel?: string; startsAt?: string; endsAt?: string }) {
+  /** Tautkan sesi ke ruang — TANPA wajib ujian: satu sesi ruang bisa menampung
+   *  rombel campuran lintas jenjang (ujian tiap siswa mengikuti sesi CBT-nya).
+   *  `sessionId` → tautan mengikuti ExamSession (nama & jendela sinkron);
+   *  tanpa sessionId → sesi umum berlabel manual (ruang campuran). */
+  async addRoomLink(roomId: string, dto: { examId?: string; sessionId?: string; sessionLabel?: string; startsAt?: string; endsAt?: string }) {
     await this.prisma.examRoom.findUniqueOrThrow({ where: { id: roomId } });
-    const exam = await this.prisma.exam.findUniqueOrThrow({ where: { id: dto.examId } });
-    let session: { id: string; name: string } | null = null;
+    let session: { id: string; name: string; examId: string } | null = null;
+    let examId: string | null = null;
     if (dto.sessionId) {
-      session = await this.prisma.examSession.findFirst({ where: { id: dto.sessionId, examId: dto.examId }, select: { id: true, name: true } });
-      if (!session) throw new BadRequestException('Sesi tidak ditemukan di ujian ini.');
+      session = await this.prisma.examSession.findUnique({ where: { id: dto.sessionId }, select: { id: true, name: true, examId: true } });
+      if (!session) throw new BadRequestException('Sesi ujian tidak ditemukan.');
+      examId = session.examId;
+    } else if (dto.examId) {
+      examId = (await this.prisma.exam.findUniqueOrThrow({ where: { id: dto.examId } })).id;
     }
-    // Tautan tanpa sesi: satu per ujian per ruang (NULL tak ter-cover unique index).
+    const sessionLabel = session ? null : (dto.sessionLabel?.trim() || null);
+    // Dedup: sesi yang sama (sessionId, atau label+ujian untuk tautan manual)
+    // tak boleh dobel di ruang yang sama.
     const dup = await this.prisma.examRoomExam.findFirst({
-      where: { roomId, examId: dto.examId, sessionId: session?.id ?? null },
+      where: session
+        ? { roomId, sessionId: session.id }
+        : { roomId, sessionId: null, examId, sessionLabel: sessionLabel ? { equals: sessionLabel, mode: 'insensitive' } : null },
     });
     if (dup) {
-      throw new ConflictException(
-        session
-          ? `Sesi "${session.name}" sudah tertaut ke ruang ini.`
-          : `Ujian "${exam.title}" sudah tertaut ke ruang ini.`,
-      );
+      throw new ConflictException(`Sesi "${session?.name ?? sessionLabel ?? 'tanpa nama'}" sudah tertaut ke ruang ini.`);
     }
     return this.prisma.examRoomExam.create({
       data: {
-        roomId, examId: dto.examId,
+        roomId, examId,
         sessionId: session?.id ?? null,
-        sessionLabel: session ? null : (dto.sessionLabel?.trim() || null),
+        sessionLabel,
         startsAt: session ? null : (dto.startsAt ? new Date(dto.startsAt) : null),
         endsAt: session ? null : (dto.endsAt ? new Date(dto.endsAt) : null),
       },
@@ -1600,15 +1605,33 @@ export class OpsService {
     });
   }
 
-  /** Link-id se-scope sesi yang sama (ujian + sessionId) — satu sesi boleh
-   *  memakai beberapa ruang; siswa hanya boleh duduk SEKALI di sesi itu. */
+  /** Link-id se-scope slot yang sama — siswa hanya boleh duduk SEKALI per slot:
+   *  - tautan sesi CBT → semua link dengan sessionId sama (lintas ruang);
+   *  - sesi umum → semua link berlabel sama (case-insensitive) di tahun ajaran
+   *    yang sama ("Sesi 1" di ruang 9 = "Sesi 1" di ruang 10). */
   private async sessionScopeLinkIds(linkId: string) {
-    const link = await this.prisma.examRoomExam.findUniqueOrThrow({ where: { id: linkId } });
-    const sib = await this.prisma.examRoomExam.findMany({
-      where: { examId: link.examId, sessionId: link.sessionId },
-      select: { id: true },
+    const link = await this.prisma.examRoomExam.findUniqueOrThrow({
+      where: { id: linkId },
+      include: { room: { select: { academicYearId: true } } },
     });
-    return sib.map((l) => l.id);
+    if (link.sessionId) {
+      const sib = await this.prisma.examRoomExam.findMany({
+        where: { sessionId: link.sessionId }, select: { id: true },
+      });
+      return sib.map((l) => l.id);
+    }
+    if (link.sessionLabel) {
+      const sib = await this.prisma.examRoomExam.findMany({
+        where: {
+          sessionId: null,
+          sessionLabel: { equals: link.sessionLabel, mode: 'insensitive' },
+          room: { academicYearId: link.room.academicYearId },
+        },
+        select: { id: true },
+      });
+      return sib.map((l) => l.id);
+    }
+    return [link.id];
   }
 
   /** Tempatkan rombel ke sesi/ruang — otomatis LANJUT: siswa yang sudah
@@ -1724,6 +1747,25 @@ export class OpsService {
       },
     });
     const exam = link?.exam ?? null;
+    // Sesi umum (tanpa ujian): ujian tiap siswa diturunkan dari sesi CBT yang
+    // mencakup kelasnya & beririsan waktu dengan jendela sesi ruang ini.
+    const seatExam: Record<string, string> = {};
+    if (!exam) {
+      const linkStart = link?.session?.startAt ?? link?.startsAt ?? null;
+      const linkEnd = link?.session?.endAt ?? link?.endsAt ?? null;
+      const sessions = await this.prisma.examSession.findMany({
+        where: { exam: { academicYearId: room.academicYearId } },
+        include: { exam: { select: { title: true } } },
+      });
+      const overlap = (s: { startAt: Date; endAt: Date }) =>
+        !linkStart || !linkEnd || (s.startAt < linkEnd && s.endAt > linkStart);
+      for (const seat of room.seats) {
+        const hit =
+          sessions.find((s) => (s.classIds as string[]).includes(seat.classId ?? '') && overlap(s))
+          ?? sessions.find((s) => (s.classIds as string[]).includes(seat.classId ?? ''));
+        if (hit) seatExam[seat.id] = hit.exam.title;
+      }
+    }
     // Password CBT diambil dari data siswa — dibuat malas saat kartu dicetak
     // untuk siswa yang belum punya (satu password per siswa, semua ujian).
     const credentials: Record<string, string> = {};
@@ -1744,7 +1786,7 @@ export class OpsService {
       credentials[seat.studentId] = pw;
     }
     const school = await this.prisma.school.findFirst();
-    return { room: { ...room, exam }, link, credentials, school };
+    return { room: { ...room, exam }, link, credentials, school, seatExam };
   }
 
   /** Data calon peserta ujian (US-1/US-2) — per rombel jenjang tertentu (default kelas akhir 9). */

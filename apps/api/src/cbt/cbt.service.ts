@@ -158,6 +158,7 @@ export class CbtService {
             _count: { select: { questions: true } },
           },
         },
+        sessions: { orderBy: { startAt: 'asc' } },
         _count: { select: { attempts: true } },
       },
       orderBy: { createdAt: 'desc' },

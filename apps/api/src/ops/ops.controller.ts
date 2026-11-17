@@ -560,7 +560,7 @@ export class OpsController {
   }
   @Post('exam-rooms/:id/links')
   @RequirePermission(PERMISSIONS.TATAUSAHA_MANAGE)
-  addLink(@Param('id') id: string, @Body() dto: { examId: string; sessionId?: string; sessionLabel?: string; startsAt?: string; endsAt?: string }) {
+  addLink(@Param('id') id: string, @Body() dto: { examId?: string; sessionId?: string; sessionLabel?: string; startsAt?: string; endsAt?: string }) {
     return this.ops.addRoomLink(id, dto);
   }
   @Delete('exam-room-links/:linkId')
