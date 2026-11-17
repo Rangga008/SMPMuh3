@@ -718,6 +718,55 @@ export class OpsService {
     };
   }
 
+  /** Ledger nilai satu kelas → sheet Excel (siswa × mapel). */
+  async gradeLedgerXlsx(classId: string, academicYearId: string) {
+    const l = await this.gradeLedger(classId, academicYearId);
+    const rows: (string | number)[][] = [
+      [`DAFTAR NILAI — ${l.class.name}`],
+      [],
+      ['NO', 'NIS', 'SISWA', ...l.subjects.map((s) => s.code)],
+      ...l.students.map((s, i) => [i + 1, s.nis ?? '', s.name, ...s.scores.map((sc) => sc ?? '')]),
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{ wch: 5 }, { wch: 12 }, { wch: 30 }, ...l.subjects.map(() => ({ wch: 8 }))];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, l.class.name.slice(0, 31));
+    return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+  }
+
+  /** Statistik mapel satu kelas → sheet Excel. */
+  async classSubjectStatsXlsx(classId: string, academicYearId: string) {
+    const stats = await this.classSubjectStats(classId, academicYearId);
+    const cls = await this.prisma.class.findUniqueOrThrow({ where: { id: classId } });
+    const rows: (string | number)[][] = [
+      [`STATISTIK MAPEL — ${cls.name}`],
+      [],
+      ['KODE', 'MATA PELAJARAN', 'PENILAIAN', 'RATA-RATA', 'MIN', 'MAX'],
+      ...stats.map((s) => [s.subject.code, s.subject.name, s.count, s.avg ?? '', s.min ?? '', s.max ?? '']),
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{ wch: 8 }, { wch: 34 }, { wch: 11 }, { wch: 11 }, { wch: 7 }, { wch: 7 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Statistik');
+    return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+  }
+
+  /** Rekap absen satu kelas per rentang tanggal → sheet Excel. */
+  async attendanceRecapClassXlsx(classId: string, from: string, to: string) {
+    const r = await this.attendanceRecap(classId, from, to);
+    const rows: (string | number)[][] = [
+      [`REKAP ABSEN — ${r.class.name} · ${from} s.d. ${to} (${r.daysTaken} hari)`],
+      [],
+      ['NO', 'NIS', 'SISWA', 'HADIR', 'SAKIT', 'IZIN', 'ALPHA', '% HADIR'],
+      ...r.students.map((s, i) => [i + 1, s.nis ?? '', s.name, s.present, s.sick, s.permit, s.absent, s.presentPct != null ? `${s.presentPct}%` : '']),
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{ wch: 5 }, { wch: 12 }, { wch: 30 }, { wch: 7 }, { wch: 7 }, { wch: 7 }, { wch: 7 }, { wch: 8 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, r.class.name.slice(0, 31));
+    return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+  }
+
   /** Statistik per mapel dalam satu kelas: avg/min/max + jumlah penilai. */
   async classSubjectStats(classId: string, academicYearId: string) {
     const rows = await this.prisma.grade.groupBy({
@@ -1352,6 +1401,13 @@ export class OpsService {
   createArchiveCategory(name: string) {
     return this.prisma.archiveCategory.create({ data: { name } });
   }
+  updateArchiveCategory(id: string, name: string) {
+    return this.prisma.archiveCategory.update({ where: { id }, data: { name: name.trim() } });
+  }
+  deleteArchiveCategory(id: string) {
+    // Arsip di dalamnya TIDAK ikut terhapus — jadi "tanpa kategori" (SetNull).
+    return this.prisma.archiveCategory.delete({ where: { id } });
+  }
   async uploadArchiveItem(dto: { title: string; categoryId?: string; refNumber?: string; date?: string }, file: Express.Multer.File, uploadedBy?: string) {
     const key = `archive/${Date.now()}-${file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
     await this.storage.putObject(key, file.buffer, file.mimetype);
@@ -1469,6 +1525,7 @@ export class OpsService {
         links: {
           include: {
             exam: { select: { id: true, code: true, title: true, startAt: true, endAt: true, status: true } },
+            session: { select: { id: true, name: true, startAt: true, endAt: true, classIds: true } },
             seats: { include: { student: { select: { id: true, name: true, nis: true } }, class: { select: { id: true, name: true } } }, orderBy: { seatNo: 'asc' } },
             _count: { select: { seats: true } },
           },
@@ -1481,20 +1538,40 @@ export class OpsService {
     });
   }
 
-  /** Tautkan satu ujian/sesi ke ruang — ruang bisa host banyak ujian di waktu berbeda. */
-  async addRoomLink(roomId: string, dto: { examId: string; sessionLabel?: string; startsAt?: string; endsAt?: string }) {
+  /** Tautkan satu ujian/sesi ke ruang — ruang bisa host banyak ujian di waktu berbeda.
+   *  Bila `sessionId` diisi, tautan mengikuti ExamSession (nama & jendela selalu sinkron). */
+  async addRoomLink(roomId: string, dto: { examId: string; sessionId?: string; sessionLabel?: string; startsAt?: string; endsAt?: string }) {
     await this.prisma.examRoom.findUniqueOrThrow({ where: { id: roomId } });
     const exam = await this.prisma.exam.findUniqueOrThrow({ where: { id: dto.examId } });
-    const dup = await this.prisma.examRoomExam.findUnique({ where: { roomId_examId: { roomId, examId: dto.examId } } });
-    if (dup) throw new ConflictException(`Ujian "${exam.title}" sudah tertaut ke ruang ini.`);
+    let session: { id: string; name: string } | null = null;
+    if (dto.sessionId) {
+      session = await this.prisma.examSession.findFirst({ where: { id: dto.sessionId, examId: dto.examId }, select: { id: true, name: true } });
+      if (!session) throw new BadRequestException('Sesi tidak ditemukan di ujian ini.');
+    }
+    // Tautan tanpa sesi: satu per ujian per ruang (NULL tak ter-cover unique index).
+    const dup = await this.prisma.examRoomExam.findFirst({
+      where: { roomId, examId: dto.examId, sessionId: session?.id ?? null },
+    });
+    if (dup) {
+      throw new ConflictException(
+        session
+          ? `Sesi "${session.name}" sudah tertaut ke ruang ini.`
+          : `Ujian "${exam.title}" sudah tertaut ke ruang ini.`,
+      );
+    }
     return this.prisma.examRoomExam.create({
       data: {
         roomId, examId: dto.examId,
-        sessionLabel: dto.sessionLabel?.trim() || null,
-        startsAt: dto.startsAt ? new Date(dto.startsAt) : null,
-        endsAt: dto.endsAt ? new Date(dto.endsAt) : null,
+        sessionId: session?.id ?? null,
+        sessionLabel: session ? null : (dto.sessionLabel?.trim() || null),
+        startsAt: session ? null : (dto.startsAt ? new Date(dto.startsAt) : null),
+        endsAt: session ? null : (dto.endsAt ? new Date(dto.endsAt) : null),
       },
-      include: { exam: { select: { id: true, code: true, title: true } }, _count: { select: { seats: true } } },
+      include: {
+        exam: { select: { id: true, code: true, title: true } },
+        session: { select: { id: true, name: true, startAt: true, endAt: true } },
+        _count: { select: { seats: true } },
+      },
     });
   }
   async removeRoomLink(linkId: string) {
@@ -1506,17 +1583,54 @@ export class OpsService {
     const linkId = (dto as { linkId?: string }).linkId ?? null;
     const seatCount = await this.prisma.examSeat.count({ where: linkId ? { linkId } : { roomId, linkId: null } });
     if (seatCount >= room.capacity) throw new ConflictException(`Ruang ${room.name} penuh (${room.capacity}).`);
+    // Tolak bila siswa sudah duduk di sesi yang sama pada ruang lain.
+    if (linkId) {
+      const scope = await this.sessionScopeLinkIds(linkId);
+      const dup = await this.prisma.examSeat.findFirst({
+        where: { linkId: { in: scope }, studentId: dto.studentId },
+        include: { link: { select: { sessionLabel: true, session: { select: { name: true } } } }, room: { select: { name: true } } },
+      });
+      if (dup) {
+        const sesi = dup.link?.session?.name ?? dup.link?.sessionLabel ?? 'sesi ini';
+        throw new ConflictException(`${sesi}: siswa sudah duduk di ${dup.room.name}.`);
+      }
+    }
     return this.prisma.examSeat.create({
       data: { roomId, linkId, studentId: dto.studentId, classId: dto.classId ?? null, seatNo: dto.seatNo ?? seatCount + 1, code: await this.nextSeatCode(room.academicYearId, room.period) },
     });
   }
+
+  /** Link-id se-scope sesi yang sama (ujian + sessionId) — satu sesi boleh
+   *  memakai beberapa ruang; siswa hanya boleh duduk SEKALI di sesi itu. */
+  private async sessionScopeLinkIds(linkId: string) {
+    const link = await this.prisma.examRoomExam.findUniqueOrThrow({ where: { id: linkId } });
+    const sib = await this.prisma.examRoomExam.findMany({
+      where: { examId: link.examId, sessionId: link.sessionId },
+      select: { id: true },
+    });
+    return sib.map((l) => l.id);
+  }
+
+  /** Tempatkan rombel ke sesi/ruang — otomatis LANJUT: siswa yang sudah
+   *  duduk di sesi yang sama (ruang lain pun) dilewati, jadi satu kelas bisa
+   *  dipecah antar-ruang tanpa duplikat. */
   async assignClassToRoom(roomId: string, classId: string, linkId?: string, count?: number) {
     const room = await this.prisma.examRoom.findUniqueOrThrow({ where: { id: roomId }, include: { _count: { select: { seats: true } } } });
-    if (linkId) {
-      const link = await this.prisma.examRoomExam.findFirst({ where: { id: linkId, roomId } });
-      if (!link) throw new NotFoundException('Sesi ujian ruang tidak ditemukan.');
-    }
+    const link = linkId
+      ? await this.prisma.examRoomExam.findFirst({
+          where: { id: linkId, roomId },
+          include: { session: { select: { id: true, name: true, classIds: true } } },
+        })
+      : null;
+    if (linkId && !link) throw new NotFoundException('Sesi ujian ruang tidak ditemukan.');
     const cls = await this.prisma.class.findUniqueOrThrow({ where: { id: classId } });
+    // Rombel harus peserta sesi ini — tautan sesi sudah mendefinisikan rombelnya.
+    if (link?.session) {
+      const allowed = link.session.classIds as string[];
+      if (!allowed.includes(classId)) {
+        throw new BadRequestException(`${cls.name} bukan rombel peserta ${link.session.name} — atur rombel sesi di detail ujian.`);
+      }
+    }
     // Urutan kursi mengikuti nomor absen (NIS) — kursi berlanjut antar-kelas dalam satu ruang.
     const students = await this.prisma.enrollment.findMany({
       where: { classId, academicYearId: cls.academicYearId, student: { status: 'ACTIVE' } },
@@ -1524,7 +1638,16 @@ export class OpsService {
     });
     const seatWhere = linkId ? { linkId } : { roomId, linkId: null };
     const seated = await this.prisma.examSeat.count({ where: seatWhere });
-    const existing = await this.prisma.examSeat.findMany({ where: { ...seatWhere, studentId: { in: students.map((s) => s.studentId) } }, select: { studentId: true } });
+    // Siswa sudah duduk di sesi yang sama (di ruang mana pun) → dilewati,
+    // sehingga pembagian satu kelas ke beberapa ruang selalu melanjutkan sisa.
+    const scopeLinkIds = linkId ? await this.sessionScopeLinkIds(linkId) : null;
+    const existing = await this.prisma.examSeat.findMany({
+      where: {
+        ...(scopeLinkIds ? { linkId: { in: scopeLinkIds } } : seatWhere),
+        studentId: { in: students.map((s) => s.studentId) },
+      },
+      select: { studentId: true },
+    });
     const skip = new Set(existing.map((e) => e.studentId));
     const free = room.capacity - seated;
     const limit = count != null && count > 0 ? Math.min(count, free) : free;
@@ -1536,7 +1659,8 @@ export class OpsService {
         data: { roomId, linkId: linkId ?? null, studentId: s.studentId, classId, seatNo: ++seat, code: await this.nextSeatCode(room.academicYearId, room.period) },
       });
     }
-    return { added: toAdd.length, skipped: students.length - toAdd.length, free: free - toAdd.length };
+    const unseated = students.length - skip.size - toAdd.length;
+    return { added: toAdd.length, skipped: students.length - toAdd.length, free: free - toAdd.length, remaining: Math.max(unseated, 0) };
   }
 
   /** Kode peserta: {PERIODE}-{nomor urut 4 digit} — unik per tahun ajaran,
@@ -1582,7 +1706,10 @@ export class OpsService {
     const link = linkId
       ? await this.prisma.examRoomExam.findFirstOrThrow({
           where: { id: linkId, roomId },
-          include: { exam: { select: { id: true, code: true, title: true, startAt: true, endAt: true } } },
+          include: {
+            exam: { select: { id: true, code: true, title: true, startAt: true, endAt: true } },
+            session: { select: { id: true, name: true, startAt: true, endAt: true } },
+          },
         })
       : null;
     const room = await this.prisma.examRoom.findUniqueOrThrow({

@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { PageTitle, Widget } from '@/components/widgets';
@@ -30,11 +31,23 @@ const dt = (s: string) =>
   new Date(s).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 
 export default function UjianPage() {
+  return (
+    <Suspense fallback={null}>
+      <UjianInner />
+    </Suspense>
+  );
+}
+
+function UjianInner() {
+  const params = useSearchParams();
   const [years, setYears] = useState<AcademicYear[]>([]);
   const [yearId, setYearId] = useState('');
   const [classes, setClasses] = useState<ClassView[]>([]);
   const [assessments, setAssessments] = useState<AssessmentView[]>([]);
   const [exams, setExams] = useState<ExamView[]>([]);
+  // Filter daftar — ?asesmen=<id> datang dari tombol "Ujian CBT →" di Bank Asesmen.
+  const [asesmenId, setAsesmenId] = useState(params.get('asesmen') ?? '');
+  const [statusF, setStatusF] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [modalErr, setModalErr] = useState<string | null>(null);
@@ -73,6 +86,11 @@ export default function UjianPage() {
     listClasses(y).then(setClasses).catch(() => setClasses([]));
     listAssessments(y).then(setAssessments).catch(() => setAssessments([]));
   };
+
+  const shown = exams.filter(
+    (x) => (!asesmenId || x.assessment.id === asesmenId) && (!statusF || x.status === statusF),
+  );
+  const asesmenName = asesmenId ? assessments.find((a) => a.id === asesmenId)?.name : null;
 
   const create = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -157,8 +175,33 @@ export default function UjianPage() {
         <DataTable
           head={['Kode', 'Ujian', 'Jadwal & Durasi', 'Peserta', 'Soal', 'Status', '']}
           empty={!exams.length ? 'Belum ada ujian di tahun ajaran ini — buat lewat tombol kanan atas.' : undefined}
+          filters={
+            <>
+              <Select value={asesmenId} onChange={(e) => setAsesmenId(e.target.value)} className="w-56" searchable aria-label="Filter asesmen">
+                <option value="">Semua asesmen</option>
+                {assessments.map((a) => (
+                  <option key={a.id} value={a.id}>{a.name} · {a.subject.name}</option>
+                ))}
+              </Select>
+              <Select value={statusF} onChange={(e) => setStatusF(e.target.value)} className="w-36" aria-label="Filter status">
+                <option value="">Semua status</option>
+                <option value="DRAFT">Draf</option>
+                <option value="OPEN">Dibuka</option>
+                <option value="CLOSED">Ditutup</option>
+              </Select>
+              {asesmenId ? (
+                <button
+                  type="button"
+                  onClick={() => setAsesmenId('')}
+                  className="rounded-lg bg-primary-50 px-2.5 py-1.5 text-xs font-bold text-primary-700 hover:bg-primary-100"
+                >
+                  {asesmenName ?? 'Asesmen terfilter'} ✕
+                </button>
+              ) : null}
+            </>
+          }
         >
-          {exams.map((x) => (
+          {shown.map((x) => (
             <tr key={x.id}>
               <td className="px-5 py-3">
                 <code className="rounded-lg bg-sand-100 px-2 py-1 text-xs font-black tracking-wider text-sand-800">{x.code}</code>

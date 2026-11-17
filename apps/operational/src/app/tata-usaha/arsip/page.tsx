@@ -9,7 +9,8 @@ import { RowBtn } from '@/components/row-btn';
 import { FilePick } from '@/components/file-pick';
 import { useConfirm } from '@/components/confirm-dialog';
 import {
-  createArchiveCategory, deleteArchive, listArchiveCategories, listArchives, updateArchive, uploadArchive,
+  createArchiveCategory, deleteArchive, deleteArchiveCategory, listArchiveCategories, listArchives,
+  updateArchive, updateArchiveCategory, uploadArchive,
   type ArchiveItemView,
 } from '@/lib/api-ops';
 import { useFileViewer } from '@/components/file-viewer';
@@ -63,7 +64,7 @@ export default function ArsipPage() {
       <PageTitle title="Arsip TU" subtitle="Penyimpanan dokumen & arsip per kategori — cari berdasar judul atau nomor."
         actions={
           <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={() => setCatModal(true)}>+ Kategori</Button>
+            <Button size="sm" variant="outline" onClick={() => setCatModal(true)}>Kelola Kategori</Button>
             <Button size="sm" onClick={() => { setModalFile(null); setModal('new'); }}>+ Arsip Baru</Button>
           </div>
         } />
@@ -108,16 +109,38 @@ export default function ArsipPage() {
         </DataTable>
       </Widget>
 
-      <Modal open={catModal} onClose={() => setCatModal(false)} title="Kategori Arsip">
-        <form className="grid gap-4" onSubmit={async (e) => {
+      <Modal open={catModal} onClose={() => setCatModal(false)} title="Kelola Kategori Arsip">
+        <ul className="mb-4 divide-y divide-sand-100 rounded-xl border border-sand-200">
+          {cats.map((c) => (
+            <li key={c.id} className="flex items-center gap-2 px-3.5 py-2.5">
+              <span className="min-w-0 flex-1 truncate text-sm font-semibold text-sand-800">{c.name}</span>
+              <span className="text-xs text-sand-400">{c._count.items} arsip</span>
+              <button type="button" className="text-xs font-bold text-primary-700 hover:underline"
+                onClick={async () => {
+                  const name = window.prompt('Ubah nama kategori:', c.name)?.trim();
+                  if (!name || name === c.name) return;
+                  try { await updateArchiveCategory(c.id, name); setNotice('Kategori diubah.'); load(); }
+                  catch (err) { setError(err instanceof Error ? err.message : 'Gagal.'); }
+                }}>Ubah</button>
+              <button type="button" className="text-xs font-bold text-red-600 hover:underline"
+                onClick={async () => {
+                  if (!(await confirm(`Hapus kategori "${c.name}"? ${c._count.items ? `${c._count.items} arsip di dalamnya jadi tanpa kategori (tidak terhapus).` : ''}`))) return;
+                  try { await deleteArchiveCategory(c.id); setNotice('Kategori dihapus.'); if (catId === c.id) setCatId(''); load(); }
+                  catch (err) { setError(err instanceof Error ? err.message : 'Gagal.'); }
+                }}>Hapus</button>
+            </li>
+          ))}
+          {!cats.length ? <li className="px-3.5 py-6 text-center text-sm text-sand-400">Belum ada kategori.</li> : null}
+        </ul>
+        <form className="flex items-end gap-2" onSubmit={async (e) => {
           e.preventDefault();
           const fd = new FormData(e.currentTarget);
           setBusy(true);
-          try { await createArchiveCategory(String(fd.get('name'))); setCatModal(false); load(); setNotice('Kategori dibuat.'); }
+          try { await createArchiveCategory(String(fd.get('name'))); (e.target as HTMLFormElement).reset(); load(); setNotice('Kategori dibuat.'); }
           catch (err) { setError(err instanceof Error ? err.message : 'Gagal.'); } finally { setBusy(false); }
         }}>
-          <Field label="Nama kategori"><Input name="name" required placeholder="Surat Dinas / SK / Keuangan" /></Field>
-          <div className="flex justify-end"><Button type="submit" disabled={busy}>Simpan</Button></div>
+          <Field label="Kategori baru" className="flex-1"><Input name="name" required placeholder="Surat Dinas / SK / Keuangan" /></Field>
+          <Button type="submit" disabled={busy}>Tambah</Button>
         </form>
       </Modal>
 

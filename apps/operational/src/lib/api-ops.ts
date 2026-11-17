@@ -46,6 +46,8 @@ export const downloadGenTemplate = (id: string, counts: { pg: number; pgk: numbe
     `/ops/assessments/${id}/questions/template?pg=${counts.pg}&pgk=${counts.pgk}&bs=${counts.bs}&bsk=${counts.bsk}`,
     `template-soal-${counts.pg}pg-${counts.pgk}pgk-${counts.bs}bs-${counts.bsk}bsk.xlsx`,
   );
+export const downloadDocxTemplate = (id: string) =>
+  downloadFile(`/ops/assessments/${id}/questions/template.docx`, 'template-import-soal.docx');
 export const importQuestions = (id: string, file: File) => {
   const fd = new FormData();
   fd.append('file', file);
@@ -85,6 +87,12 @@ export const getGradeLedger = (classId: string, academicYearId: string) =>
 export const getClassSubjectStats = (classId: string, academicYearId: string) =>
   req<{ subject: { id: string; name: string; code: string }; count: number; avg: number | null; min: number | null; max: number | null }[]>(
     `/ops/stats?classId=${classId}&academicYearId=${academicYearId}`);
+export const downloadLedgerXlsx = (classId: string, academicYearId: string) =>
+  downloadFile(`/ops/ledger.xlsx?classId=${classId}&academicYearId=${academicYearId}`, 'ledger-nilai.xlsx');
+export const downloadStatsXlsx = (classId: string, academicYearId: string) =>
+  downloadFile(`/ops/stats.xlsx?classId=${classId}&academicYearId=${academicYearId}`, 'statistik-mapel.xlsx');
+export const downloadRecapXlsx = (classId: string, from: string, to: string) =>
+  downloadFile(`/ops/attendance/recap-class.xlsx?classId=${classId}&from=${from}&to=${to}`, 'rekap-absen.xlsx');
 
 export interface TeacherSession {
   assignmentId: string; class: ClassView; subject: { id: string; name: string; code: string };
@@ -215,6 +223,10 @@ export interface ArchiveItemView {
 export const listArchiveCategories = () => req<{ id: string; name: string; _count: { items: number } }[]>('/ops/archives/categories');
 export const createArchiveCategory = (name: string) =>
   req('/ops/archives/categories', { method: 'POST', json: { name } });
+export const updateArchiveCategory = (id: string, name: string) =>
+  req(`/ops/archives/categories/${id}`, { method: 'PATCH', json: { name } });
+export const deleteArchiveCategory = (id: string) =>
+  req(`/ops/archives/categories/${id}`, { method: 'DELETE' });
 export const listArchives = (q: { categoryId?: string | undefined; q?: string | undefined }) =>
   req<ArchiveItemView[]>(`/ops/archives${qs(q)}`);
 export const uploadArchive = (dto: { title: string; categoryId?: string | undefined; refNumber?: string | undefined; date?: string | undefined }, file: File) => {
@@ -259,12 +271,19 @@ export interface ExamSeatView {
   class?: { id: string; name: string } | null;
 }
 export interface ExamRoomLinkView {
-  id: string; examId: string; sessionLabel?: string | null;
+  id: string; examId: string; sessionId?: string | null;
+  /** Label & jendela hasil sinkron — pakai helper `linkSession` di halaman. */
+  sessionLabel?: string | null;
   startsAt?: string | null; endsAt?: string | null;
+  session?: { id: string; name: string; startAt: string; endAt: string; classIds?: string[] } | null;
   exam: { id: string; code: string; title: string; startAt: string; endAt: string; status?: string };
   seats: ExamSeatView[];
   _count: { seats: number };
 }
+/** Label & jendela sesi tautan — ikut ExamSession bila tertaut, fallback label manual. */
+export const linkSessionName = (l: ExamRoomLinkView) => l.session?.name ?? l.sessionLabel ?? null;
+export const linkSessionStart = (l: ExamRoomLinkView) => l.session?.startAt ?? l.startsAt ?? null;
+export const linkSessionEnd = (l: ExamRoomLinkView) => l.session?.endAt ?? l.endsAt ?? null;
 export interface ExamRoomView {
   id: string; name: string; period: string; capacity: number; examId?: string | null;
   prasaranaId?: string | null;
@@ -282,11 +301,11 @@ export const updateExamRoom = (id: string, dto: { name?: string; period?: string
   req(`/ops/exam-rooms/${id}`, { method: 'PATCH', json: dto });
 export const deleteExamRoom = (id: string) => req(`/ops/exam-rooms/${id}`, { method: 'DELETE' });
 export const removeExamSeat = (seatId: string) => req(`/ops/exam-seats/${seatId}`, { method: 'DELETE' });
-export const addRoomLink = (roomId: string, dto: { examId: string; sessionLabel?: string; startsAt?: string; endsAt?: string }) =>
+export const addRoomLink = (roomId: string, dto: { examId: string; sessionId?: string; sessionLabel?: string; startsAt?: string; endsAt?: string }) =>
   req<ExamRoomLinkView>(`/ops/exam-rooms/${roomId}/links`, { method: 'POST', json: dto });
 export const removeRoomLink = (linkId: string) => req(`/ops/exam-room-links/${linkId}`, { method: 'DELETE' });
 export const assignClassToRoom = (roomId: string, classId: string, linkId?: string, count?: number) =>
-  req<{ added: number; skipped: number; free: number }>(`/ops/exam-rooms/${roomId}/assign-class`, { method: 'POST', json: { classId, linkId, ...(count ? { count } : {}) } });
+  req<{ added: number; skipped: number; free: number; remaining: number }>(`/ops/exam-rooms/${roomId}/assign-class`, { method: 'POST', json: { classId, linkId, ...(count ? { count } : {}) } });
 /** Hapus seluruh absen satu rombel di satu tanggal (salah absen). */
 export const clearClassAttendance = (classId: string, date: string) =>
   req<{ removed: number }>(`/ops/class-attendance?classId=${classId}&date=${date}`, { method: 'DELETE' });

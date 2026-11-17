@@ -247,3 +247,83 @@ input[type="number"] {
   -moz-appearance: textfield;
   appearance: textfield;
 }
+
+/* ==========================================================================
+   DataTable — mode kartu di layar kecil (operational).
+   Komponen menyuntikkan data-label=<judul kolom> ke tiap <td>; CSS ini
+   mengubah tiap <tr> menjadi kartu dengan label di kiri & isi di kanan.
+   ========================================================================== */
+@media (max-width: 767px) {
+  .dt-cards {
+    overflow-x: visible;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+  .dt-cards > table {
+    display: block;
+    min-width: 0 !important;
+    background: transparent;
+  }
+  .dt-cards > table > thead {
+    display: none;
+  }
+  .dt-cards > table > tbody {
+    display: block;
+  }
+  .dt-cards > table > tbody > tr {
+    display: block;
+    margin: 10px 0;
+    padding: 6px 12px;
+    border: 1px solid var(--color-sand-200);
+    border-radius: 14px;
+    background: var(--color-white, #fff);
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
+  }
+  /* Matikan garis pemisah `divide-y` antar-baris — kartu sudah berjarak. */
+  .dt-cards > table > tbody > tr + tr {
+    border-top: 0;
+  }
+  .dt-cards > table > tbody > tr > td {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    border: 0;
+    padding-left: 4px;
+    padding-right: 4px;
+    white-space: normal;
+  }
+  .dt-cards > table > tbody > tr > td + td {
+    border-top: 1px solid var(--color-sand-100);
+  }
+  .dt-cards > table > tbody > tr > td::before {
+    content: attr(data-label);
+    flex: none;
+    max-width: 45%;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--color-sand-400);
+  }
+  .dt-cards > table > tbody > tr > td > * {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  /* Baris status (memuat/error/kosong) & td tanpa label — blok penuh. */
+  .dt-cards > table > tbody > tr > td[data-state],
+  .dt-cards > table > tbody > tr > td:not([data-label]) {
+    display: block;
+    text-align: center;
+  }
+  .dt-cards > table > tbody > tr > td[data-state]::before,
+  .dt-cards > table > tbody > tr > td:not([data-label])::before {
+    content: none;
+  }
+}
+
+.dark .dt-cards > table > tbody > tr {
+  border-color: var(--color-sand-700);
+  background: #101d33;
+}

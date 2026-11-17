@@ -2063,6 +2063,8 @@ model ExamSession {
 
   exam Exam @relation(fields: [examId], references: [id], onDelete: Cascade)
 
+  roomLinks ExamRoomExam[]
+
   @@index([examId])
   @@map("exam_sessions")
 }
@@ -2281,18 +2283,20 @@ model ExamRoom {
 
 /** Sesi ujian di satu ruang — ruang bisa host beberapa ujian/kelas di waktu berbeda; satu ujian bisa pakai beberapa ruang. */
 model ExamRoomExam {
-  id           String    @id @default(uuid()) @db.Uuid
-  roomId       String    @map("room_id") @db.Uuid
-  examId       String    @map("exam_id") @db.Uuid
-  sessionLabel String?   @map("session_label") // "Sesi 1", "Pagi", dst — opsional
-  startsAt     DateTime? @map("starts_at")     // jendela waktu sesi di ruang ini
-  endsAt       DateTime? @map("ends_at")
+  id           String       @id @default(uuid()) @db.Uuid
+  roomId       String       @map("room_id") @db.Uuid
+  examId       String       @map("exam_id") @db.Uuid
+  sessionId    String?      @map("session_id") @db.Uuid // sesi rombel dari ujian — label & jendela mengikuti sesi ini
+  sessionLabel String?      @map("session_label") // "Sesi 1", "Pagi", dst — dipakai bila tak tertaut ExamSession
+  startsAt     DateTime?    @map("starts_at")     // jendela waktu sesi di ruang ini (label manual)
+  endsAt       DateTime?    @map("ends_at")
 
-  room  ExamRoom   @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  exam  Exam       @relation(fields: [examId], references: [id], onDelete: Cascade)
-  seats ExamSeat[]
+  room    ExamRoom     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  exam    Exam         @relation(fields: [examId], references: [id], onDelete: Cascade)
+  session ExamSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  seats   ExamSeat[]
 
-  @@unique([roomId, examId])
+  @@unique([roomId, examId, sessionId])
   @@index([examId])
   @@map("exam_room_exams")
 }

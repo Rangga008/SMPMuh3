@@ -278,7 +278,7 @@ export default function AsesmenPage() {
                       Butir & Analisis →
                     </Link>
                     <Link
-                      href="/kurikulum/ujian"
+                      href={`/kurikulum/ujian?asesmen=${a.id}`}
                       className="rounded-lg bg-sand-100 px-2.5 py-1.5 text-sand-700 hover:bg-sand-200"
                     >
                       Ujian CBT →

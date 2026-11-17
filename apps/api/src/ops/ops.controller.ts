@@ -269,6 +269,30 @@ export class OpsController {
   stats(@Query('classId') c: string, @Query('academicYearId') y: string) {
     return this.ops.classSubjectStats(c, y);
   }
+  @Get('ledger.xlsx')
+  @RequirePermission(PERMISSIONS.ACADEMIC_READ)
+  async ledgerXlsx(@Res() res: Response, @Query('classId') c: string, @Query('academicYearId') y: string) {
+    const buf = await this.ops.gradeLedgerXlsx(c, y);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="ledger-nilai.xlsx"');
+    res.send(buf);
+  }
+  @Get('stats.xlsx')
+  @RequirePermission(PERMISSIONS.ACADEMIC_READ)
+  async statsXlsx(@Res() res: Response, @Query('classId') c: string, @Query('academicYearId') y: string) {
+    const buf = await this.ops.classSubjectStatsXlsx(c, y);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="statistik-mapel.xlsx"');
+    res.send(buf);
+  }
+  @Get('attendance/recap-class.xlsx')
+  @RequirePermission(PERMISSIONS.ACADEMIC_READ)
+  async recapClassXlsx(@Res() res: Response, @Query('classId') c: string, @Query('from') f: string, @Query('to') t: string) {
+    const buf = await this.ops.attendanceRecapClassXlsx(c, f, t);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="rekap-absen.xlsx"');
+    res.send(buf);
+  }
 
   // ---- Absen siswa harian ----
   @Get('attendance/my-today')
@@ -437,6 +461,16 @@ export class OpsController {
   createArchiveCat(@Body('name') name: string) {
     return this.ops.createArchiveCategory(name);
   }
+  @Patch('archives/categories/:id')
+  @RequirePermission(PERMISSIONS.TATAUSAHA_MANAGE)
+  updateArchiveCat(@Param('id') id: string, @Body('name') name: string) {
+    return this.ops.updateArchiveCategory(id, name);
+  }
+  @Delete('archives/categories/:id')
+  @RequirePermission(PERMISSIONS.TATAUSAHA_MANAGE)
+  deleteArchiveCat(@Param('id') id: string) {
+    return this.ops.deleteArchiveCategory(id);
+  }
   @Get('archives')
   archives(@Query('categoryId') c?: string, @Query('q') q?: string) {
     return this.ops.listArchiveItems(c, q);
@@ -526,7 +560,7 @@ export class OpsController {
   }
   @Post('exam-rooms/:id/links')
   @RequirePermission(PERMISSIONS.TATAUSAHA_MANAGE)
-  addLink(@Param('id') id: string, @Body() dto: { examId: string; sessionLabel?: string; startsAt?: string; endsAt?: string }) {
+  addLink(@Param('id') id: string, @Body() dto: { examId: string; sessionId?: string; sessionLabel?: string; startsAt?: string; endsAt?: string }) {
     return this.ops.addRoomLink(id, dto);
   }
   @Delete('exam-room-links/:linkId')

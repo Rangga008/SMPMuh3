@@ -1578,7 +1578,9 @@ export class AcademicService {
   listAssessments(academicYearId?: string, classId?: string) {
     const where: Prisma.AssessmentWhereInput = {};
     if (academicYearId) where.academicYearId = academicYearId;
-    if (classId) where.classId = classId;
+    // Asesmen tanpa rombel (classId null = "semua rombel") berlaku untuk
+    // kelas mana pun — selalu ikut saat difilter per rombel.
+    if (classId) where.OR = [{ classId }, { classId: null }];
     return this.prisma.assessment.findMany({
       where,
       include: {

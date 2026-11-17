@@ -3,10 +3,12 @@
 import {
   Children,
   Fragment,
+  cloneElement,
   isValidElement,
   useEffect,
   useMemo,
   useState,
+  type ReactElement,
   type ReactNode,
 } from 'react';
 
@@ -23,6 +25,10 @@ interface DataTableProps {
   search?: boolean;
   /** Klik header kolom untuk urutkan — default aktif. Matikan dengan false. */
   sortable?: boolean;
+  /** Kontrol filter tambahan di samping kolom cari (Select dsb — halaman yang menyaring datanya). */
+  filters?: ReactNode;
+  /** Mode kartu di layar kecil — default aktif. Matikan untuk tabel matriks/teknis. */
+  cards?: boolean;
   children: ReactNode;
 }
 
@@ -72,6 +78,8 @@ export function DataTable({
   pageSizes = SIZES,
   search = true,
   sortable = true,
+  filters,
+  cards = true,
   children,
 }: DataTableProps) {
   const [page, setPage] = useState(1);
@@ -117,17 +125,54 @@ export function DataTable({
   const from = total === 0 ? 0 : size === 0 ? 1 : (current - 1) * size + 1;
   const to = size === 0 ? total : Math.min(current * size, total);
 
+  // Mode kartu mobile: suntikkan data-label (teks header) ke tiap <td> —
+  // CSS .dt-cards menampilkannya sebagai label di layar kecil.
+  const headTexts = useMemo(() => head.map(nodeText), [head]);
+  const labeled = useMemo(() => {
+    if (!cards) return paged;
+    return paged.map((row) => {
+      if (!isValidElement(row)) return row;
+      const cells = Children.toArray(
+        (row.props as { children?: ReactNode }).children,
+      );
+      let col = 0;
+      const next = cells.map((cell) => {
+        if (!isValidElement(cell)) return cell;
+        const span = Number(
+          (cell.props as { colSpan?: number }).colSpan ?? 1,
+        );
+        const label = headTexts[col] ?? '';
+        col += span;
+        if (!label) return cell;
+        return cloneElement(
+          cell as ReactElement<Record<string, unknown>>,
+          { 'data-label': label },
+        );
+      });
+      return cloneElement(
+        row as ReactElement<Record<string, unknown>>,
+        undefined,
+        next,
+      );
+    });
+  }, [paged, cards, headTexts]);
+
   return (
-    <div className="overflow-x-auto rounded-3xl border border-sand-200 bg-white shadow-card">
-      {search && !loading && !error && allRows.length > 0 ? (
-        <div className="border-b border-sand-100 px-4 py-2.5">
-          <input
-            type="search"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Cari di tabel ini…"
-            className="w-full max-w-xs rounded-xl border border-sand-200 bg-sand-50 px-3 py-1.5 text-xs font-medium text-sand-700 placeholder:text-sand-400 focus:outline-none focus:ring-2 focus:ring-primary-300"
-          />
+    <div
+      className={`overflow-x-auto rounded-3xl border border-sand-200 bg-white shadow-card ${cards ? 'dt-cards' : ''}`}
+    >
+      {filters || (search && !loading && !error && allRows.length > 0) ? (
+        <div className="flex flex-wrap items-center gap-2 border-b border-sand-100 px-4 py-2.5">
+          {search && allRows.length > 0 ? (
+            <input
+              type="search"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Cari di tabel ini…"
+              className="w-full max-w-xs rounded-xl border border-sand-200 bg-sand-50 px-3 py-1.5 text-xs font-medium text-sand-700 placeholder:text-sand-400 focus:outline-none focus:ring-2 focus:ring-primary-300"
+            />
+          ) : null}
+          {filters}
         </div>
       ) : null}
       <table className="w-full min-w-[36rem] text-left text-sm">
@@ -145,7 +190,11 @@ export function DataTable({
               >
                 <span className="inline-flex items-center gap-1">
                   {h}
-                  {sortable && sort?.col === i ? <span aria-hidden>{sort.dir === 1 ? '▲' : '▼'}</span> : null}
+                  {sortable ? (
+                    <span aria-hidden className={sort?.col === i ? 'text-primary-600' : 'text-sand-300'}>
+                      {sort?.col === i ? (sort.dir === 1 ? '▲' : '▼') : '↕'}
+                    </span>
+                  ) : null}
                 </span>
               </th>
             ))}
@@ -155,6 +204,7 @@ export function DataTable({
           {loading ? (
             <tr>
               <td
+                data-state
                 colSpan={colSpan ?? head.length}
                 className="px-5 py-12 text-center text-sm text-sand-500"
               >
@@ -164,6 +214,7 @@ export function DataTable({
           ) : error ? (
             <tr>
               <td
+                data-state
                 colSpan={colSpan ?? head.length}
                 className="px-5 py-12 text-center text-sm font-medium text-red-700"
               >
@@ -171,11 +222,12 @@ export function DataTable({
               </td>
             </tr>
           ) : (
-            paged
+            labeled
           )}
           {!loading && !error && empty ? (
             <tr>
               <td
+                data-state
                 colSpan={colSpan ?? head.length}
                 className="px-5 py-12 text-center text-sm text-sand-500"
               >

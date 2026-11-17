@@ -6,9 +6,10 @@ import { Shell } from '@/components/shell';
 import { PageTitle, Widget } from '@/components/widgets';
 import { DataTable } from '@/components/data-table';
 import {
-  addRoomLink, assignClassToRoom, createExamRoom, deleteExamRoom, getExamCards,
+  addRoomLink, assignClassToRoom, createExamRoom, deleteExamRoom, getExam, getExamCards,
+  linkSessionEnd, linkSessionName, linkSessionStart,
   listExamRooms, listExams, listPrasaranas, removeExamSeat, removeRoomLink, updateExamRoom,
-  type ExamRoomLinkView, type ExamRoomView, type ExamSeatView, type ExamView, type Prasarana,
+  type ExamRoomLinkView, type ExamRoomView, type ExamSeatView, type ExamSessionView, type ExamView, type Prasarana,
 } from '@/lib/api-ops';
 import { listAcademicYears, listClasses, type AcademicYear, type ClassView } from '@/lib/api';
 import { printHtml } from '@/lib/print';
@@ -59,6 +60,9 @@ export default function UjianPage() {
   const [roomModal, setRoomModal] = useState(false);
   const [editRoom, setEditRoom] = useState<ExamRoomView | null>(null);
   const [linkModal, setLinkModal] = useState<ExamRoomView | null>(null);
+  const [linkExamId, setLinkExamId] = useState('');
+  const [linkSessions, setLinkSessions] = useState<ExamSessionView[]>([]);
+  const [linkSessionId, setLinkSessionId] = useState('');
   const [assignModal, setAssignModal] = useState<{ room: ExamRoomView; link: ExamRoomLinkView | null } | null>(null);
   const [assignClassId, setAssignClassId] = useState('');
   const [assignCount, setAssignCount] = useState('');
@@ -88,7 +92,7 @@ export default function UjianPage() {
     const { room, link, credentials, school } = await getExamCards(roomId, linkId);
     const exam = link?.exam ?? room.exam;
     const sessionInfo = link
-      ? [link.sessionLabel, fmtDt(link.startsAt), fmtDt(link.endsAt)].filter(Boolean).join(' · ')
+      ? [linkSessionName(link), fmtDt(linkSessionStart(link)), fmtDt(linkSessionEnd(link))].filter(Boolean).join(' · ')
       : null;
     // Kode ujian SENGAJA tidak dicetak — diumumkan pengawas di ruang agar
     // ujian tidak bisa dikerjakan dari luar sekolah.
@@ -138,7 +142,7 @@ export default function UjianPage() {
       <div className="overflow-x-auto"><table><thead><tr><th>Bangku</th><th>NIS</th><th>Nama</th><th>Kode Peserta</th></tr></thead><tbody>
       ${list.map((s) => `<tr><td class="no">${s.seatNo ?? '—'}</td><td>${s.student.nis ?? '—'}</td><td>${s.student.name}</td><td class="mono">${s.code ?? '—'}</td></tr>`).join('')}
       </tbody></table></div>`).join('');
-    printHtml(`Daftar Duduk ${r.name} — ${l.sessionLabel ?? l.exam.title}`, `
+    printHtml(`Daftar Duduk ${r.name} — ${linkSessionName(l) ?? l.exam.title}`, `
       <style>
         body{font-family:Georgia,serif;padding:24px;color:#1e293b}
         h1{font-size:18px;margin:0 0 4px}p.sub{font-size:12px;color:#64748b;margin:0 0 18px}
@@ -149,7 +153,7 @@ export default function UjianPage() {
         .no{font-weight:700;text-align:center;width:70px}.mono{font-family:ui-monospace,monospace;font-size:11px}
       </style>
       <h1>Daftar Duduk — ${r.name}</h1>
-      <p class="sub">${l.exam.title}${l.sessionLabel ? ` · ${l.sessionLabel}` : ''}${l.startsAt ? ` · ${fmtDt(l.startsAt)}` : ''} · ${seats.length}/${r.capacity} kursi</p>
+      <p class="sub">${l.exam.title}${linkSessionName(l) ? ` · ${linkSessionName(l)}` : ''}${linkSessionStart(l) ? ` · ${fmtDt(linkSessionStart(l))}` : ''} · ${seats.length}/${r.capacity} kursi</p>
       ${rows}`);
   };
 
@@ -181,13 +185,13 @@ export default function UjianPage() {
                 <td className="px-5 py-3 text-sand-600">{r.period}</td>
                 <td className="px-5 py-3">
                   {linksOf(r).length
-                    ? <div className="flex flex-wrap gap-1">{linksOf(r).map((l) => <Badge key={l.id} tone="accent">{l.sessionLabel ?? l.exam.title}</Badge>)}</div>
+                    ? <div className="flex flex-wrap gap-1">{linksOf(r).map((l) => <Badge key={l.id} tone="accent">{linkSessionName(l) ?? l.exam.title}</Badge>)}</div>
                     : <span className="text-xs text-sand-400">belum ada sesi</span>}
                 </td>
                 <td className="px-5 py-3"><Badge tone="primary">{r.capacity}</Badge></td>
                 <td className="px-5 py-3" onClick={(e) => e.stopPropagation()}>
                   <div className="flex flex-wrap gap-1.5">
-                    <Button size="sm" variant="outline" onClick={() => setLinkModal(r)}>+ Sesi/Ujian</Button>
+                    <Button size="sm" variant="outline" onClick={() => { setLinkExamId(''); setLinkSessionId(''); setLinkSessions([]); setLinkModal(r); }}>+ Sesi/Ujian</Button>
                     <Button size="sm" variant="outline" onClick={() => setEditRoom(r)}>Edit</Button>
                     <Button size="sm" variant="outline" className="text-red-600" onClick={async () => {
                       if (!window.confirm(`Hapus ruang ${r.name}? Semua sesi & peserta ikut terhapus.`)) return;
@@ -208,10 +212,10 @@ export default function UjianPage() {
                         <div className="mb-3 flex flex-wrap items-center gap-2">
                           <Badge tone="accent">{l.exam.title}</Badge>
                           <span className="font-mono text-xs text-sand-500">{l.exam.code}</span>
-                          {l.sessionLabel ? <Badge tone="primary">{l.sessionLabel}</Badge> : null}
-                          {l.startsAt || l.endsAt ? (
+                          {linkSessionName(l) ? <Badge tone="primary">{linkSessionName(l)}</Badge> : null}
+                          {linkSessionStart(l) || linkSessionEnd(l) ? (
                             <span className="text-xs text-sand-500">
-                              {fmtDt(l.startsAt) ?? '…'} — {fmtDt(l.endsAt) ?? '…'}
+                              {fmtDt(linkSessionStart(l)) ?? '…'} — {fmtDt(linkSessionEnd(l)) ?? '…'}
                             </span>
                           ) : null}
                           <span className="ml-auto flex flex-wrap gap-1.5">
@@ -220,7 +224,7 @@ export default function UjianPage() {
                             <Button size="sm" onClick={() => void printCards(r.id, l.id)} disabled={!l._count.seats}>Cetak Kartu</Button>
                             <Button size="sm" variant="outline" onClick={() => printSeating(r, l)} disabled={!l._count.seats}>Daftar Duduk</Button>
                             <button type="button" className="text-xs font-semibold text-red-500 hover:text-red-700" onClick={async () => {
-                              if (!window.confirm(`Lepas sesi "${l.sessionLabel ?? l.exam.title}" dari ${r.name}? ${l._count.seats} peserta ikut terhapus.`)) return;
+                              if (!window.confirm(`Lepas sesi "${linkSessionName(l) ?? l.exam.title}" dari ${r.name}? ${l._count.seats} peserta ikut terhapus.`)) return;
                               try { await removeRoomLink(l.id); setNotice('Sesi dilepas.'); load(); }
                               catch (err) { setError(err instanceof Error ? err.message : 'Gagal.'); }
                             }}>Lepas</button>
@@ -307,57 +311,87 @@ export default function UjianPage() {
           e.preventDefault();
           if (!linkModal) return;
           const fd = new FormData(e.currentTarget);
-          const examId = String(fd.get('examId') ?? '');
+          const examId = linkExamId || String(fd.get('examId') ?? '');
           if (!examId) { setError('Pilih ujian dulu.'); return; }
           setBusy(true);
           try {
             await addRoomLink(linkModal.id, {
               examId,
-              ...(String(fd.get('sessionLabel') ?? '').trim() ? { sessionLabel: String(fd.get('sessionLabel')).trim() } : {}),
-              ...(String(fd.get('startsAt') ?? '') ? { startsAt: String(fd.get('startsAt')) } : {}),
-              ...(String(fd.get('endsAt') ?? '') ? { endsAt: String(fd.get('endsAt')) } : {}),
+              ...(linkSessionId ? { sessionId: linkSessionId } : {
+                ...(String(fd.get('sessionLabel') ?? '').trim() ? { sessionLabel: String(fd.get('sessionLabel')).trim() } : {}),
+                ...(String(fd.get('startsAt') ?? '') ? { startsAt: String(fd.get('startsAt')) } : {}),
+                ...(String(fd.get('endsAt') ?? '') ? { endsAt: String(fd.get('endsAt')) } : {}),
+              }),
             });
             setLinkModal(null); load(); setNotice('Sesi ditambahkan — tempatkan rombel lalu cetak kartu.');
           } catch (err) { setError(err instanceof Error ? err.message : 'Gagal.'); } finally { setBusy(false); }
         }}>
           <Field label="Ujian CBT">
-            <Select name="examId" defaultValue="" searchable>
+            <Select name="examId" value={linkExamId} searchable onChange={(e) => {
+              const id = e.target.value;
+              setLinkExamId(id);
+              setLinkSessionId('');
+              setLinkSessions([]);
+              if (id) void getExam(id).then((x) => setLinkSessions(x.sessions ?? [])).catch(() => {});
+            }}>
               <option value="">— pilih ujian —</option>
               {exams.map((x) => <option key={x.id} value={x.id}>{x.title} · {x.code}</option>)}
             </Select>
           </Field>
-          <Field label="Label sesi (opsional)"><Input name="sessionLabel" placeholder="Sesi 1 / Pagi / Sesi 2" /></Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Mulai (opsional)"><Input name="startsAt" type="datetime-local" /></Field>
-            <Field label="Selesai (opsional)"><Input name="endsAt" type="datetime-local" /></Field>
-          </div>
-          <p className="text-xs text-sand-500">Waktu di sini hanya label di kartu — jadwal resmi tetap dari ujian CBT & sesi rombelnya.</p>
+          {linkExamId && linkSessions.length ? (
+            <Field label="Sesi ujian" hint="Nama & jendela mengikuti sesi ujian — berubah di detail ujian otomatis sinkron di sini.">
+              <Select value={linkSessionId} onChange={(e) => setLinkSessionId(e.target.value)} searchable>
+                <option value="">— seluruh ujian / label manual —</option>
+                {linkSessions.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name} · {fmtDt(s.startAt)} — {fmtDt(s.endAt)}</option>
+                ))}
+              </Select>
+            </Field>
+          ) : null}
+          {linkExamId && !linkSessions.length ? (
+            <p className="text-xs text-sand-400">Ujian ini belum punya sesi rombel — tautkan seluruh ujian, atau isi label manual di bawah.</p>
+          ) : null}
+          {!linkSessionId ? (
+            <>
+              <Field label="Label sesi (opsional)"><Input name="sessionLabel" placeholder="Sesi 1 / Pagi / Sesi 2" /></Field>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Mulai (opsional)"><Input name="startsAt" type="datetime-local" /></Field>
+                <Field label="Selesai (opsional)"><Input name="endsAt" type="datetime-local" /></Field>
+              </div>
+            </>
+          ) : null}
+          <p className="text-xs text-sand-500">Satu sesi bisa memakai beberapa ruang — tautkan sesi yang sama di ruang lain lalu tempatkan rombel; sistem otomatis melanjutkan sisa siswa.</p>
           <div className="flex justify-end"><Button type="submit" disabled={busy}>Tautkan</Button></div>
         </form>
       </Modal>
 
-      <Modal open={!!assignModal} onClose={() => setAssignModal(null)} title={`Masukkan rombel — ${assignModal?.link ? `${assignModal.link.sessionLabel ?? assignModal.link.exam.title}` : assignModal?.room.name ?? ''}`}>
+      <Modal open={!!assignModal} onClose={() => setAssignModal(null)} title={`Masukkan rombel — ${assignModal?.link ? `${linkSessionName(assignModal.link) ?? assignModal.link.exam.title}` : assignModal?.room.name ?? ''}`}>
         <div className="grid gap-4">
-          <Field label="Kelas">
+          <Field label="Kelas" hint={assignModal?.link?.session ? `Hanya rombel peserta ${assignModal.link.session.name} yang bisa ditempatkan.` : undefined}>
             <Select value={assignClassId} onChange={(e) => setAssignClassId(e.target.value)} searchable>
               <option value="">— pilih kelas —</option>
-              {classes.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.gradeLevel ?? ''}{c._count?.enrollments != null ? ` · ${c._count.enrollments} siswa` : ''})</option>)}
+              {classes
+                .filter((c) => {
+                  const allowed = assignModal?.link?.session?.classIds;
+                  return !allowed?.length || allowed.includes(c.id);
+                })
+                .map((c) => <option key={c.id} value={c.id}>{c.name} ({c.gradeLevel ?? ''}{c._count?.enrollments != null ? ` · ${c._count.enrollments} siswa` : ''})</option>)}
             </Select>
           </Field>
-          <Field label="Jumlah siswa (kosong = semua)" hint="Siswa diurut NIS — diambil sebanyak ini sampai kursi penuh. Ulangi untuk kelas lain (bisa campur jenjang).">
-            <Input type="number" min={1} value={assignCount} onChange={(e) => setAssignCount(e.target.value)} placeholder="semua" />
+          <Field label="Jumlah siswa (kosong = sisa)" hint="Siswa yang sudah duduk di sesi ini (ruang lain pun) otomatis dilewati — isi angka untuk batasi, kosongkan untuk semua sisa sampai kursi penuh.">
+            <Input type="number" min={1} value={assignCount} onChange={(e) => setAssignCount(e.target.value)} placeholder="sisa" />
           </Field>
           <Button disabled={!assignClassId || busy} onClick={async () => {
             if (!assignModal || !assignClassId) return;
             setBusy(true);
             try {
               const r = await assignClassToRoom(assignModal.room.id, assignClassId, assignModal.link?.id, assignCount ? Number(assignCount) : undefined);
-              setNotice(`${r.added} siswa ditempatkan${r.skipped ? ` · ${r.skipped} dilewati` : ''}.`);
+              setNotice(`${r.added} siswa ditempatkan${r.skipped ? ` · ${r.skipped} sudah ada` : ''}${r.remaining ? ` · sisa ${r.remaining} belum dapat kursi` : ''}.`);
               setAssignClassId(''); setAssignCount('');
               load();
             } catch (err) { setError(err instanceof Error ? err.message : 'Gagal menempatkan.'); } finally { setBusy(false); }
           }}>Tempatkan Rombel</Button>
-          <p className="text-xs text-sand-500">Ulangi untuk kelas lain — satu ruang bisa campur beberapa kelas & jenjang; setiap siswa dapat nomor bangku urut.</p>
+          <p className="text-xs text-sand-500">Pecah satu kelas ke beberapa ruang: tempatkan di ruang pertama, lalu di ruang berikutnya siswa yang sudah duduk dilewati otomatis — tak ada duplikat.</p>
         </div>
       </Modal>
     </Shell>

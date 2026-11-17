@@ -71,7 +71,7 @@ export default function PenilaianPage() {
     setError(null);
     try {
       const [roster, grades] = await Promise.all([
-        a.class?.name && classId ? listEnrollments(classId) : Promise.resolve([]),
+        classId ? listEnrollments(classId) : Promise.resolve([]),
         listGrades(a.id),
       ]);
       const byStudent = new Map(grades.map((g) => [g.student.id, String(g.score)]));
@@ -171,7 +171,8 @@ export default function PenilaianPage() {
                     <Badge tone="accent">{a.type}</Badge>
                   </p>
                   <p className="mt-0.5 text-xs text-sand-500">
-                    {a.subject.name} · maks {a.maxScore} · {a._count?.grades ?? 0} nilai
+                    {a.subject.name} · {a.class?.name ?? 'semua rombel'} · maks {a.maxScore} · {a._count?.grades ?? 0} nilai
+                    {a.exams?.length ? ` · dipakai ${a.exams.length} ujian` : ''}
                     <Link
                       href={`/kurikulum/asesmen/${a.id}`}
                       onClick={(e) => e.stopPropagation()}

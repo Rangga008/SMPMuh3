@@ -6,9 +6,11 @@ import { Shell } from '@/components/shell';
 import { PageTitle, Widget } from '@/components/widgets';
 import { DataTable } from '@/components/data-table';
 import {
-  examResults, getAttendanceRecap, getClassSubjectStats, getGradeLedger, listExams, syncExamGrades,
+  downloadLedgerXlsx, downloadRecapXlsx, downloadStatsXlsx, examResults, exportExamResults,
+  getAttendanceRecap, getClassSubjectStats, getGradeLedger, listExams, syncExamGrades,
   type ExamView,
 } from '@/lib/api-ops';
+import { printHtml } from '@/lib/print';
 import { listAcademicYears, listClasses, type AcademicYear, type ClassView } from '@/lib/api';
 
 type Tab = 'ledger' | 'ujian' | 'stats' | 'absen';
@@ -64,6 +66,63 @@ export default function LedgerPage() {
       setClassId(classOptions[0]!.id);
     }
   }, [classOptions, classId]);
+
+  /** Tombol export per tab — Excel (.xlsx server) + PDF (jendela cetak). */
+  const esc = (v: unknown) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+  const tbl = (head: string[], rows: (string | number)[][], align?: ('l' | 'c')[]) =>
+    `<table border="1" cellpadding="5" cellspacing="0" style="width:100%;font-size:11px"><thead><tr style="background:#eee">${
+      head.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${
+      rows.map((r) => `<tr>${r.map((c, i) => `<td${align?.[i] === 'c' ? ' align="center"' : ''}>${esc(c)}</td>`).join('')}</tr>`).join('')
+    }</tbody></table>`;
+  const kop = (judul: string, sub: string) =>
+    `<h3 style="margin:0">${esc(judul)}</h3><p style="margin:2px 0 12px;font-size:11px;color:#444">${esc(sub)}</p>`;
+
+  const exportActions = {
+    ledger: ledger ? (
+      <div className="flex gap-2">
+        <Button size="sm" variant="outline" onClick={() => downloadLedgerXlsx(classId, yearId)}>⬇ Excel</Button>
+        <Button size="sm" variant="outline" onClick={() => printHtml(`Ledger ${ledger.class.name}`,
+          kop(`DAFTAR NILAI — ${ledger.class.name}`, `Tahun ajaran ${years.find((y) => y.id === yearId)?.name ?? ''}`) +
+          tbl(['No', 'NIS', 'Siswa', ...ledger.subjects.map((s) => s.code)],
+            ledger.students.map((s, i) => [i + 1, s.nis ?? '', s.name, ...s.scores.map((sc) => sc ?? '—')]),
+            ['c', 'c', 'l', ...ledger.subjects.map(() => 'c' as const)]),
+          { landscape: true })}>🖨 PDF</Button>
+      </div>
+    ) : undefined,
+    ujian: examId && ujian ? (
+      <div className="flex gap-2">
+        <Button size="sm" variant="outline" onClick={() => exportExamResults(examId, classId || undefined)}>⬇ Excel</Button>
+        <Button size="sm" variant="outline" onClick={() => printHtml(`Nilai ${ujian.exam.title}`,
+          kop(`NILAI UJIAN — ${ujian.exam.title}`, `Skor maksimal ${ujian.exam.maxScore}`) +
+          ujian.classes.map((c) => `<p style="font-size:11px;font-weight:bold;margin:10px 0 4px">Kelas ${esc(c.className)}</p>` +
+            tbl(['NIS', 'Siswa', 'Status', 'Skor', 'Nilai Akhir'],
+              c.students.map((s) => [s.nis ?? '', s.name,
+                s.status === 'SUBMITTED' ? 'Selesai' : s.status === 'IN_PROGRESS' ? 'Mengerjakan' : 'Belum',
+                s.score != null ? `${s.score}/${s.maxScore ?? '?'}` : '—', s.gradeScore ?? '—']),
+              ['c', 'l', 'c', 'c', 'c'])).join(''))}>🖨 PDF</Button>
+      </div>
+    ) : undefined,
+    stats: classId && stats.length ? (
+      <div className="flex gap-2">
+        <Button size="sm" variant="outline" onClick={() => downloadStatsXlsx(classId, yearId)}>⬇ Excel</Button>
+        <Button size="sm" variant="outline" onClick={() => printHtml('Statistik Mapel',
+          kop(`STATISTIK MAPEL — ${ledger?.class.name ?? ''}`, `Tahun ajaran ${years.find((y) => y.id === yearId)?.name ?? ''}`) +
+          tbl(['Kode', 'Mata Pelajaran', 'Penilaian', 'Rata-rata', 'Min', 'Max'],
+            stats.map((s) => [s.subject.code, s.subject.name, s.count, s.avg ?? '—', s.min ?? '—', s.max ?? '—']),
+            ['c', 'l', 'c', 'c', 'c', 'c']))}>🖨 PDF</Button>
+      </div>
+    ) : undefined,
+    absen: classId && recap ? (
+      <div className="flex gap-2">
+        <Button size="sm" variant="outline" onClick={() => downloadRecapXlsx(classId, from, to)}>⬇ Excel</Button>
+        <Button size="sm" variant="outline" onClick={() => printHtml(`Rekap Absen ${recap.class.name}`,
+          kop(`REKAP ABSEN — ${recap.class.name}`, `${recap.daysTaken} hari · ${from} s.d. ${to}`) +
+          tbl(['No', 'NIS', 'Siswa', 'H', 'S', 'I', 'A', '% Hadir'],
+            recap.students.map((s, i) => [i + 1, s.nis ?? '', s.name, s.present, s.sick, s.permit, s.absent, s.presentPct != null ? `${s.presentPct}%` : '—']),
+            ['c', 'c', 'l', 'c', 'c', 'c', 'c', 'c']))}>🖨 PDF</Button>
+      </div>
+    ) : undefined,
+  };
 
   const load = useCallback(() => {
     if (!yearId) return;
@@ -124,7 +183,7 @@ export default function LedgerPage() {
       </div>
 
       {tab === 'ledger' && ledger && (
-        <Widget title={`Daftar Nilai — ${ledger.class.name}`} subtitle="Nilai akhir per mapel (gabungan semua asesmen).">
+        <Widget title={`Daftar Nilai — ${ledger.class.name}`} subtitle="Nilai akhir per mapel (gabungan semua asesmen)." action={exportActions.ledger}>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
@@ -156,15 +215,18 @@ export default function LedgerPage() {
           title={ujian ? `Nilai Ujian — ${ujian.exam.title}` : 'Nilai Ujian'}
           subtitle={examId ? 'Hasil pengerjaan ujian CBT per siswa (skor mentah & nilai akhir).' : 'Pilih ujian di filter atas.'}
           action={examId ? (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                syncExamGrades(examId)
-                  .then((r) => { setSyncMsg(`Tersinkron: ${r.synced}/${r.total} nilai masuk ledger.`); load(); })
-                  .catch((e) => setError(e instanceof Error ? e.message : 'Gagal sinkron.'));
-              }}
-            >↻ Sinkron ke Ledger</Button>
+            <div className="flex gap-2">
+              {exportActions.ujian}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  syncExamGrades(examId)
+                    .then((r) => { setSyncMsg(`Tersinkron: ${r.synced}/${r.total} nilai masuk ledger.`); load(); })
+                    .catch((e) => setError(e instanceof Error ? e.message : 'Gagal sinkron.'));
+                }}
+              >↻ Sinkron ke Ledger</Button>
+            </div>
           ) : undefined}
         >
           {!examId ? (
@@ -199,7 +261,7 @@ export default function LedgerPage() {
       )}
 
       {tab === 'stats' && (
-        <Widget title={`Statistik per Mapel — ${ledger?.class.name ?? ''}`}>
+        <Widget title={`Statistik per Mapel — ${ledger?.class.name ?? ''}`} action={exportActions.stats}>
           <DataTable head={['Kode', 'Mata Pelajaran', 'Penilaian', 'Rata-rata', 'Min', 'Max']}
             empty={!stats.length ? 'Belum ada nilai.' : undefined}>
             {stats.map((s) => (
@@ -217,7 +279,7 @@ export default function LedgerPage() {
       )}
 
       {tab === 'absen' && recap && (
-        <Widget title={`Rekap Absen — ${recap.class.name}`} subtitle={`${recap.daysTaken} hari terekam · ${from} s.d. ${to}`}>
+        <Widget title={`Rekap Absen — ${recap.class.name}`} subtitle={`${recap.daysTaken} hari terekam · ${from} s.d. ${to}`} action={exportActions.absen}>
           <DataTable head={['NIS', 'Siswa', 'Hadir', 'Sakit', 'Izin', 'Alpha', '% Hadir']}
             empty={!recap.students.length ? 'Belum ada data.' : undefined}>
             {recap.students.map((s) => (

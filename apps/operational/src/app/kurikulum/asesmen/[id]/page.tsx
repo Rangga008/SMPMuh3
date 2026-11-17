@@ -11,7 +11,7 @@ import { API, ApiError, listClasses, listSubjects, updateAssessment, type ClassV
 import { richHtml } from '@/lib/math';
 import {
   downloadGenTemplate,
-  downloadQuestionTemplate,
+  downloadDocxTemplate,
   getAnswerMatrix,
   getAssessmentPassages,
   getAssessmentQuestions,
@@ -711,8 +711,7 @@ export default function AsesmenDetailPage() {
               <Input type="number" min={1} max={100} value={numQ} onChange={(e) => setNumQ(Number(e.target.value))} className="w-16" aria-label="Jumlah soal" />
               <Button size="sm" variant="outline" onClick={genQuestions} disabled={busy}>Buat {numQ} Kosong</Button>
               <Button size="sm" variant="outline" onClick={addBlank} disabled={busy}>+ 1 Soal</Button>
-              <Button size="sm" variant="outline" onClick={() => void downloadQuestionTemplate(id)}>Template</Button>
-              <Button size="sm" variant="outline" onClick={openImport} disabled={busy}>Impor</Button>
+              <Button size="sm" variant="outline" onClick={openImport} disabled={busy}>Impor / Template</Button>
               <Button size="sm" onClick={saveQuestions} disabled={busy || !drafts.length}>
                 {busy ? 'Menyimpan…' : dirty ? 'Simpan Butir *' : 'Simpan Butir'}
               </Button>
@@ -738,7 +737,7 @@ export default function AsesmenDetailPage() {
 
           {!filtered.length ? (
             <p className="px-5 py-8 text-center text-sm text-sand-400">
-              {search ? 'Tidak ada soal yang cocok.' : 'Belum ada butir — buat kosong di atas atau impor (pakai Template).'}
+              {search ? 'Tidak ada soal yang cocok.' : 'Belum ada butir — buat kosong di atas atau impor file (template Excel/Word ada di menu Impor).'}
             </p>
           ) : (
             <div className="space-y-3 p-4">
@@ -1052,7 +1051,7 @@ export default function AsesmenDetailPage() {
               </div>
               <div className="rounded-2xl border border-sand-200 p-4">
                 <p className="text-xs font-black uppercase tracking-wide text-sand-500">Buat template sesuai kebutuhan</p>
-                <p className="mt-0.5 text-[11px] text-sand-400">Isi jumlah soal per tipe — template Excel berisi baris kosong bernomor siap diisi.</p>
+                <p className="mt-0.5 text-[11px] text-sand-400">Isi jumlah soal per tipe — template berisi baris kosong bernomor siap diisi. Tersedia format Excel &amp; Word.</p>
                 <div className="mt-2.5 flex flex-wrap items-end gap-2">
                   {([['pg', 'Pilihan Ganda'], ['pgk', 'PG Kompleks'], ['bs', 'Benar/Salah'], ['bsk', 'B-S Kompleks']] as const).map(([k, label]) => (
                     <Field key={k} label={label} className="!mb-0">
@@ -1069,7 +1068,13 @@ export default function AsesmenDetailPage() {
                     disabled={!tplCount.pg && !tplCount.pgk && !tplCount.bs && !tplCount.bsk}
                     onClick={() => void downloadGenTemplate(id, tplCount).then(() => flash('Template diunduh.')).catch((e) => setModalErr(e instanceof ApiError ? e.message : 'Gagal unduh template.'))}
                   >
-                    ⬇ Unduh Template
+                    ⬇ Template Excel
+                  </Button>
+                  <Button
+                    size="sm" variant="outline"
+                    onClick={() => void downloadDocxTemplate(id).then(() => flash('Template Word diunduh.')).catch((e) => setModalErr(e instanceof ApiError ? e.message : 'Gagal unduh template.'))}
+                  >
+                    ⬇ Template Word
                   </Button>
                 </div>
               </div>
@@ -1234,4 +1239,4 @@ export default function AsesmenDetailPage() {
       />
     </Shell>
   );
-}
+}
