@@ -1006,15 +1006,17 @@ export class OpsService {
     });
   }
 
-  /** Hapus seluruh absen satu rombel di satu tanggal (salah absen — kelas tsb
-      ternyata tidak ada/ tidak masuk). */
-  async clearClassAttendance(classId: string, dateIso: string, actorId?: string) {
+  /** Hapus absen satu rombel di satu tanggal — seluruh kelas, atau satu siswa
+      saja bila `studentId` diisi (salah absen / koreksi). */
+  async clearClassAttendance(classId: string, dateIso: string, actorId?: string, studentId?: string) {
     const date = toDateOnly(dateIso);
-    const res = await this.prisma.attendanceRecord.deleteMany({ where: { classId, date } });
+    const res = await this.prisma.attendanceRecord.deleteMany({
+      where: { classId, date, ...(studentId ? { studentId } : {}) },
+    });
     await this.audit.log({
-      actorId, action: 'attendance.class-clear',
+      actorId, action: studentId ? 'attendance.student-clear' : 'attendance.class-clear',
       entity: 'class', entityId: classId,
-      metadata: { date: dateIso, removed: res.count },
+      metadata: { date: dateIso, removed: res.count, ...(studentId ? { studentId } : {}) },
     });
     return { removed: res.count, date };
   }

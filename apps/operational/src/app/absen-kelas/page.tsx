@@ -1,10 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Badge, Input, Select } from '@smpmuh3/ui';
+import { Badge, Input } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { PageTitle, Widget } from '@/components/widgets';
 import {
+  clearClassAttendance,
   getClassAttendance,
   getMyTeachingToday,
   saveClassAttendance,
@@ -13,6 +14,7 @@ import {
 } from '@/lib/api-ops';
 import { ApiError, listClasses, listAcademicYears } from '@/lib/api';
 import { cn } from '@smpmuh3/ui';
+import { useConfirm } from '@/components/confirm-dialog';
 
 const mm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}.${String(m % 60).padStart(2, '0')}`;
 const DOW_FULL = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
@@ -42,6 +44,7 @@ const STATUS_ACTIVE_CLS: Record<string, string> = {
 };
 
 export default function AbsenKelasPage() {
+  const { confirm, dialog } = useConfirm();
   const today = new Date().toISOString().slice(0, 10);
   const [date, setDate] = useState(today);
   const [sessions, setSessions] = useState<TeacherSession[]>([]);
@@ -218,13 +221,21 @@ export default function AbsenKelasPage() {
                 <span aria-hidden className={cn('transition-transform', otherOpen && 'rotate-180')}>▾</span>
               </button>
               {otherOpen ? (
-                <div className="mt-2 rounded-2xl border border-sand-200 bg-white p-3">
-                  <Select value={classId} onChange={(e) => pickClass(e.target.value)} searchable>
-                    <option value="">— Pilih kelas —</option>
-                    {otherClasses.map((c) => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </Select>
+                <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                  {otherClasses.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => pickClass(c.id)}
+                      className="flex items-center gap-3 rounded-2xl border border-sand-200 bg-white p-3 text-left shadow-card transition-colors active:border-primary-300 active:bg-primary-50"
+                    >
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-sand-200 text-xs font-extrabold text-sand-700">
+                        {c.name.replace(/\D/g, '') || c.name.slice(0, 2)}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-sm font-bold text-sand-900">{c.name}</span>
+                      <span aria-hidden className="text-sand-300">›</span>
+                    </button>
+                  ))}
                 </div>
               ) : null}
             </div>
@@ -251,7 +262,28 @@ export default function AbsenKelasPage() {
                 {rows.length} siswa{taken ? ` · sudah diabsen${takenBy ? ` oleh ${takenBy}` : ''} — simpan lagi untuk revisi` : ''}
               </p>
             </div>
-            {taken ? <Badge tone="primary">Terabsen</Badge> : null}
+            {taken ? (
+              <>
+                <Badge tone="primary">Terabsen</Badge>
+                <button
+                  type="button"
+                  title="Hapus seluruh absen kelas ini tanggal ini"
+                  onClick={async () => {
+                    if (!(await confirm(`Hapus absen ${pickedName} tanggal ${fmtDate(date)}? Data bisa diisi ulang.`))) return;
+                    setBusy(true);
+                    try {
+                      await clearClassAttendance(classId, date);
+                      pickClass(classId);
+                      setNotice('Absen kelas dikosongkan.');
+                    } catch (e) { setError(e instanceof ApiError ? e.message : 'Gagal menghapus.'); }
+                    finally { setBusy(false); }
+                  }}
+                  className="shrink-0 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600 active:bg-red-100"
+                >
+                  Reset
+                </button>
+              </>
+            ) : null}
           </div>
 
           {loading ? (
@@ -301,6 +333,22 @@ export default function AbsenKelasPage() {
                             {STATUS_SHORT[st]}
                           </button>
                         ))}
+                        {taken ? (
+                          <button
+                            type="button"
+                            title="Hapus absen siswa ini tanggal ini"
+                            onClick={async () => {
+                              if (!(await confirm(`Hapus absen ${s.name}?`))) return;
+                              try {
+                                await clearClassAttendance(classId, date, s.id);
+                                pickClass(classId);
+                              } catch (e) { setError(e instanceof ApiError ? e.message : 'Gagal menghapus.'); }
+                            }}
+                            className="flex size-9 items-center justify-center rounded-xl border border-sand-200 bg-sand-50 text-xs font-bold text-sand-400 active:bg-red-50 active:text-red-600"
+                          >
+                            ✕
+                          </button>
+                        ) : null}
                       </div>
                     </div>
                     {s.status !== 'PRESENT' ? (
@@ -344,6 +392,7 @@ export default function AbsenKelasPage() {
           )}
         </>
       )}
+      {dialog}
     </Shell>
   );
 }

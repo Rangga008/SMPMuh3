@@ -309,8 +309,11 @@ export const getExamConfig = () => req<{ examCode: string }>('/ops/exam-config')
 export const updateExamConfig = (examCode: string) =>
   req<{ examCode: string }>('/ops/exam-config', { method: 'PATCH', json: { examCode } });
 /** Hapus seluruh absen satu rombel di satu tanggal (salah absen). */
-export const clearClassAttendance = (classId: string, date: string) =>
-  req<{ removed: number }>(`/ops/class-attendance?classId=${classId}&date=${date}`, { method: 'DELETE' });
+export const clearClassAttendance = (classId: string, date: string, studentId?: string) =>
+  req<{ removed: number }>(
+    `/ops/class-attendance?classId=${classId}&date=${date}${studentId ? `&studentId=${studentId}` : ''}`,
+    { method: 'DELETE' },
+  );
 /** Sinkron ulang Grade dari attempt SUBMITTED — untuk ujian lama. */
 export const syncExamGrades = (examId: string) =>
   req<{ synced: number; total: number }>(`/ops/exams/${examId}/sync-grades`, { method: 'POST' });

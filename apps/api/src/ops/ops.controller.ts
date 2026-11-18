@@ -260,12 +260,18 @@ export class OpsController {
     return this.ops.classAttendance(c, d);
   }
 
-  /** Hapus seluruh absen satu rombel di satu tanggal (salah absen). */
+  /** Hapus absen satu rombel di satu tanggal — seluruh kelas, atau satu siswa
+      bila `studentId` diisi (salah absen / koreksi). */
   @Delete('class-attendance')
-  @RequirePermission(PERMISSIONS.ACADEMIC_MANAGE)
-  clearClassAttendance(@Query('classId') c: string, @Query('date') d: string, @CurrentUser() u: AuthUser) {
+  @RequirePermission(PERMISSIONS.ATTENDANCE_MANAGE)
+  clearClassAttendance(
+    @Query('classId') c: string,
+    @Query('date') d: string,
+    @CurrentUser() u: AuthUser,
+    @Query('studentId') s?: string,
+  ) {
     if (!c || !d) throw new BadRequestException('Parameter classId & date wajib.');
-    return this.ops.clearClassAttendance(c, d, u.id);
+    return this.ops.clearClassAttendance(c, d, u.id, s);
   }
 
   /** Sinkron ulang Grade dari attempt SUBMITTED (untuk ujian lama). */

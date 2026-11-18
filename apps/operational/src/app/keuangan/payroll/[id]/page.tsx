@@ -21,7 +21,6 @@ import {
   updatePayrollItem,
   voidPayrollRun,
   type CashAccountView,
-  type PayrollItemView,
   type PayrollRunView,
   type School,
 } from '@/lib/api';
@@ -42,8 +41,7 @@ export default function PayrollRunPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [payModal, setPayModal] = useState(false);
-  const [slip, setSlip] = useState<PayrollItemView | null>(null);
-  const [editItem, setEditItem] = useState<PayrollItemView | null>(null);
+  const [slipId, setSlipId] = useState<string | null>(null);
   const [principal, setPrincipal] = useState('');
   const [treasurer, setTreasurer] = useState('');
   const printRef = useRef<HTMLDivElement>(null);
@@ -86,6 +84,9 @@ export default function PayrollRunPage() {
       setBusy(false);
     }
   }
+
+  /** Item slip yang dibuka — diambil live dari `run` agar koreksi langsung terlihat di slip. */
+  const slipItem = run?.items?.find((i) => i.id === slipId) ?? null;
 
   const totalNet = (run?.items ?? []).reduce((s, i) => s + i.netAmount, 0);
   const totalGross = (run?.items ?? []).reduce((s, i) => s + i.grossAmount, 0);
@@ -177,7 +178,7 @@ export default function PayrollRunPage() {
               empty={(run.items?.length ?? 0) === 0 ? 'Tidak ada pegawai aktif.' : undefined}
 >
               {(run.items ?? []).map((it) => (
-                <tr key={it.id} className="cursor-pointer" onClick={async () => setSlip(it)}>
+                <tr key={it.id} className="cursor-pointer" onClick={() => setSlipId(it.id)}>
                   <td className="px-5 py-3">
                     <p className="font-medium text-sand-900">{it.employee?.name}</p>
                     <p className="text-[10px] text-sand-400">{it.employee?.nip ?? ''}{it.employee?.payScale?.name ? ` · ${it.employee.payScale.name}` : ''}</p>
@@ -198,12 +199,7 @@ export default function PayrollRunPage() {
                   <td className="whitespace-nowrap px-5 py-3 text-right text-red-600">{it.deductionAmount > 0 ? `-${rupiah(it.deductionAmount)}` : '—'}</td>
                   <td className="whitespace-nowrap px-5 py-3 text-right font-bold text-sand-900">{rupiah(it.netAmount)}</td>
                   <td className="whitespace-nowrap px-5 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                    <span className="flex justify-end gap-2">
-                      <RowBtn type="button" onClick={async () => setSlip(it)}>Slip</RowBtn>
-                      {canManage && (run.status === 'DRAFT' || run.status === 'FINALIZED') ? (
-                        <RowBtn type="button" onClick={async () => setEditItem(it)}>Koreksi</RowBtn>
-                      ) : null}
-                    </span>
+                    <RowBtn type="button" onClick={() => setSlipId(it.id)}>Slip</RowBtn>
                   </td>
                 </tr>
               ))}
@@ -253,9 +249,9 @@ export default function PayrollRunPage() {
         </form>
       </Modal>
 
-      {/* Modal slip */}
-      <Modal open={!!slip} onClose={() => setSlip(null)} title="Slip Gaji" size="xl">
-        {slip && run ? (
+      {/* Modal slip + koreksi — satu dialog agar tak bolak-balik buka tutup */}
+      <Modal open={!!slipId} onClose={() => setSlipId(null)} title={`Slip Gaji — ${slipItem?.employee?.name ?? ''}`} size="2xl">
+        {slipItem && run ? (
           <div className="grid gap-3">
             <div className="grid gap-2 rounded-xl bg-sand-50 p-3 sm:grid-cols-2 print:hidden">
               <Field label="Nama Kepala Sekolah" hint="Default dari Pengaturan → Profil & Kontak">
@@ -273,56 +269,52 @@ export default function PayrollRunPage() {
                 />
               </Field>
             </div>
+            {canManage && (run.status === 'DRAFT' || run.status === 'FINALIZED') ? (
+              <form
+                key={`${slipItem.id}-${slipItem.requiredJp}-${slipItem.manualJp}`}
+                className="grid gap-3 rounded-xl border border-amber-200 bg-amber-50/60 p-3 print:hidden"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const f = new FormData(e.currentTarget);
+                  void run_(
+                    () =>
+                      updatePayrollItem(slipItem.id, {
+                        requiredJp: Number(f.get('requiredJp')) || 0,
+                        manualJp: Number(f.get('manualJp')) || 0,
+                        ...(String(f.get('manualNote') ?? '').trim() ? { manualNote: String(f.get('manualNote')).trim() } : { manualNote: '' }),
+                      }),
+                    'Koreksi tersimpan.',
+                  );
+                }}
+              >
+                <p className="text-xs font-bold uppercase tracking-wide text-amber-700">Koreksi angka</p>
+                <p className="rounded-lg bg-white/70 px-3 py-2 text-xs text-sand-600">
+                  JP hadir dari absen: <b>{jp((slipItem.transportJp ?? 0) - (slipItem.manualJp ?? 0))}</b>. Koreksi manual <b>ditambahkan</b> ke hasil absen — isi negatif untuk mengurangi. Nilai bertahan saat Hitung Ulang.
+                </p>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <Field label="JP wajib /bulan" hint="Gaji pokok = JP wajib × tarif">
+                    <Input name="requiredJp" type="number" step="0.5" min={0} defaultValue={(slipItem.requiredJp ?? 0).toString()} required />
+                  </Field>
+                  <Field label="Koreksi JP transport (±JP)" hint="mis. +2 atau -1.5">
+                    <Input name="manualJp" type="number" step="0.5" defaultValue={(slipItem.manualJp ?? 0).toString()} />
+                  </Field>
+                  <Field label="Alasan koreksi" hint="mis. 'mengajar pengganti 2 jam'">
+                    <Input name="manualNote" defaultValue={slipItem.manualNote ?? ''} placeholder="opsional" />
+                  </Field>
+                </div>
+                <div className="flex justify-end">
+                  <Button type="submit" size="sm" disabled={busy}>Simpan Koreksi</Button>
+                </div>
+              </form>
+            ) : null}
             <div ref={printRef} className="rounded-xl border border-sand-200 p-5">
-              <SlipView run={run} item={slip} school={school} principal={principal} treasurer={treasurer} />
+              <SlipView run={run} item={slipItem} school={school} principal={principal} treasurer={treasurer} />
             </div>
             <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={async () => setSlip(null)}>Tutup</Button>
+              <Button type="button" variant="outline" onClick={() => setSlipId(null)}>Tutup</Button>
               <Button type="button" onClick={async () => printEl(printRef.current)}>Print Slip</Button>
             </div>
           </div>
-        ) : null}
-      </Modal>
-      {/* Modal koreksi item */}
-      <Modal open={!!editItem} onClose={() => setEditItem(null)} title={`Koreksi — ${editItem?.employee?.name ?? ''}`}>
-        {editItem ? (
-          <form
-            className="grid gap-3"
-            onSubmit={(e) => {
-              e.preventDefault();
-              const f = new FormData(e.currentTarget);
-              const reqJp = Number(f.get('requiredJp')) || 0;
-              const manualJp = Number(f.get('manualJp')) || 0;
-              void run_(
-                () =>
-                  updatePayrollItem(editItem.id, {
-                    requiredJp: reqJp,
-                    manualJp: manualJp,
-                    ...(String(f.get('manualNote') ?? '').trim() ? { manualNote: String(f.get('manualNote')).trim() } : { manualNote: '' }),
-                  }),
-                'Koreksi tersimpan.',
-              ).then((ok) => { if (ok) setEditItem(null); });
-            }}
-          >
-            <p className="rounded-xl bg-sand-50 px-3 py-2 text-xs text-sand-600">
-              JP hadir dari absen: <b>{jp((editItem.transportJp ?? 0) - (editItem.manualJp ?? 0))}</b>. Koreksi manual <b>ditambahkan</b> ke hasil absen — isi negatif untuk mengurangi. Nilai bertahan saat Hitung Ulang.
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="JP wajib /bulan" hint="Jam pelajaran — gaji pokok = JP wajib × tarif">
-                <Input name="requiredJp" type="number" step="0.5" min={0} defaultValue={(editItem.requiredJp ?? 0).toString()} required />
-              </Field>
-              <Field label="Koreksi JP transport (±JP)" hint="mis. +2 atau -1.5">
-                <Input name="manualJp" type="number" step="0.5" defaultValue={(editItem.manualJp ?? 0).toString()} />
-              </Field>
-            </div>
-            <Field label="Alasan koreksi" hint="Dicatat di audit — mis. 'mengajar pengganti 2 jam'">
-              <Input name="manualNote" defaultValue={editItem.manualNote ?? ''} placeholder="opsional tapi disarankan" />
-            </Field>
-            <div className="flex justify-end gap-2 pt-1">
-              <Button type="button" variant="ghost" onClick={async () => setEditItem(null)}>Batal</Button>
-              <Button type="submit" disabled={busy}>Simpan</Button>
-            </div>
-          </form>
         ) : null}
       </Modal>
           {dialog}
