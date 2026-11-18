@@ -1627,7 +1627,12 @@ export class OpsService {
       const p = await this.prisma.prasarana.findUnique({ where: { id: dto.prasaranaId } });
       if (p) name = p.name;
     }
-    return this.prisma.examRoom.create({ data: { name, period: dto.period, academicYearId: dto.academicYearId, capacity: dto.capacity ?? 24, prasaranaId: dto.prasaranaId ?? null } });
+    // Nama ruang unik per periode — cegah baris ganda saat klik berulang/typo.
+    const dup = await this.prisma.examRoom.findFirst({
+      where: { academicYearId: dto.academicYearId, period: dto.period, name: { equals: name.trim(), mode: 'insensitive' } },
+    });
+    if (dup) throw new ConflictException(`Ruang "${dup.name}" sudah ada untuk periode ${dto.period}.`);
+    return this.prisma.examRoom.create({ data: { name: name.trim(), period: dto.period, academicYearId: dto.academicYearId, capacity: dto.capacity ?? 24, prasaranaId: dto.prasaranaId ?? null } });
   }
   async listExamRooms(academicYearId: string, period?: string) {
     // Backfill kode peserta untuk kursi lama yang belum punya.
@@ -1814,6 +1819,18 @@ export class OpsService {
     const room = await this.prisma.examRoom.findUniqueOrThrow({ where: { id }, include: { _count: { select: { seats: true } } } });
     if (dto.capacity !== undefined && dto.capacity < room._count.seats) {
       throw new ConflictException(`Kapasitas tak boleh di bawah jumlah peserta (${room._count.seats}).`);
+    }
+    if (dto.name !== undefined) {
+      const period = dto.period ?? room.period;
+      const dup = await this.prisma.examRoom.findFirst({
+        where: {
+          academicYearId: room.academicYearId,
+          period,
+          name: { equals: dto.name.trim(), mode: 'insensitive' },
+          id: { not: id },
+        },
+      });
+      if (dup) throw new ConflictException(`Ruang "${dup.name}" sudah ada untuk periode ${period}.`);
     }
     return this.prisma.examRoom.update({
       where: { id },

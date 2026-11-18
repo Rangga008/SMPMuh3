@@ -102,6 +102,8 @@ export default function UjianPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [examCode, setExamCode] = useState('145');
   const [examCodeEdit, setExamCodeEdit] = useState('');
+  const [renumberTarget, setRenumberTarget] = useState<ExamRoomView | null>(null);
+  const [renumberMode, setRenumberMode] = useState<'sequential' | 'zigzag'>('sequential');
 
   useEffect(() => {
     listAcademicYears().then((ys) => {
@@ -369,26 +371,13 @@ export default function UjianPage() {
                             setAssignClassId(''); setAssignFrom(''); setAssignTo(''); setAvail(null);
                             getRombelAvailability(r.id).then(setAvail).catch(() => {});
                           }}>+ Rombel</Button>
-                          <select
-                            className="rounded-lg border border-sand-300 bg-white px-2 py-1.5 text-xs font-semibold text-sand-700 disabled:opacity-50"
-                            defaultValue=""
+                          <Button
+                            size="sm"
+                            variant="outline"
                             disabled={r.seats.length < 2}
                             title="Susun ulang nomor meja — kode peserta tetap"
-                            onChange={async (e) => {
-                              const mode = e.target.value as 'sequential' | 'zigzag';
-                              e.target.value = '';
-                              if (!mode) return;
-                              try {
-                                const res = await renumberRoom(r.id, mode);
-                                setNotice(`Nomor meja disusun ulang ${mode === 'zigzag' ? 'zigzag (kelas berselang-seling)' : 'berurut per rombel'} — ${res.count} kursi.`);
-                                load();
-                              } catch (err) { setError(err instanceof Error ? err.message : 'Gagal menyusun meja.'); }
-                            }}
-                          >
-                            <option value="">Susun meja…</option>
-                            <option value="sequential">↕ Berurut per rombel</option>
-                            <option value="zigzag">⚡ Zigzag campur kelas</option>
-                          </select>
+                            onClick={() => { setRenumberTarget(r); setRenumberMode('sequential'); }}
+                          >Susun Meja…</Button>
                           <Button size="sm" onClick={() => void printCards(r.id)} disabled={!r.seats.length} title="Kartu ujian + kartu meja dengan jadwal & nomor peserta">Cetak Kartu</Button>
                           <Button size="sm" variant="outline" onClick={() => printSeating(r)} disabled={!r.seats.length} title="Daftar duduk + kolom tanda tangan — sekaligus lembar absensi pengawas">Daftar Duduk &amp; Absen</Button>
                         </span>
@@ -459,6 +448,56 @@ export default function UjianPage() {
           </Field>
           <div className="flex justify-end"><Button type="submit" disabled={busy}>Simpan</Button></div>
         </form>
+      </Modal>
+
+      <Modal open={!!renumberTarget} onClose={() => setRenumberTarget(null)} title={`Susun nomor meja — ${renumberTarget?.name ?? ''}`}>
+        <p className="text-xs text-sand-500">
+          Menyusun ulang <b>nomor meja</b> ({renumberTarget?.seats.length ?? 0} kursi). Kode peserta <b>tidak berubah</b>.
+        </p>
+        <div className="mt-4 grid gap-2">
+          {(
+            [
+              ['sequential', '↕ Berurut per rombel', 'Meja 1, 2, 3… mengikuti urutan daftar tiap rombel'],
+              ['zigzag', '⚡ Zigzag campur kelas', 'Meja berselang-seling antar kelas — meja 1 kelas A, meja 2 kelas B, dst'],
+            ] as const
+          ).map(([v, label, hint]) => (
+            <label
+              key={v}
+              className={`flex cursor-pointer items-start gap-3 rounded-xl border px-4 py-3 text-sm ${
+                renumberMode === v ? 'border-emerald-500 bg-emerald-50' : 'border-sand-200 hover:bg-sand-50'
+              }`}
+            >
+              <input
+                type="radio"
+                name="renumberMode"
+                checked={renumberMode === v}
+                onChange={() => setRenumberMode(v)}
+                className="mt-0.5 accent-emerald-700"
+              />
+              <span>
+                <b>{label}</b>
+                <span className="block text-xs text-sand-500">{hint}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="ghost" onClick={() => setRenumberTarget(null)}>Batal</Button>
+          <Button
+            disabled={busy}
+            onClick={async () => {
+              if (!renumberTarget) return;
+              setBusy(true);
+              try {
+                const res = await renumberRoom(renumberTarget.id, renumberMode);
+                setNotice(`Nomor meja ${renumberTarget.name} disusun ulang ${renumberMode === 'zigzag' ? 'zigzag (kelas berselang-seling)' : 'berurut per rombel'} — ${res.count} kursi.`);
+                setRenumberTarget(null);
+                load();
+              } catch (err) { setError(err instanceof Error ? err.message : 'Gagal menyusun meja.'); }
+              finally { setBusy(false); }
+            }}
+          >{busy ? 'Menyusun…' : 'Terapkan'}</Button>
+        </div>
       </Modal>
 
       <Modal open={!!assignModal} onClose={() => setAssignModal(null)} title={`Masukkan rombel — ${assignModal?.room.name ?? ''}`}>

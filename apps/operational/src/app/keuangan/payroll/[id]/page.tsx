@@ -184,12 +184,12 @@ export default function PayrollRunPage() {
                   </td>
                   <td className="whitespace-nowrap px-5 py-3 text-xs font-semibold text-sand-700">{jp(it.requiredJp)}</td>
                   <td className="whitespace-nowrap px-5 py-3 text-xs">
-                    <span className={it.transportJp > 0 ? 'font-semibold text-emerald-700' : 'text-sand-400'}>
+                    <span className={(it.transportJp ?? 0) > 0 ? 'font-semibold text-emerald-700' : 'text-sand-400'}>
                       {jp(it.transportJp)}
                     </span>
                     <span className="block text-[10px] font-normal text-sand-400">
-                      absen {jp(it.transportJp - (it.manualJp ?? 0))}
-                      {(it.manualJp ?? 0) !== 0 ? ` ${it.manualJp > 0 ? '+' : '−'}manual ${jp(Math.abs(it.manualJp))}` : ''}
+                      absen {jp((it.transportJp ?? 0) - (it.manualJp ?? 0))}
+                      {(it.manualJp ?? 0) !== 0 ? ` ${(it.manualJp ?? 0) > 0 ? '+' : '−'}manual ${jp(Math.abs(it.manualJp ?? 0))}` : ''}
                     </span>
                   </td>
                   <td className="whitespace-nowrap px-5 py-3 text-right">{rupiah(it.basePay)}</td>
@@ -305,11 +305,11 @@ export default function PayrollRunPage() {
             }}
           >
             <p className="rounded-xl bg-sand-50 px-3 py-2 text-xs text-sand-600">
-              JP hadir dari absen: <b>{jp(editItem.transportJp - (editItem.manualJp ?? 0))}</b>. Koreksi manual <b>ditambahkan</b> ke hasil absen — isi negatif untuk mengurangi. Nilai bertahan saat Hitung Ulang.
+              JP hadir dari absen: <b>{jp((editItem.transportJp ?? 0) - (editItem.manualJp ?? 0))}</b>. Koreksi manual <b>ditambahkan</b> ke hasil absen — isi negatif untuk mengurangi. Nilai bertahan saat Hitung Ulang.
             </p>
             <div className="grid grid-cols-2 gap-3">
               <Field label="JP wajib /bulan" hint="Jam pelajaran — gaji pokok = JP wajib × tarif">
-                <Input name="requiredJp" type="number" step="0.5" min={0} defaultValue={editItem.requiredJp.toString()} required />
+                <Input name="requiredJp" type="number" step="0.5" min={0} defaultValue={(editItem.requiredJp ?? 0).toString()} required />
               </Field>
               <Field label="Koreksi JP transport (±JP)" hint="mis. +2 atau -1.5">
                 <Input name="manualJp" type="number" step="0.5" defaultValue={(editItem.manualJp ?? 0).toString()} />

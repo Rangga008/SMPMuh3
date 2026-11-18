@@ -3,12 +3,12 @@
 import type { PayrollItemView, PayrollRunView, School } from '@/lib/api';
 import type { CSSProperties } from 'react';
 
-export const rupiah = (n: number) => `Rp${n.toLocaleString('id-ID')}`;
+export const rupiah = (n?: number | null) => `Rp${(n ?? 0).toLocaleString('id-ID')}`;
 /** Format jam pelajaran — buang .0 (203 bukan 203,0). */
-export const jp = (n: number) =>
-  `${(+n.toFixed(1)).toLocaleString('id-ID')} JP`;
-export const monthLabel = (m: string) =>
-  new Date(`${m}-15T00:00:00`).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
+export const jp = (n?: number | null) =>
+  `${(+(n ?? 0).toFixed(1)).toLocaleString('id-ID')} JP`;
+export const monthLabel = (m?: string | null) =>
+  m ? new Date(`${m}-15T00:00:00`).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' }) : '—';
 
 export const RUN_TONE: Record<string, 'primary' | 'accent' | 'neutral' | 'danger'> = {
   DRAFT: 'neutral',

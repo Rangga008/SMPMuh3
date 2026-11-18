@@ -6,6 +6,13 @@ import {
 } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import * as argon2 from 'argon2';
+import * as XLSX from 'xlsx';
+import {
+  ADDITIONAL_DUTY_LABELS,
+  EMPLOYEE_TYPE_LABELS,
+  GTK_TYPE_LABELS,
+  STAFF_KIND_LABELS,
+} from '@smpmuh3/types';
 import type { Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../core/prisma/prisma.service';
@@ -306,6 +313,48 @@ export class AcademicService {
           (!kind || e.staffKind === kind) &&
           (!duty || e.additionalDuty === duty),
       );
+  }
+
+  private static readonly DEPT_LABEL: Record<string, string> = {
+    KURIKULUM: 'Kurikulum',
+    KESISWAAN: 'Kesiswaan',
+    TATA_USAHA: 'Tata Usaha',
+    KEUANGAN: 'Keuangan',
+    SARPRAS: 'Sarpras',
+    HUMAS: 'Humas',
+    LAYSUS: 'Laysus',
+  };
+
+  /** Ekspor data pokok GTK ke Excel — kolom penting saja. `type`: TEACHER/TENDIK (kelompok GTK). */
+  async exportEmployeesXlsx(type?: string, department?: string) {
+    const rows = await this.listEmployees(type, undefined, department);
+    const data = rows.map((e, i) => {
+      const group = AcademicService.GTK_GROUP[e.type] ?? e.type;
+      const jenis =
+        GTK_TYPE_LABELS[group as keyof typeof GTK_TYPE_LABELS] ??
+        EMPLOYEE_TYPE_LABELS[e.type as keyof typeof EMPLOYEE_TYPE_LABELS] ??
+        e.type;
+      return {
+        No: i + 1,
+        'NIP/NUPTK': e.nip ?? '',
+        Nama: e.name,
+        Jenis: jenis,
+        Jabatan: e.staffKind
+          ? (STAFF_KIND_LABELS[e.staffKind as keyof typeof STAFF_KIND_LABELS] ?? e.staffKind)
+          : '',
+        'Tugas Tambahan': e.additionalDuty
+          ? (ADDITIONAL_DUTY_LABELS[e.additionalDuty as keyof typeof ADDITIONAL_DUTY_LABELS] ??
+            e.additionalDuty)
+          : '',
+        Bidang: e.department ? (AcademicService.DEPT_LABEL[e.department] ?? e.department) : '',
+        Email: e.email ?? '',
+        'No HP': e.phone ?? '',
+        Status: e.isActive ? 'Aktif' : 'Nonaktif',
+      };
+    });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), 'Data GTK');
+    return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
   }
 
   /** Akun login non-orang-tua yang tidak tertaut ke data pegawai — deteksi data yatim. */

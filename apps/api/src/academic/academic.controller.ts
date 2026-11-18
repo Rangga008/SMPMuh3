@@ -78,6 +78,20 @@ export class AcademicController {
     return this.academic.listEmployees(type, search, department, kind, duty, unlinked === '1' || unlinked === 'true');
   }
 
+  /** Ekspor data pokok GTK — `type` TEACHER/TENDIK, `department` opsional. */
+  @Get('employees/export.xlsx')
+  @RequirePermission(ER)
+  async exportEmployeesXlsx(
+    @Res() res: Response,
+    @Query('type') type?: string,
+    @Query('department') department?: string,
+  ) {
+    const buf = await this.academic.exportEmployeesXlsx(type, department);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="data-gtk.xlsx"');
+    res.send(buf);
+  }
+
   /** Anggota bidang milik pegawai yang login — untuk kepala bidang. */
   @Get('employees/my-department')
   myDepartment(@CurrentUser() u: AuthUser) {

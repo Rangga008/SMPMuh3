@@ -14,7 +14,7 @@ import { rowActionClasses } from '@/components/row-btn';
 import { useConfirm } from '@/components/confirm-dialog';
 import { usePermission } from '@/lib/use-permission';
 import { PERMISSIONS } from '@smpmuh3/types';
-import { createStudent, deleteStudent, listStudents, listAcademicYears, listClasses } from '@/lib/api';
+import { createStudent, deleteStudent, exportStudentsXlsx, listStudents, listAcademicYears, listClasses } from '@/lib/api';
 import { downloadStudentTemplate, importStudentsDapodik } from '@/lib/api-ops';
 
 const tone = (s: string) => (s === 'ACTIVE' ? 'primary' : 'neutral');
@@ -34,6 +34,48 @@ export default function StudentsPage() {
   const [importPreview, setImportPreview] = useState<{ row: number; name: string; ok: boolean; msg: string; nis?: string | null; nisn?: string | null; kelas?: string | null; hp?: string | null }[] | null>(null);
   const [importResult, setImportResult] = useState<{ ok: number; failed: number; results: { row: number; name: string; ok: boolean; msg: string }[] } | null>(null);
   const importFileRef = useRef<HTMLInputElement>(null);
+  // Export Excel — modal pilih cakupan: semua / per jenjang / pilih rombel.
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportMode, setExportMode] = useState<'all' | 'grade' | 'class'>('all');
+  const [exportClasses, setExportClasses] = useState<{ id: string; name: string; gradeLevel: number }[]>([]);
+  const [exportGrades, setExportGrades] = useState<number[]>([]);
+  const [exportClassIds, setExportClassIds] = useState<Set<string>>(new Set());
+
+  async function openExport() {
+    setExportOpen(true);
+    setExportMode('all');
+    setExportGrades([]);
+    setExportClassIds(new Set());
+    try {
+      const ys = await listAcademicYears();
+      const y = ys.find((x) => x.isActive) ?? ys[0];
+      if (y) setExportClasses(await listClasses(y.id));
+    } catch { setExportClasses([]); }
+  }
+
+  const toggle = (set: Set<string>, id: string) => {
+    const n = new Set(set);
+    if (n.has(id)) n.delete(id); else n.add(id);
+    return n;
+  };
+
+  async function runExport() {
+    setBusy(true);
+    setError(null);
+    try {
+      await exportStudentsXlsx(
+        exportMode === 'class'
+          ? { classIds: [...exportClassIds] }
+          : exportMode === 'grade'
+            ? { gradeLevels: exportGrades }
+            : {},
+      );
+      setExportOpen(false);
+      setNotice('File Excel siswa terunduh.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Gagal mengunduh data.');
+    } finally { setBusy(false); }
+  }
 
   async function openImport() {
     setImportOpen(true);
@@ -153,6 +195,9 @@ export default function StudentsPage() {
         subtitle="Kelola data kesiswaan"
         actions={
           <>
+            <Button size="sm" variant="outline" onClick={openExport}>
+              ⭳ Export Excel
+            </Button>
             <Button size="sm" variant="outline" onClick={openImport}>
               ⭱ Import Dapodik
             </Button>
@@ -302,6 +347,115 @@ export default function StudentsPage() {
           </tr>
         ))}
       </DataTable>
+
+      <Modal open={exportOpen} onClose={() => setExportOpen(false)} title="Export Data Siswa ke Excel">
+        <p className="text-xs text-sand-500">
+          Kolom: NIS, NISN, NIK, nama, L/P, kelas, tempat &amp; tanggal lahir, alamat, orang tua, HP ortu, status.
+        </p>
+        <div className="mt-4 grid gap-2">
+          {(
+            [
+              ['all', 'Semua siswa aktif', 'seluruh siswa tahun ajaran aktif'],
+              ['grade', 'Per jenjang', 'pilih satu atau lebih jenjang'],
+              ['class', 'Pilih rombel', 'pilih satu atau lebih kelas'],
+            ] as const
+          ).map(([v, label, hint]) => (
+            <label
+              key={v}
+              className={`flex cursor-pointer items-start gap-3 rounded-xl border px-4 py-3 text-sm ${
+                exportMode === v ? 'border-emerald-500 bg-emerald-50' : 'border-sand-200 hover:bg-sand-50'
+              }`}
+            >
+              <input
+                type="radio"
+                name="exportMode"
+                checked={exportMode === v}
+                onChange={() => setExportMode(v)}
+                className="mt-0.5 accent-emerald-700"
+              />
+              <span>
+                <b>{label}</b>
+                <span className="block text-xs text-sand-500">{hint}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+
+        {exportMode === 'grade' ? (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {[...new Set(exportClasses.map((c) => c.gradeLevel))].sort().map((g) => (
+              <label
+                key={g}
+                className={`cursor-pointer rounded-xl border px-4 py-2 text-sm font-semibold ${
+                  exportGrades.includes(g) ? 'border-emerald-500 bg-emerald-50 text-emerald-800' : 'border-sand-200 text-sand-600'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  className="hidden"
+                  checked={exportGrades.includes(g)}
+                  onChange={() =>
+                    setExportGrades((prev) =>
+                      prev.includes(g) ? prev.filter((x) => x !== g) : [...prev, g],
+                    )
+                  }
+                />
+                Kelas {g}
+              </label>
+            ))}
+            {exportClasses.length === 0 ? (
+              <p className="text-xs text-sand-400">Memuat rombel…</p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {exportMode === 'class' ? (
+          <div className="mt-3 grid max-h-56 grid-cols-2 gap-2 overflow-auto sm:grid-cols-3">
+            {exportClasses.map((c) => (
+              <label
+                key={c.id}
+                className={`cursor-pointer rounded-xl border px-3 py-2 text-center text-sm font-semibold ${
+                  exportClassIds.has(c.id) ? 'border-emerald-500 bg-emerald-50 text-emerald-800' : 'border-sand-200 text-sand-600'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  className="hidden"
+                  checked={exportClassIds.has(c.id)}
+                  onChange={() => setExportClassIds((prev) => toggle(prev, c.id))}
+                />
+                {c.name}
+              </label>
+            ))}
+            {exportClasses.length === 0 ? (
+              <p className="col-span-full text-xs text-sand-400">Memuat rombel…</p>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div className="mt-5 flex items-center justify-between gap-3">
+          <p className="text-xs text-sand-400">
+            {exportMode === 'class'
+              ? `${exportClassIds.size} rombel dipilih`
+              : exportMode === 'grade'
+                ? `${exportGrades.length} jenjang dipilih`
+                : 'Semua siswa'}
+          </p>
+          <span className="flex gap-2">
+            <Button variant="ghost" onClick={() => setExportOpen(false)}>Batal</Button>
+            <Button
+              disabled={
+                busy ||
+                (exportMode === 'class' && exportClassIds.size === 0) ||
+                (exportMode === 'grade' && exportGrades.length === 0)
+              }
+              onClick={() => void runExport()}
+            >
+              {busy ? 'Mengunduh…' : '⭳ Unduh Excel'}
+            </Button>
+          </span>
+        </div>
+      </Modal>
 
       <Modal open={importOpen} onClose={() => setImportOpen(false)} title="Import Siswa dari Dapodik" size="xl">
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">

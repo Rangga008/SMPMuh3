@@ -815,13 +815,13 @@ export class PayrollService {
       // Jam wajib: JP per bulan dari pengaturan pegawai (mis. 44 JP) — gaji pokok TETAP,
       // tidak dipotong absen.
       const required = prev?.requiredManual ? prev.requiredJp : emp.requiredJp;
-      // Transport: JP hadir aktual; tanpa data absen sama sekali → dianggap penuh (JP wajib);
-      // hadir tapi tanpa jejak menit → dihitung per hari hadir × rata-rata JP wajib harian (26 hari kerja/bulan).
-      // Koreksi manual (manualJp) DITAMBAH ke hasil otomatis — bisa negatif.
+      // Transport: murni dari absen — tanpa data absen → 0 JP (jam wajib TIDAK menambah transport).
+      // Hadir tanpa jejak JP → estimasi per hari hadir (JP wajib ÷ 26 hari kerja).
+      // Koreksi manual (manualJp) DITAMBAH ke hasil absen — bisa negatif.
       const manual = prev?.manualJp ?? 0;
       const autoJp =
         att.length === 0
-          ? required
+          ? 0
           : present.reduce((s, a) => s + attendanceDayJp(a, lessonMin), 0) ||
             present.length * Math.max(1, Math.round(required / 26));
       const transportJp = Math.max(0, autoJp + manual);
@@ -864,9 +864,7 @@ export class PayrollService {
               ? autoJp > 0
                 ? ` (absen ${fmtJp(autoJp)} ${manual > 0 ? '+' : '−'} manual ${fmtJp(Math.abs(manual))})`
                 : ` (manual ${fmtJp(Math.abs(manual))})`
-              : att.length === 0
-                ? ' (penuh — tanpa data absen)'
-                : ' (absen)'
+              : ' (absen)'
           }`,
           amount: transportPay,
         });
@@ -1055,7 +1053,7 @@ export class PayrollService {
     const worked = present.reduce((s, a) => s + attendanceDayMinutes(a, lessonMin), 0);
     const autoJp =
       att.length === 0
-        ? required
+        ? 0
         : present.reduce((s, a) => s + attendanceDayJp(a, lessonMin), 0) ||
           present.length * Math.max(1, Math.round(required / 26));
     const transportJp = Math.max(0, autoJp + manual);
@@ -1084,9 +1082,7 @@ export class PayrollService {
     const transportLabel = `Transport ${fmtJp(transportJp)}${
       manual !== 0
         ? ` (absen ${fmtJp(autoJp)} ${manual > 0 ? '+' : '−'} manual ${fmtJp(Math.abs(manual))})`
-        : att.length === 0
-          ? ' (penuh — tanpa data absen)'
-          : ' (absen)'
+        : ' (absen)'
     }`;
     const autoRequired = emp.requiredJp;
     const baseLabel =

@@ -346,8 +346,18 @@ export const NAV: NavItem[] = [
         permission: PERMISSIONS.TATAUSAHA_READ,
         enabled: true,
       },
+    ],
+  },
+  {
+    key: 'sarpras',
+    label: 'Sarpras',
+    icon: '🏢',
+    permission: PERMISSIONS.SARPRAS_READ,
+    roles: TU_ROLES,
+    enabled: true,
+    children: [
       {
-        key: 'tu-sarana',
+        key: 'sarana',
         label: 'Sarana',
         icon: '🪑',
         href: '/sarpras/sarana',
@@ -355,7 +365,7 @@ export const NAV: NavItem[] = [
         enabled: true,
       },
       {
-        key: 'tu-prasarana',
+        key: 'prasarana',
         label: 'Prasarana',
         icon: '🏢',
         href: '/sarpras/prasarana',
@@ -364,7 +374,7 @@ export const NAV: NavItem[] = [
       },
       {
         key: 'sarpras-arsip',
-        label: 'Arsip Sarpras',
+        label: 'Arsip',
         icon: '🗄',
         href: '/sarpras/arsip',
         permission: PERMISSIONS.SARPRAS_READ,

@@ -9,10 +9,12 @@ import {
   Patch,
   Post,
   Query,
+  Res,
   StreamableFile,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { PERMISSIONS, type AuthUser } from '@smpmuh3/types';
 import type { StudentStatus } from '@prisma/client';
@@ -41,6 +43,23 @@ export class StudentsController {
     @Query('classId') classId?: string,
   ) {
     return this.students.list({ search, status, classId });
+  }
+
+  /** Ekspor data pokok siswa — filter `classIds` (daftar id rombel, koma) atau `gradeLevels` (7,8,9). */
+  @Get('students/export.xlsx')
+  @RequirePermission(PERMISSIONS.STUDENT_READ)
+  async exportXlsx(
+    @Res() res: Response,
+    @Query('classIds') classIds?: string,
+    @Query('gradeLevels') gradeLevels?: string,
+  ) {
+    const buf = await this.students.exportXlsx({
+      classIds: classIds?.split(',').filter(Boolean),
+      gradeLevels: gradeLevels?.split(',').filter(Boolean).map(Number),
+    });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="data-siswa.xlsx"');
+    res.send(buf);
   }
 
   // ---------- Orang tua / wali (deklarasi sebelum :id agar tak tertelan) ----------

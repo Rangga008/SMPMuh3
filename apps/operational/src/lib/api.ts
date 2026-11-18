@@ -610,6 +610,14 @@ export const listStudents = (q: {
 };
 export const getStudent = (id: string) =>
   req<StudentDetail>(`/students/${id}`);
+/** Ekspor data siswa ke Excel — `classIds` rombel tertentu atau `gradeLevels` jenjang. */
+export const exportStudentsXlsx = (q: { classIds?: string[]; gradeLevels?: number[] }) => {
+  const p = new URLSearchParams();
+  if (q.classIds?.length) p.set('classIds', q.classIds.join(','));
+  if (q.gradeLevels?.length) p.set('gradeLevels', q.gradeLevels.join(','));
+  const s = p.toString();
+  return downloadFile(`/students/export.xlsx${s ? `?${s}` : ''}`, 'data-siswa.xlsx');
+};
 export const createStudent = (dto: Record<string, unknown>) =>
   req<StudentDto>('/students', { method: 'POST', json: dto });
 export const updateStudent = (id: string, dto: Record<string, unknown>) =>
@@ -736,6 +744,14 @@ export const listEmployees = (
 };
 export const createEmployee = (dto: Record<string, unknown>) =>
   req<EmployeeDto>('/employees', { method: 'POST', json: dto });
+/** Ekspor data GTK ke Excel — `type` TEACHER/TENDIK, `department` opsional. */
+export const exportEmployeesXlsx = (type?: string, department?: string) => {
+  const p = new URLSearchParams();
+  if (type) p.set('type', type);
+  if (department) p.set('department', department);
+  const s = p.toString();
+  return downloadFile(`/employees/export.xlsx${s ? `?${s}` : ''}`, 'data-gtk.xlsx');
+};
 /** Kaitkan akun login yatim ke pegawai yang sudah ada — isi kolom kosong dari akun. */
 export const linkEmployeeAccount = (employeeId: string, userId: string) =>
   req<EmployeeDto>(`/employees/${employeeId}/link-account`, { method: 'POST', json: { userId } });

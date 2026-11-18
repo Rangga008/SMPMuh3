@@ -25,6 +25,7 @@ import {
   deleteEmployee,
   deleteGtkOption,
   downloadEmployeeTemplate,
+  exportEmployeesXlsx,
   importEmployees,
   linkEmployeeAccount,
   listEmployees,
@@ -85,6 +86,22 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
   const [makeAccounts, setMakeAccounts] = useState(true);
   const [importResult, setImportResult] = useState<EmployeeImportResult | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  // Export Excel — modal pilih cakupan jenis & bidang.
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportType, setExportType] = useState<string>(jenis);
+  const [exportDept, setExportDept] = useState('');
+
+  async function runExport() {
+    setBusy(true);
+    setError(null);
+    try {
+      await exportEmployeesXlsx(exportType || undefined, exportDept || undefined);
+      setExportOpen(false);
+      setNotice('File Excel GTK terunduh.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Gagal mengunduh data.');
+    } finally { setBusy(false); }
+  }
 
   const load = useCallback((k: string, d: string, q: string) => {
     setLoading(true);
@@ -286,6 +303,9 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
         }
         actions={
           <span className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => { setExportType(jenis); setExportDept(''); setExportOpen(true); }}>
+              ⭳ Export Excel
+            </Button>
             <Button size="sm" variant="outline" onClick={() => setOptsOpen(true)}>
               ⚙ Jabatan &amp; Tugas
             </Button>
@@ -367,6 +387,35 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
           ) : null}
         </div>
       ) : null}
+
+      <Modal open={exportOpen} onClose={() => setExportOpen(false)} title="Export Data GTK ke Excel">
+        <p className="text-xs text-sand-500">
+          Kolom: NIP/NUPTK, nama, jenis, jabatan, tugas tambahan, bidang, email, no HP, status.
+        </p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <Field label="Jenis Pegawai">
+            <Select value={exportType} onChange={(e) => setExportType(e.target.value)}>
+              <option value="">Semua GTK</option>
+              <option value="TEACHER">Guru saja</option>
+              <option value="TENDIK">Tendik saja</option>
+            </Select>
+          </Field>
+          <Field label="Bidang">
+            <Select value={exportDept} onChange={(e) => setExportDept(e.target.value)}>
+              <option value="">Semua bidang</option>
+              {Object.entries(DEPT_LABEL).map(([k, l]) => (
+                <option key={k} value={k}>{l}</option>
+              ))}
+            </Select>
+          </Field>
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="ghost" onClick={() => setExportOpen(false)}>Batal</Button>
+          <Button disabled={busy} onClick={() => void runExport()}>
+            {busy ? 'Mengunduh…' : '⭳ Unduh Excel'}
+          </Button>
+        </div>
+      </Modal>
 
       <Modal open={importOpen} onClose={() => setImportOpen(false)} title="Import GTK dari Excel" size="xl">
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">

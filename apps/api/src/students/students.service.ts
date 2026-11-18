@@ -13,6 +13,8 @@ import { PrismaService } from '../core/prisma/prisma.service';
 import { StorageService } from '../core/storage/storage.service';
 import { WhatsappService } from '../spmb/whatsapp.service';
 import { normalizePhone } from '../identity/users/users.service';
+import * as XLSX from 'xlsx';
+import { STUDENT_STATUS_LABELS } from '@smpmuh3/types';
 import type {
   AchievementDto,
   CreateStudentDto,
@@ -92,6 +94,59 @@ export class StudentsService {
       orderBy: { name: 'asc' },
       take: Math.min(q.take ?? 100, 500),
     });
+  }
+
+  /** Ekspor data pokok siswa ke Excel — filter per rombel (classIds) atau jenjang (gradeLevels)
+   *  pada tahun ajaran aktif. Kolom hanya data penting. */
+  async exportXlsx(opts: { classIds?: string[] | undefined; gradeLevels?: number[] | undefined }) {
+    const year = await this.prisma.academicYear.findFirst({ where: { isActive: true } });
+    const enrollment: Prisma.EnrollmentListRelationFilter | undefined = year
+      ? opts.classIds?.length
+        ? { some: { academicYearId: year.id, classId: { in: opts.classIds } } }
+        : opts.gradeLevels?.length
+          ? { some: { academicYearId: year.id, class: { gradeLevel: { in: opts.gradeLevels } } } }
+          : { some: { academicYearId: year.id } }
+      : undefined;
+    const students = await this.prisma.student.findMany({
+      where: { deletedAt: null, status: 'ACTIVE', ...(enrollment ? { enrollments: enrollment } : {}) },
+      select: {
+        ...studentSelect,
+        enrollments: {
+          where: year ? { academicYearId: year.id } : {},
+          take: 1,
+          select: { class: { select: { name: true, gradeLevel: true } } },
+        },
+      },
+      orderBy: { name: 'asc' },
+    });
+    const rows = students
+      .sort((a, b) =>
+        (a.enrollments[0]?.class?.name ?? '~~~').localeCompare(b.enrollments[0]?.class?.name ?? '~~~') ||
+        a.name.localeCompare(b.name),
+      )
+      .map((s, i) => ({
+        No: i + 1,
+        NIS: s.nis ?? '',
+        NISN: s.nisn ?? '',
+        NIK: s.nik ?? '',
+        Nama: s.name,
+        'L/P': s.gender === 'MALE' ? 'L' : s.gender === 'FEMALE' ? 'P' : '',
+        Kelas: s.enrollments[0]?.class?.name ?? '',
+        'Tempat Lahir': s.birthPlace ?? '',
+        'Tanggal Lahir': s.birthDate ? s.birthDate.toISOString().slice(0, 10) : '',
+        Alamat: s.address ?? '',
+        'Nama Ayah': s.fatherName ?? '',
+        'Nama Ibu': s.motherName ?? '',
+        'HP Ortu': s.parentPhone ?? '',
+        Status: STUDENT_STATUS_LABELS[s.status] ?? s.status,
+      }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(rows),
+      `Siswa${year ? ` ${year.name}` : ''}`.slice(0, 31),
+    );
+    return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
   }
 
   async detail(id: string) {
