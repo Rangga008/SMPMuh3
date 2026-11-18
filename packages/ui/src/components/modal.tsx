@@ -10,13 +10,14 @@ export interface ModalProps {
   description?: string | undefined;
   children: ReactNode;
   /** Lebar maksimum panel — default `lg` (32rem). */
-  size?: 'md' | 'lg' | 'xl' | undefined;
+  size?: 'md' | 'lg' | 'xl' | '2xl' | undefined;
 }
 
 const SIZES = {
   md: 'max-w-md',
   lg: 'max-w-lg',
   xl: 'max-w-2xl',
+  '2xl': 'max-w-5xl',
 } as const;
 
 /**

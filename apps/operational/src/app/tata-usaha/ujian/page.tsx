@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { PageTitle, Widget } from '@/components/widgets';
@@ -88,11 +88,13 @@ export default function UjianPage() {
   const [yearId, setYearId] = useState('');
   const [rooms, setRooms] = useState<ExamRoomView[]>([]);
   const [prasaranas, setPrasaranas] = useState<Prasarana[]>([]);
-  const [open, setOpen] = useState<string | null>(null);
+  const [seatRoomId, setSeatRoomId] = useState<string | null>(null);
   const [roomModal, setRoomModal] = useState(false);
   const [editRoom, setEditRoom] = useState<ExamRoomView | null>(null);
   const [assignModal, setAssignModal] = useState<{ room: ExamRoomView } | null>(null);
   const [assignClassId, setAssignClassId] = useState('');
+  /** Ruang yang dibuka di modal kursi — objek live dari `rooms` agar ikut refresh. */
+  const seatRoom = rooms.find((r) => r.id === seatRoomId) ?? null;
   const [assignFrom, setAssignFrom] = useState('');
   const [assignTo, setAssignTo] = useState('');
   /** Absen bebas per rombel (diambil saat modal buka) — sisa riil se-periode. */
@@ -333,66 +335,63 @@ export default function UjianPage() {
         </div>
       </div>
 
-      <Widget title={`Ruang Ujian (${rooms.length})`} subtitle="Klik baris untuk membuka daftar kursi tetap ruang.">
+      <Widget title={`Ruang Ujian (${rooms.length})`} subtitle="Klik baris untuk membuka kursi & peserta ruang.">
         <DataTable head={['Ruang', 'Periode', 'Peserta', 'Kapasitas', 'Aksi']} loading={false} empty={rooms.length === 0 ? 'Belum ada ruang ujian.' : undefined}>
           {rooms.map((r) => (
-            <Fragment key={r.id}>
-              <tr className="cursor-pointer hover:bg-sand-50/60" onClick={() => setOpen(open === r.id ? null : r.id)}>
-                <td className="px-5 py-3 font-semibold text-sand-900">{open === r.id ? '▾' : '▸'} {r.name}
-                  {r.prasarana ? <span className="block text-xs font-normal text-sand-500">🏫 {r.prasarana.name}</span> : null}</td>
-                <td className="px-5 py-3 text-sand-600">{r.period}</td>
-                <td className="px-5 py-3">
-                  {(r.seats?.length ?? 0)
-                    ? <Badge tone="primary">{r.seats!.length} peserta</Badge>
-                    : <span className="text-xs text-sand-400">belum ada peserta</span>}
-                </td>
-                <td className="px-5 py-3"><Badge tone={r.seats.length >= r.capacity ? 'danger' : 'primary'}>{r.seats.length}/{r.capacity}</Badge></td>
-                <td className="px-5 py-3" onClick={(e) => e.stopPropagation()}>
-                  <div className="flex flex-wrap gap-1.5">
-                    <Button size="sm" variant="outline" onClick={() => setEditRoom(r)}>Edit</Button>
-                    <Button size="sm" variant="outline" className="text-red-600" onClick={async () => {
-                      if (!window.confirm(`Hapus ruang ${r.name}? Semua peserta ikut terhapus.`)) return;
-                      try { await deleteExamRoom(r.id); setNotice('Ruang dihapus.'); load(); }
-                      catch (err) { setError(err instanceof Error ? err.message : 'Gagal menghapus.'); }
-                    }}>Hapus</Button>
-                  </div>
-                </td>
-              </tr>
-              {open === r.id ? (
-                <tr>
-                  <td colSpan={5} className="bg-sand-50/50 px-5 py-4">
-                    <div className="rounded-xl border border-sand-200 bg-white p-4">
-                      <div className="mb-3 flex flex-wrap items-center gap-2">
-                        <Badge tone="accent">Kursi tetap</Badge>
-                        <span className="text-xs text-sand-500">Satu siswa satu meja sepanjang periode — berlaku untuk semua ujian.</span>
-                        <span className="ml-auto flex flex-wrap items-center gap-1.5">
-                          <Button size="sm" variant="outline" onClick={() => {
-                            setAssignModal({ room: r });
-                            setAssignClassId(''); setAssignFrom(''); setAssignTo(''); setAvail(null);
-                            getRombelAvailability(r.id).then(setAvail).catch(() => {});
-                          }}>+ Rombel</Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={r.seats.length < 2}
-                            title="Susun ulang nomor meja — kode peserta tetap"
-                            onClick={() => { setRenumberTarget(r); setRenumberMode('sequential'); }}
-                          >Susun Meja…</Button>
-                          <Button size="sm" onClick={() => void printCards(r.id)} disabled={!r.seats.length} title="Kartu ujian + kartu meja dengan jadwal & nomor peserta">Cetak Kartu</Button>
-                          <Button size="sm" variant="outline" onClick={() => printSeating(r)} disabled={!r.seats.length} title="Daftar duduk + kolom tanda tangan — sekaligus lembar absensi pengawas">Daftar Duduk &amp; Absen</Button>
-                        </span>
-                      </div>
-                      {r.seats.length === 0
-                        ? <p className="text-sm text-sand-400">Belum ada peserta — klik <b>+ Rombel</b>.</p>
-                        : <SeatTable seats={r.seats} roomName={r.name} roomId={r.id} onChanged={load} />}
-                    </div>
-                  </td>
-                </tr>
-              ) : null}
-            </Fragment>
+            <tr key={r.id} className="cursor-pointer hover:bg-sand-50/60" onClick={() => setSeatRoomId(r.id)}>
+              <td className="px-5 py-3 font-semibold text-sand-900">{r.name}
+                {r.prasarana ? <span className="block text-xs font-normal text-sand-500">🏫 {r.prasarana.name}</span> : null}</td>
+              <td className="px-5 py-3 text-sand-600">{r.period}</td>
+              <td className="px-5 py-3">
+                {(r.seats?.length ?? 0)
+                  ? <Badge tone="primary">{r.seats!.length} peserta</Badge>
+                  : <span className="text-xs text-sand-400">belum ada peserta</span>}
+              </td>
+              <td className="px-5 py-3"><Badge tone={r.seats.length >= r.capacity ? 'danger' : 'primary'}>{r.seats.length}/{r.capacity}</Badge></td>
+              <td className="px-5 py-3" onClick={(e) => e.stopPropagation()}>
+                <div className="flex flex-wrap gap-1.5">
+                  <Button size="sm" variant="outline" onClick={() => setEditRoom(r)}>Edit</Button>
+                  <Button size="sm" variant="outline" className="text-red-600" onClick={async () => {
+                    if (!window.confirm(`Hapus ruang ${r.name}? Semua peserta ikut terhapus.`)) return;
+                    try { await deleteExamRoom(r.id); setNotice('Ruang dihapus.'); load(); }
+                    catch (err) { setError(err instanceof Error ? err.message : 'Gagal menghapus.'); }
+                  }}>Hapus</Button>
+                </div>
+              </td>
+            </tr>
           ))}
         </DataTable>
       </Widget>
+
+      <Modal open={!!seatRoom} onClose={() => setSeatRoomId(null)} title={`Kursi & Peserta — ${seatRoom?.name ?? ''}`} size="2xl">
+        {seatRoom ? (
+          <>
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <Badge tone="accent">Kursi tetap</Badge>
+              <span className="text-xs text-sand-500">Satu siswa satu meja sepanjang periode — berlaku untuk semua ujian.</span>
+              <span className="ml-auto flex flex-wrap items-center gap-1.5">
+                <Button size="sm" variant="outline" onClick={() => {
+                  setAssignModal({ room: seatRoom });
+                  setAssignClassId(''); setAssignFrom(''); setAssignTo(''); setAvail(null);
+                  getRombelAvailability(seatRoom.id).then(setAvail).catch(() => {});
+                }}>+ Rombel</Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={seatRoom.seats.length < 2}
+                  title="Susun ulang nomor meja — kode peserta tetap"
+                  onClick={() => { setRenumberTarget(seatRoom); setRenumberMode('sequential'); }}
+                >Susun Meja…</Button>
+                <Button size="sm" onClick={() => void printCards(seatRoom.id)} disabled={!seatRoom.seats.length} title="Kartu ujian + kartu meja dengan jadwal & nomor peserta">Cetak Kartu</Button>
+                <Button size="sm" variant="outline" onClick={() => printSeating(seatRoom)} disabled={!seatRoom.seats.length} title="Daftar duduk + kolom tanda tangan — sekaligus lembar absensi pengawas">Daftar Duduk &amp; Absen</Button>
+              </span>
+            </div>
+            {seatRoom.seats.length === 0
+              ? <p className="text-sm text-sand-400">Belum ada peserta — klik <b>+ Rombel</b>.</p>
+              : <SeatTable seats={seatRoom.seats} roomName={seatRoom.name} roomId={seatRoom.id} onChanged={load} />}
+          </>
+        ) : null}
+      </Modal>
 
       <Modal open={roomModal} onClose={() => setRoomModal(false)} title="Ruang Ujian Baru">
         <form className="grid gap-4" onSubmit={async (e) => {
