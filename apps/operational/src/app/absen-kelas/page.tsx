@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Badge, Input } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { PageTitle, Widget } from '@/components/widgets';
@@ -72,8 +72,10 @@ export default function AbsenKelasPage() {
       .catch(() => {});
   }, [date]);
 
+  const pickSeq = useRef(0);
   const pickClass = useCallback(
     (cid: string) => {
+      const seq = ++pickSeq.current;
       setClassId(cid);
       setRows([]);
       setError(null);
@@ -82,12 +84,18 @@ export default function AbsenKelasPage() {
       setLoading(true);
       getClassAttendance(cid, date)
         .then((r) => {
+          if (seq !== pickSeq.current) return; // respons basi — abaikan
           setRows(r.students);
           setTaken(r.taken);
           setTakenBy(r.takenBy ?? null);
         })
-        .catch((e) => setError(e instanceof ApiError ? e.message : 'Gagal memuat.'))
-        .finally(() => setLoading(false));
+        .catch((e) => {
+          if (seq !== pickSeq.current) return;
+          setError(e instanceof ApiError ? e.message : 'Gagal memuat.');
+        })
+        .finally(() => {
+          if (seq === pickSeq.current) setLoading(false);
+        });
     },
     [date],
   );
