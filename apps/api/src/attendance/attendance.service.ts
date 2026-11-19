@@ -351,10 +351,13 @@ export class AttendanceService {
     const specific = rows.find((r) => r.dayOfWeek === dow)?.shift;
     const fallback = rows.find((r) => r.dayOfWeek === -1)?.shift;
     const shift = specific ?? fallback ?? null;
-    // Sinkron jadwal mengajar: guru yang jadwalnya mulai siang (mis. jam pelajaran
-    // kedua) dinilai telat dari jam mengajar pertamanya, bukan jam masuk umum.
-    // Shift spesifik-hari tetap menang; jadwal mengajar menang atas shift umum/global.
-    const sched = specific ? null : await this.dayScheduleBounds(employeeId, day);
+    // Sinkron jadwal mengajar: guru yang jadwalnya mulai siang (mis. baru
+    // mengajar JP 4) dinilai telat dari JP pertamanya, dan jam pulangnya
+    // mengikuti JP terakhirnya (JP 6 vs JP 9 selesai beda-beda) — BUKAN jam
+    // kerja umum/shift. Jadwal mengajar SELALU dikonsultasi, termasuk saat
+    // ada shift spesifik-hari; shift tetap dipakai untuk toleransi telat dan
+    // menjadi fallback penuh pada hari pegawai tidak mengajar.
+    const sched = await this.dayScheduleBounds(employeeId, day);
     return {
       workStartMin: sched?.startMin ?? shift?.startMinute ?? hhmmToMin(settings.workStart),
       lateAfterMin: shift?.lateAfter ?? settings.lateAfter,
@@ -362,20 +365,26 @@ export class AttendanceService {
       // Akhir jam kerja — cap jam pulang (pulang lewat jam ini dihitung sampai sini
       // saja) dan batas akhir absen masuk. Jadwal mengajar > shift > global.
       workEndMin: sched?.endMin ?? shift?.endMinute ?? hhmmToMin(settings.workEnd),
-      shiftName: shift?.name ?? (sched ? 'Jadwal mengajar' : null),
+      shiftName: sched ? 'Jadwal mengajar' : (shift?.name ?? null),
     };
+  }
+
+  /** Tahun ajaran yang memuat tanggal (fallback: yang aktif). */
+  private async academicYearFor(day: Date) {
+    return (
+      (await this.prisma.academicYear.findFirst({
+        where: { startDate: { lte: day }, endDate: { gte: day } },
+        select: { id: true },
+      })) ??
+      (await this.prisma.academicYear.findFirst({ where: { isActive: true }, select: { id: true } }))
+    );
   }
 
   /** Batas jam hari itu dari jadwal mengajar (ScheduleEntry) — null bila tak mengajar. */
   private async dayScheduleBounds(employeeId: string, day: Date) {
     const dow = day.getUTCDay(); // day = tengah malam UTC dari tanggal WIB; 0=Minggu
     if (dow === 0) return null;
-    const year =
-      (await this.prisma.academicYear.findFirst({
-        where: { startDate: { lte: day }, endDate: { gte: day } },
-        select: { id: true },
-      })) ??
-      (await this.prisma.academicYear.findFirst({ where: { isActive: true }, select: { id: true } }));
+    const year = await this.academicYearFor(day);
     if (!year) return null;
     const entries = await this.prisma.scheduleEntry.findMany({
       where: { day: dow, assignment: { employeeId, academicYearId: year.id } },
@@ -385,6 +394,63 @@ export class AttendanceService {
     return {
       startMin: Math.min(...entries.map((e) => e.startMinute)),
       endMin: Math.max(...entries.map((e) => e.endMinute)),
+    };
+  }
+
+  /**
+   * Batas jam kerja per pegawai untuk satu tanggal — versi batch dari
+   * shiftRuleFor (satu query shift + satu query jadwal, bukan per-pegawai).
+   * Dipakai rekap harian agar terlihat dasar penilaian tiap orang.
+   */
+  private async workRulesForDay(day: Date, employeeIds: string[]) {
+    const settings = await this.getSettings();
+    const dow = dowLocal(day);
+    const [shiftRows, year] = await Promise.all([
+      this.prisma.employeeShift.findMany({
+        where: { employeeId: { in: employeeIds }, OR: [{ dayOfWeek: -1 }, { dayOfWeek: dow }] },
+        include: { shift: true },
+      }),
+      this.academicYearFor(day),
+    ]);
+    // Jadwal mengajar hari itu untuk semua pegawai sekaligus.
+    const bounds = new Map<string, { startMin: number; endMin: number }>();
+    if (year && dow >= 1 && dow <= 6) {
+      const entries = await this.prisma.scheduleEntry.findMany({
+        where: {
+          day: dow,
+          assignment: { employeeId: { in: employeeIds }, academicYearId: year.id },
+        },
+        select: { startMinute: true, endMinute: true, assignment: { select: { employeeId: true } } },
+      });
+      for (const e of entries) {
+        const emp = e.assignment.employeeId;
+        const cur = bounds.get(emp);
+        bounds.set(emp, {
+          startMin: cur ? Math.min(cur.startMin, e.startMinute) : e.startMinute,
+          endMin: cur ? Math.max(cur.endMin, e.endMinute) : e.endMinute,
+        });
+      }
+    }
+    const byEmp = new Map<string, { specific?: (typeof shiftRows)[number]; fallback?: (typeof shiftRows)[number] }>();
+    for (const r of shiftRows) {
+      const g = byEmp.get(r.employeeId) ?? {};
+      if (r.dayOfWeek === dow) g.specific = r; else g.fallback = r;
+      byEmp.set(r.employeeId, g);
+    }
+    const gStart = hhmmToMin(settings.workStart);
+    const gOut = hhmmToMin(settings.checkOutFrom);
+    const gEnd = hhmmToMin(settings.workEnd);
+    return (empId: string) => {
+      const g = byEmp.get(empId);
+      const shift = g?.specific?.shift ?? g?.fallback?.shift ?? null;
+      const sched = bounds.get(empId) ?? null;
+      return {
+        workStartMin: sched?.startMin ?? shift?.startMinute ?? gStart,
+        checkOutFromMin: sched?.endMin ?? shift?.checkOutFrom ?? gOut,
+        workEndMin: sched?.endMin ?? shift?.endMinute ?? gEnd,
+        lateAfterMin: shift?.lateAfter ?? settings.lateAfter,
+        basis: sched ? 'Jadwal mengajar' : shift ? `Shift ${shift.name}` : 'Umum',
+      };
     };
   }
 
@@ -567,7 +633,9 @@ export class AttendanceService {
     const t = parseDeviceTime(`${date} 00:00:00`);
     if (!t) throw new BadRequestException('Tanggal tidak valid');
     const day = localDay(t);
-    const [recs, pins] = await Promise.all([
+    const from = new Date(day.getTime() - DEVICE_OFFSET_MS);
+    const to = new Date(day.getTime() + 24 * 3600e3 - DEVICE_OFFSET_MS);
+    const [recs, pins, dayLogs] = await Promise.all([
       this.prisma.employeeAttendance.findMany({
         where: { date: day },
         include: { employee: { select: { id: true, name: true, nip: true, fingerPin: true } } },
@@ -576,12 +644,30 @@ export class AttendanceService {
         where: { isActive: true },
         select: { id: true, name: true, nip: true, fingerPin: true },
       }),
+      // Log mentah hari itu — untuk mengetahui platform absen (aplikasi/web/mesin).
+      this.prisma.attendanceLog.findMany({
+        where: { punchedAt: { gte: from, lt: to }, employeeId: { not: null } },
+        select: { employeeId: true, source: true, deviceKey: true, punchedAt: true },
+        orderBy: { punchedAt: 'asc' },
+      }),
     ]);
     const byEmp = new Map(recs.map((r) => [r.employeeId, r]));
+    const empIds = pins.map((e) => e.id);
+    const ruleOf = await this.workRulesForDay(day, empIds);
+    // Platform absen per pegawai — dari log SELFIE (deviceKey 'SELFIE-<PLTF>-<id>').
+    const clientOf = new Map<string, 'APP' | 'WEB' | 'SELFIE'>();
+    for (const l of dayLogs) {
+      if (l.source !== 'SELFIE' || !l.employeeId) continue;
+      const m = /^SELFIE-(APP|WEB)-/.exec(l.deviceKey);
+      // Log terakhir menang (urutan asc) — masuk & pulang bisa beda platform,
+      // tampilkan yang terbaru.
+      clientOf.set(l.employeeId, (m?.[1] as 'APP' | 'WEB' | undefined) ?? 'SELFIE');
+    }
     return pins
       .filter((e) => !q.employeeId || e.id === q.employeeId)
       .map((e) => {
         const r = byEmp.get(e.id);
+        const rule = ruleOf(e.id);
         return {
           employee: e,
           status: r?.status ?? null,
@@ -592,6 +678,14 @@ export class AttendanceService {
           partialLeaveFromMin: r?.partialLeaveFromMin ?? null,
           source: r?.source ?? null,
           note: r?.note ?? null,
+          // Dasar penilaian jam kerja hari itu — jadwal mengajar > shift > umum.
+          work: {
+            start: minToHHMM(rule.workStartMin),
+            end: minToHHMM(rule.workEndMin),
+            basis: rule.basis,
+          },
+          // Platform absen selfie terakhir hari itu (APP=aplikasi HP, WEB=browser).
+          client: clientOf.get(e.id) ?? null,
         };
       })
       .filter((r) => !q.status || r.status === q.status);
@@ -700,6 +794,8 @@ export class AttendanceService {
     latitude: number,
     longitude: number,
     file: { buffer: Buffer; mimetype: string } | undefined,
+    /** Platform klien — 'APP' (Flutter) atau 'WEB' (browser); tampil di kolom Sumber. */
+    platform?: string,
   ) {
     const emp = await this.employeeOfUser(userId);
     if (!file?.buffer?.length) {
@@ -753,9 +849,13 @@ export class AttendanceService {
     const ext = file.mimetype.includes('png') ? 'png' : 'jpg';
     const photoKey = `attendance/selfie/${emp.id}/${localDay(now).toISOString().slice(0, 10)}-${inOut}-${now.getTime()}.${ext}`;
     await this.storage.putObject(photoKey, file.buffer, file.mimetype);
+    // Platform ditandai di deviceKey ('SELFIE-APP-<id>' / 'SELFIE-WEB-<id>') agar
+    // rekap bisa membedakan absen dari aplikasi HP vs browser — log lama
+    // ('SELFIE-<id>') tetap kebaca sebagai SELFIE generik.
+    const pltf = platform && /^[A-Z]{2,10}$/.test(platform) ? `${platform}-` : '';
     const log = await this.prisma.attendanceLog.create({
       data: {
-        deviceKey: `SELFIE-${emp.id}`,
+        deviceKey: `SELFIE-${pltf}${emp.id}`,
         pin: `selfie-${emp.id}`,
         punchedAt: now,
         inOut,

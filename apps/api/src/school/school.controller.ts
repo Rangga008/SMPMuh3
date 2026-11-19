@@ -159,6 +159,13 @@ export class SchoolController {
     return this.school.getPublic();
   }
 
+  /** Branding (nama + logo) — untuk sidebar semua role; profil penuh tetap
+      di balik SCHOOL_READ. */
+  @Get('branding')
+  branding() {
+    return this.school.getBranding();
+  }
+
   /** Logo publik — stream dari storage. */
   @Public()
   @Get('logo')

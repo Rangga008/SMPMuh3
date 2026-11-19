@@ -828,6 +828,10 @@ export interface DailyRow {
   partialLeaveFromMin?: number | null;
   source?: 'DEVICE' | 'IMPORT' | 'MANUAL' | 'SELFIE' | null;
   note?: string | null;
+  /** Jendela jam kerja yang dipakai menilai hari itu — jadwal mengajar > shift > umum. */
+  work?: { start: string; end: string; basis: string } | null;
+  /** Platform absen selfie terakhir hari itu — APP (aplikasi HP) / WEB (browser). */
+  client?: 'APP' | 'WEB' | 'SELFIE' | null;
 }
 export interface AttendanceSettings {
   workStart: string;
@@ -1588,6 +1592,9 @@ export const viewStaffPassword = (id: string) =>
   req<{ password: string | null }>(`/admin/users/${id}/password-view`);
 
 export const getSchool = () => req<School>('/school');
+/** Branding minimal (nama + logo) — bisa diakses semua role login, untuk sidebar. */
+export interface SchoolBranding { name: string; logoUrl: string | null; updatedAt: string }
+export const getSchoolBranding = () => req<SchoolBranding>('/school/branding');
 export const updateSchool = (dto: Record<string, unknown>) =>
   req<School>('/school', { method: 'PATCH', json: dto });
 
@@ -2290,6 +2297,7 @@ export const selfiePunch = (inOut: 0 | 1, latitude: number, longitude: number, p
   fd.set('inOut', String(inOut));
   fd.set('latitude', String(latitude));
   fd.set('longitude', String(longitude));
+  fd.set('platform', 'WEB');
   fd.set('photo', photo, `selfie-${Date.now()}.jpg`);
   return req<{ punchedAt: string; inOut: number; distanceM: number; attendance: { status: string; checkInAt?: string | null; checkOutAt?: string | null; lateMinutes: number } | null }>(
     '/admin/attendance/selfie', { method: 'POST', body: fd });

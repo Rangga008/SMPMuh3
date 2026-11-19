@@ -41,6 +41,13 @@ export class SchoolService {
     return school;
   }
 
+  /** Branding minimal — nama + logo untuk semua user login (sidebar).
+      Field kontak/alamat sengaja tidak disertakan. */
+  async getBranding() {
+    const s = await this.get();
+    return { name: s.name, logoUrl: s.logoUrl, updatedAt: s.updatedAt };
+  }
+
   /** Profil publik — hanya field aman untuk situs SPMB. */
   async getPublic() {
     const s = await this.get();

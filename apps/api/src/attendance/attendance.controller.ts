@@ -261,6 +261,7 @@ export class AttendanceController {
       Number(dto.latitude),
       Number(dto.longitude),
       file,
+      dto.platform?.toUpperCase(),
     );
   }
 

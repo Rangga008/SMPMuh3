@@ -9,7 +9,7 @@ import { navFor, type NavItem } from '@/config/nav';
 import { PERMISSIONS, type PermissionKey } from '@smpmuh3/types';
 import { ScrollKeeper } from '@/components/scroll-keeper';
 import { useConfirm } from '@/components/confirm-dialog';
-import { getSchool, getTokens, logout, me, type School } from '@/lib/api';
+import { getSchoolBranding, getTokens, logout, me, type SchoolBranding } from '@/lib/api';
 
 function NavLink({ item, active }: { item: NavItem; active: boolean }) {
   const inner = (
@@ -121,7 +121,7 @@ function NavGroup({ item, pathname }: { item: NavItem; pathname: string }) {
 /* Module-level user cache — survives client-side navigation so the Shell
  * does not re-fetch /auth/me and flash its loading state on every page. */
 let cachedUser: AuthUser | null = null;
-let cachedSchool: School | null | undefined;
+let cachedSchool: SchoolBranding | null | undefined;
 
 /** Daftar nav yang mengingat posisi scroll-nya — Shell di-mount ulang di
  * setiap halaman, jadi tanpa ini sidebar selalu melompat ke atas. */
@@ -160,7 +160,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [user, setUser] = useState<AuthUser | null>(cachedUser);
-  const [school, setSchool] = useState<School | null>(cachedSchool ?? null);
+  const [school, setSchool] = useState<SchoolBranding | null>(cachedSchool ?? null);
   const [open, setOpen] = useState(false);
   const [dark, setDark] = useState(false);
   const { confirm, dialog } = useConfirm();
@@ -209,9 +209,10 @@ export function Shell({ children }: { children: ReactNode }) {
     // admin lain langsung terlihat tanpa perlu reload.
     const onFocus = () => void refresh();
     window.addEventListener('focus', onFocus);
-    // Logo/nama sekolah untuk brand sidebar.
+    // Logo/nama sekolah untuk brand sidebar — endpoint branding terbuka
+    // untuk semua role (profil penuh tetap di balik SCHOOL_READ).
     if (cachedSchool === undefined) {
-      getSchool()
+      getSchoolBranding()
         .then((s) => {
           cachedSchool = s;
           setSchool(s);

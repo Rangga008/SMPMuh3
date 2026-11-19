@@ -14,6 +14,7 @@ import {
   listEmployees,
   manualPunch,
   me,
+  rederiveAttendance,
   type DailyRow,
   type EmployeeDto,
 } from '@/lib/api';
@@ -25,7 +26,13 @@ const STATUS_TONE: Record<string, 'primary' | 'accent' | 'neutral' | 'danger'> =
   SAKIT: 'neutral',
   ALPHA: 'danger',
 };
-const SOURCE_LABEL: Record<string, string> = { SELFIE: 'Selfie', DEVICE: 'Mesin', IMPORT: 'Impor', MANUAL: 'Manual' };
+const SOURCE_LABEL: Record<string, string> = { SELFIE: 'Selfie', DEVICE: '🖐 Mesin', IMPORT: '⬆ Impor', MANUAL: '✍️ TU' };
+/** Label sumber — selfie dipecah per platform (aplikasi HP vs browser web). */
+const sourceLabel = (r: DailyRow) => {
+  if (r.source === 'SELFIE')
+    return r.client === 'APP' ? '📱 HP (aplikasi)' : r.client === 'WEB' ? '🌐 Web' : '📱 Selfie';
+  return r.source ? (SOURCE_LABEL[r.source] ?? r.source) : '—';
+};
 const fmtTime = (iso?: string | null) =>
   iso ? new Date(iso).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '—';
 
@@ -125,6 +132,23 @@ export default function AbsensiPegawaiPage() {
               </Select>
             </Field>
           </div>
+          {canManage ? (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              title="Hitung ulang rekap semua hari dari log mentah — dipakai setelah jadwal/shift diubah"
+              onClick={async () => {
+                if (!window.confirm('Hitung ulang rekap SEMUA tanggal dari log mentah? Status izin/sakit manual tetap dipertahankan.')) return;
+                setBusy(true);
+                try {
+                  const r = await rederiveAttendance();
+                  setNotice(`${r.derived} hari-pegawai dihitung ulang.`);
+                  loadDaily();
+                } catch { setError('Gagal menghitung ulang.'); } finally { setBusy(false); }
+              }}
+            >↻ Hitung Ulang</Button>
+          ) : null}
         </div>
         <DataTable
           head={['Pegawai', 'Masuk', 'Pulang', 'Status', 'Telat', 'Sumber', canManage ? 'Aksi' : '']}
@@ -139,6 +163,11 @@ export default function AbsensiPegawaiPage() {
                   {r.employee.name}
                 </Link>
                 <p className="text-[10px] text-sand-400">{r.employee.nip ?? ''}</p>
+                {r.work ? (
+                  <p className="mt-0.5 text-[10px] text-sand-400" title={`Dasar jam kerja: ${r.work.basis}`}>
+                    {r.work.start}–{r.work.end} · {r.work.basis}
+                  </p>
+                ) : null}
               </td>
               <td className="px-5 py-2.5 font-semibold text-sand-900">{fmtTime(r.checkInAt)}</td>
               <td className="px-5 py-2.5 font-semibold text-sand-900">{fmtTime(r.checkOutAt)}</td>
@@ -154,7 +183,7 @@ export default function AbsensiPegawaiPage() {
               <td className="px-5 py-2.5 text-xs text-sand-600">
                 {r.lateMinutes ? `${r.lateMinutes} mnt` : '—'}
               </td>
-              <td className="px-5 py-2.5 text-xs text-sand-500">{r.source ? (SOURCE_LABEL[r.source] ?? r.source) : '—'}</td>
+              <td className="px-5 py-2.5 text-xs text-sand-500">{sourceLabel(r)}</td>
               {canManage ? (
                 <td className="whitespace-nowrap px-5 py-2.5">
                   <span className="flex gap-1.5">

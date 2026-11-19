@@ -189,6 +189,11 @@ export class SelfiePunchDto {
   @Type(() => Number)
   @IsNumber()
   longitude!: number;
+
+  /** Platform klien — APP (aplikasi HP) atau WEB (browser); opsional. */
+  @IsOptional()
+  @IsString()
+  platform?: string;
 }
 
 const HHMM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
