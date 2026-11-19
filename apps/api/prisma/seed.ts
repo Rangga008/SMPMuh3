@@ -71,12 +71,11 @@ const ROLES: Record<string, { name: string; description: string; permissionKeys:
   },
   kepala_sekolah: {
     name: 'Kepala Sekolah',
-    description: 'Headmaster — approves submissions, oversees all departments',
+    description: 'Headmaster — oversees all departments, read-only (lihat hasil)',
     permissionKeys: [
       PERMISSIONS.STUDENT_READ,
       PERMISSIONS.EMPLOYEE_READ,
       PERMISSIONS.ACADEMIC_READ,
-      PERMISSIONS.ACADEMIC_MANAGE,
       PERMISSIONS.ACADEMIC_YEAR_READ,
       PERMISSIONS.ATTENDANCE_READ,
       PERMISSIONS.TATAUSAHA_READ,
@@ -369,6 +368,17 @@ async function main() {
     });
     roles[key] = role;
   }
+
+  // Kepala sekolah bersifat baca-saja — cabut izin kelola yang mungkin
+  // pernah terpasang di instalasi lama (createMany hanya menambah, tidak
+  // mencabut permission yang dihapus dari definisi role).
+  await prisma.rolePermission.deleteMany({
+    where: {
+      roleId: roles['kepala_sekolah']!.id,
+      permission: { key: { in: [PERMISSIONS.ACADEMIC_MANAGE] } },
+    },
+  });
+
   const superadmin = roles['superadmin']!;
 
   // Initial admin user — credentials come from env, never hard-coded

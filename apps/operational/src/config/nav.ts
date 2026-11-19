@@ -21,8 +21,12 @@ export interface NavItem {
   children?: NavItem[];
 }
 
-/** Role pengelola tiap bidang — admin & kepsek melihat semua. */
-const ADM = ['superadmin', 'ops_admin', 'kepala_sekolah'];
+/** Role pengelola tiap bidang — admin penuh melihat semua menu bidang.
+ *  Kepala sekolah SENGAJA tidak masuk: tampilannya khusus baca-saja
+ *  (Ringkasan + Hasil & Laporan), tanpa menu kelola per bidang. */
+const ADM = ['superadmin', 'ops_admin'];
+/** Role yang melihat Ringkasan Sekolah — kepsek + admin penuh. */
+const VIEW_ALL = [...ADM, 'kepala_sekolah'];
 export const KURIKULUM_ROLES = [...ADM, 'staff_kurikulum', 'guru_mapel'];
 const KESISWAAN_ROLES = [...ADM, 'staff_kesiswaan'];
 const TU_ROLES = [...ADM, 'kepala_tu', 'staff_tu', 'staff_sarpras'];
@@ -32,6 +36,14 @@ const SPMB_ROLES = [...ADM, 'spmb_admin'];
 
 export const NAV: NavItem[] = [
   { key: 'dashboard', label: 'Dashboard', icon: '⌂', href: '/', enabled: true },
+  {
+    key: 'ringkasan',
+    label: 'Ringkasan Sekolah',
+    icon: '📊',
+    href: '/ringkasan',
+    roles: VIEW_ALL,
+    enabled: true,
+  },
   {
     key: 'absen-saya',
     label: 'Absen Saya',
@@ -431,6 +443,71 @@ export const NAV: NavItem[] = [
       },
     ],
     enabled: true,
+  },
+  {
+    key: 'hasil-laporan',
+    label: 'Hasil & Laporan',
+    icon: '📑',
+    roles: ['kepala_sekolah'],
+    enabled: true,
+    children: [
+      {
+        key: 'lap-absensi-siswa',
+        label: 'Absensi Siswa',
+        icon: '✅',
+        href: '/kesiswaan/absensi',
+        permission: PERMISSIONS.ATTENDANCE_READ,
+        enabled: true,
+      },
+      {
+        key: 'lap-absensi-pegawai',
+        label: 'Absensi Pegawai',
+        icon: '🗂',
+        href: '/tata-usaha/absensi',
+        permission: PERMISSIONS.TATAUSAHA_READ,
+        enabled: true,
+      },
+      {
+        key: 'lap-ledger',
+        label: 'Ledger & Rekap Nilai',
+        icon: '📊',
+        href: '/kurikulum/ledger',
+        permission: PERMISSIONS.ACADEMIC_READ,
+        enabled: true,
+      },
+      {
+        key: 'lap-keuangan',
+        label: 'Laporan Keuangan',
+        icon: '💰',
+        href: '/keuangan/laporan',
+        permission: PERMISSIONS.FINANCE_READ,
+        enabled: true,
+      },
+      {
+        key: 'lap-payroll',
+        label: 'Gaji & Honor',
+        icon: '💵',
+        href: '/keuangan/payroll',
+        permission: PERMISSIONS.PAYROLL_READ,
+        enabled: true,
+      },
+      {
+        key: 'lap-spmb',
+        label: 'Pendaftar SPMB',
+        icon: '📋',
+        href: '/spmb',
+        permission: PERMISSIONS.SPMB_REGISTRATION_READ,
+        enabled: true,
+      },
+      {
+        key: 'lap-buku-induk',
+        label: 'Buku Induk Siswa',
+        icon: '📕',
+        href: '/tata-usaha/buku-induk',
+        permission: PERMISSIONS.STUDENT_READ,
+        enabled: true,
+      },
+    ],
   },
   {
     key: 'cbt',

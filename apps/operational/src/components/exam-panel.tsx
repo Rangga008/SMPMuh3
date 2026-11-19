@@ -11,10 +11,9 @@ import { useConfirm } from '@/components/confirm-dialog';
 import { usePermission } from '@/lib/use-permission';
 import { PERMISSIONS } from '@smpmuh3/types';
 import { ApiError, downloadFile, listClasses, type ClassView } from '@/lib/api';
-import { richHtml } from '@/lib/math';
 import {
   examAnalysis, examAnswersMatrix, examMonitor,
-  examQuestions, examResults, exportExamResults, getExam, getExamPassages, listMonitorExams, regenerateExamCode,
+  examResults, exportExamResults, getExam, listMonitorExams, regenerateExamCode,
   updateExam, updateExamGrade,
   type ExamQuestion, type ExamView, type ItemAnalysis, type MonitorClass,
 } from '@/lib/api-ops';
@@ -45,17 +44,14 @@ export function ExamPanel({ id, embedded = false }: { id: string; embedded?: boo
   const [exam, setExam] = useState<ExamView | null>(null);
   const [monitorOnly, setMonitorOnly] = useState(false);
   const [classes, setClasses] = useState<ClassView[]>([]);
-  const [tab, setTab] = useState<'monitor' | 'soal' | 'hasil'>('monitor');
+  const [tab, setTab] = useState<'monitor' | 'hasil'>('monitor');
   const [monitor, setMonitor] = useState<{ examId: string; classes: MonitorClass[] } | null>(null);
-  const [questions, setQuestions] = useState<ExamQuestion[]>([]);
-  const [passages, setPassages] = useState<{ id: string; code: string; content: string }[]>([]);
   const [results, setResults] = useState<Awaited<ReturnType<typeof examResults>> | null>(null);
   const [analysis, setAnalysis] = useState<{ questions: ItemAnalysis[]; easiest: ItemAnalysis[]; hardest: ItemAnalysis[] } | null>(null);
   const [matrix, setMatrix] = useState<Awaited<ReturnType<typeof examAnswersMatrix>> | null>(null);
   const [matrices, setMatrices] = useState<Record<string, Awaited<ReturnType<typeof examAnswersMatrix>>>>({});
   const [resClass, setResClass] = useState('');
   const [resJenjang, setResJenjang] = useState('');
-  const [qSearch, setQSearch] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [modalErr, setModalErr] = useState<string | null>(null);
@@ -93,9 +89,6 @@ export function ExamPanel({ id, embedded = false }: { id: string; embedded?: boo
   const loadTab = useCallback(() => {
     if (tab === 'monitor' && (canMonitor || canManage)) {
       examMonitor(id).then(setMonitor).catch(() => setMonitor(null));
-    } else if (tab === 'soal') {
-      examQuestions(id).then(setQuestions).catch((e) => setError(e instanceof ApiError ? e.message : 'Gagal memuat soal.'));
-      getExamPassages(id).then(setPassages).catch(() => {});
     } else if (tab === 'hasil') {
       examResults(id, resClass || undefined).then(setResults).catch((e) => setError(e instanceof ApiError ? e.message : 'Gagal memuat hasil.'));
       examAnalysis(id, resClass || undefined).then(setAnalysis).catch(() => setAnalysis(null));
@@ -184,7 +177,7 @@ export function ExamPanel({ id, embedded = false }: { id: string; embedded?: boo
   const done = exam?.attempts?.filter((a) => a.status === 'SUBMITTED').length ?? 0;
   const total = exam?.attempts?.length ?? 0;
   const TABS = [
-    ['monitor', '📺 Monitor'], ['soal', '📝 Soal'], ['hasil', '📊 Hasil & Analisis'],
+    ['monitor', '📺 Monitor'], ['hasil', '📊 Hasil & Analisis'],
   ] as const;
 
   const keyText = (q: ExamQuestion | ItemAnalysis) => {
@@ -296,105 +289,6 @@ export function ExamPanel({ id, embedded = false }: { id: string; embedded?: boo
                   ))}
                 </div>
               )}
-            </Widget>
-          )}
-
-          {/* ---------- SOAL ---------- */}
-          {tab === 'soal' && (
-            <Widget title={`Butir Soal — ${questions.length}`}
-              subtitle="Tipe: Pilihan Ganda · PG Kompleks · Benar/Salah · B-S Kompleks."
-              action={examManage ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[11px] text-sand-400">Soal milik ujian ini</span>
-                  <Link
-                    href={`/kurikulum/asesmen/${exam.assessment.id}?tab=soal`}
-                    className="rounded-lg bg-primary-700 px-3 py-2 text-xs font-bold text-white transition hover:bg-primary-800"
-                  >
-                    Kelola Soal · Import · Bacaan →
-                  </Link>
-                </div>
-              ) : undefined}>
-              {passages.length ? (
-                <details className="border-b border-sand-100 bg-primary-50/40 px-5 py-3">
-                  <summary className="cursor-pointer text-xs font-bold text-primary-700">📖 {passages.length} bacaan — {passages.map((p) => p.code).join(', ')}</summary>
-                  <div className="mt-2 space-y-2">
-                    {passages.map((p) => (
-                      <div key={p.id} className="rounded-xl border border-sand-200 bg-white p-3">
-                        <p className="mb-1 text-[10px] font-black uppercase tracking-wider text-primary-600">Bacaan {p.code}</p>
-                        <div className="rich-html text-xs text-sand-700 [&_img]:max-h-40 [&_img]:rounded-lg" dangerouslySetInnerHTML={{ __html: richHtml(p.content) }} />
-                      </div>
-                    ))}
-                  </div>
-                </details>
-              ) : null}
-              {!questions.length ? (
-                <p className="p-5 text-sm text-sand-400">Belum ada soal — klik <b>Kelola Soal</b> di atas untuk menambah/mengimpor soal ujian ini (gambar &amp; rumus ikut terbawa).</p>
-              ) : (() => {
-                const q = qSearch.toLowerCase();
-                const shown = questions.filter((x) =>
-                  !q || String(x.number) === qSearch.trim() ||
-                  (x.prompt ?? '').toLowerCase().includes(q) ||
-                  (TYPE_LABEL[x.type] ?? x.type).toLowerCase().includes(q));
-                return (
-                <>
-                <div className="flex items-center gap-2 border-b border-sand-100 px-4 py-3">
-                  <Input value={qSearch} onChange={(e) => setQSearch(e.target.value)} placeholder="Cari no / teks / tipe soal…" className="w-64" />
-                  <p className="ml-auto text-xs text-sand-500">{shown.length} soal{qSearch ? ` (dari ${questions.length})` : ''}</p>
-                </div>
-                {!shown.length ? (
-                  <p className="p-5 text-sm text-sand-400">Tidak ada soal yang cocok dengan pencarian.</p>
-                ) : (
-                <div className="divide-y divide-sand-100">
-                  {shown.map((q) => (
-                    <div key={q.id} className="flex items-start gap-3 px-5 py-3.5">
-                      <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-xs font-black text-primary-700">{q.number}</span>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Badge tone="neutral">{TYPE_LABEL[q.type] ?? q.type}</Badge>
-                          <span className="text-[11px] text-sand-400">bobot {q.weight}</span>
-                          {q.passageCode ? <Badge tone="accent">📖 {q.passageCode}</Badge> : null}
-                          <span className="text-[11px] font-semibold text-emerald-700">{keyText(q)}</span>
-                        </div>
-                        {q.prompt && (/<[a-zA-Z]/.test(q.prompt) || /\$[^$\n]+\$/.test(q.prompt)) ? (
-                          <div className="rich-html mt-1 text-sm text-sand-800 [&_img]:max-h-40 [&_img]:rounded-lg" dangerouslySetInnerHTML={{ __html: richHtml(q.prompt) }} />
-                        ) : (
-                          <p className="mt-1 text-sm text-sand-800">{q.prompt}</p>
-                        )}
-                        {(() => {
-                          const o = (q.options ?? {}) as { choices?: string[]; statements?: string[] };
-                          if (o.choices?.length) return (
-                            <ul className="mt-1 space-y-0.5 text-xs text-sand-500">
-                              {o.choices.map((c, i) => {
-                                const isKey = q.type === 'MCQ' ? q.key === i : Array.isArray(q.key) && (q.key as number[]).includes(i);
-                                return <li key={i} className={isKey ? 'font-bold text-emerald-700' : ''}>{'ABCDE'[i]}. <span dangerouslySetInnerHTML={{ __html: richHtml(c) }} />{isKey ? ' ✓' : ''}</li>;
-                              })}
-                            </ul>
-                          );
-                          if (o.statements?.length) return (
-                            <ul className="mt-1 space-y-0.5 text-xs text-sand-500">
-                              {o.statements.map((st, i) => (
-                                <li key={i}>• <span dangerouslySetInnerHTML={{ __html: richHtml(st) }} /> <b className={Array.isArray(q.key) && (q.key as boolean[])[i] ? 'text-emerald-700' : 'text-red-600'}>({Array.isArray(q.key) && (q.key as boolean[])[i] ? 'B' : 'S'})</b></li>
-                              ))}
-                            </ul>
-                          );
-                          return null;
-                        })()}
-                      </div>
-                      {examManage ? (
-                        <Link
-                          href={`/kurikulum/asesmen/${exam.assessment.id}?tab=soal`}
-                          className="shrink-0 rounded-lg bg-sand-100 px-2.5 py-1.5 text-xs font-bold text-sand-700 hover:bg-sand-200"
-                        >
-                          Edit →
-                        </Link>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-                )}
-                </>
-                );
-              })()}
             </Widget>
           )}
 
