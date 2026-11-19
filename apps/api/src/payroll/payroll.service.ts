@@ -20,6 +20,7 @@ import type {
   PayScaleDto,
   UpdateLoanDto,
   UpdatePayrollItemDto,
+  UpdatePayrollRunDto,
   UpdatePayScaleDto,
 } from './dto/payroll.dto';
 
@@ -1023,16 +1024,13 @@ export class PayrollService {
     return items.length;
   }
 
-  async createRun(dto: CreatePayrollRunDto, actorId: string) {
-    this.assertMonth(dto.month);
-    const existing = await this.prisma.payrollRun.findUnique({ where: { month: dto.month } });
-    if (existing) throw new ConflictException(`Run ${dto.month} sudah ada (status ${existing.status})`);
-
-    // Periode absen: eksplisit dari request, atau otomatis dari siklus pengaturan
-    // (startDay bulan SEBELUMNYA → endDay bulan tagihan; startDay ≤ endDay → bulan sama).
-    const [y, m] = dto.month.split('-').map(Number);
-    let periodStart = dto.periodStart ? parseDay(dto.periodStart) : null;
-    let periodEnd = dto.periodEnd ? parseDay(dto.periodEnd) : null;
+  /** Tentukan periode absen — eksplisit dari parameter, atau otomatis dari
+      siklus pengaturan (startDay bulan SEBELUMNYA → endDay bulan tagihan;
+      startDay ≤ endDay → bulan sama). Sisi kosong diisi dari siklus. */
+  private async resolvePeriod(month: string, start?: string, end?: string) {
+    const [y, m] = month.split('-').map(Number);
+    let periodStart = start ? parseDay(start) : null;
+    let periodEnd = end ? parseDay(end) : null;
     if (!periodStart || !periodEnd) {
       const st = await this.getPayrollSettings();
       const sDay = st.periodStartDay, eDay = st.periodEndDay;
@@ -1040,13 +1038,22 @@ export class PayrollService {
       periodStart ??= clampDay(startMonth < 1 ? (y ?? 1970) - 1 : y ?? 1970, ((startMonth - 1 + 12) % 12) + 1, sDay);
       periodEnd ??= clampDay(y ?? 1970, m ?? 1, eDay);
     }
-    if (periodEnd <= periodStart) {
+    if (periodEnd! <= periodStart!) {
       throw new BadRequestException('Akhir periode harus setelah awal periode.');
     }
-    const spanDays = Math.round((periodEnd.getTime() - periodStart.getTime()) / 86400000) + 1;
+    const spanDays = Math.round((periodEnd!.getTime() - periodStart!.getTime()) / 86400000) + 1;
     if (spanDays > 45) {
       throw new BadRequestException(`Periode ${spanDays} hari terlalu panjang — maksimal 45 hari.`);
     }
+    return { periodStart: periodStart!, periodEnd: periodEnd! };
+  }
+
+  async createRun(dto: CreatePayrollRunDto, actorId: string) {
+    this.assertMonth(dto.month);
+    const existing = await this.prisma.payrollRun.findUnique({ where: { month: dto.month } });
+    if (existing) throw new ConflictException(`Run ${dto.month} sudah ada (status ${existing.status})`);
+
+    const { periodStart, periodEnd } = await this.resolvePeriod(dto.month, dto.periodStart, dto.periodEnd);
 
     const run = await this.prisma.$transaction(async (tx) => {
       const r = await tx.payrollRun.create({
@@ -1065,6 +1072,46 @@ export class PayrollService {
     });
     await this.audit.log({ actorId, action: 'payroll.run.create', entity: 'payroll_run', entityId: run.id, metadata: { month: dto.month } });
     return this.getRun(run.id);
+  }
+
+  /** Ubah parameter run DRAFT (bulan/periode/minggu/catatan) lalu hitung ulang
+      item — ganti bulan tanpa tanggal baru → periode dihitung ulang dari siklus. */
+  async updateRun(id: string, dto: UpdatePayrollRunDto, actorId: string) {
+    const run = await this.prisma.payrollRun.findUnique({ where: { id } });
+    if (!run) throw new NotFoundException('Run tidak ditemukan');
+    if (run.status !== 'DRAFT') {
+      throw new ConflictException(`Run berstatus ${run.status} tidak bisa diubah — buka kembali (reopen) ke Draft dulu.`);
+    }
+    if (dto.month) this.assertMonth(dto.month);
+    const month = dto.month ?? run.month;
+    const monthChanged = month !== run.month;
+    if (monthChanged) {
+      const dup = await this.prisma.payrollRun.findUnique({ where: { month } });
+      if (dup) throw new ConflictException(`Run ${month} sudah ada (status ${dup.status})`);
+    }
+    const { periodStart, periodEnd } = await this.resolvePeriod(
+      month,
+      dto.periodStart ?? (monthChanged ? undefined : run.periodStart?.toISOString().slice(0, 10)),
+      dto.periodEnd ?? (monthChanged ? undefined : run.periodEnd?.toISOString().slice(0, 10)),
+    );
+    await this.prisma.$transaction(async (tx) => {
+      await tx.payrollRun.update({
+        where: { id },
+        data: {
+          month,
+          periodStart,
+          periodEnd,
+          ...(dto.weeks !== undefined ? { weeks: dto.weeks } : {}),
+          ...(dto.note !== undefined ? { note: dto.note || null } : {}),
+        },
+      });
+      await this.computeItems(tx, id);
+    });
+    await this.audit.log({
+      actorId, action: 'payroll.run.update', entity: 'payroll_run', entityId: id,
+      metadata: { month, periodStart, periodEnd },
+    });
+    return this.getRun(id);
   }
 
   async recomputeRun(id: string, actorId: string) {

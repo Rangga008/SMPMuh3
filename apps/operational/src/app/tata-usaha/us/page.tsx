@@ -1,10 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { DataTable } from '@/components/data-table';
-import { PageTitle, StatCard } from '@/components/widgets';
+import { PageTitle, StatCard, Widget } from '@/components/widgets';
 import {
   createExamRecord,
   deleteExamRecord,
@@ -15,7 +15,19 @@ import {
   type AcademicYear,
   type ExamRecord,
 } from '@/lib/api';
-import { getUsCandidates } from '@/lib/api-ops';
+import {
+  createGraduationCategory,
+  deleteGraduationCategory,
+  getUsCandidates,
+  listGraduationCategories,
+  updateGraduation,
+  updateGraduationCategory,
+  type GraduationCategory,
+  type UsCandidate,
+  type UsCandidates,
+} from '@/lib/api-ops';
+import { PERMISSIONS } from '@smpmuh3/types';
+import { me } from '@/lib/api';
 
 import { RowBtn } from '@/components/row-btn';
 import { useConfirm } from '@/components/confirm-dialog';
@@ -24,6 +36,9 @@ const RESULT: Record<ExamRecord['result'], { label: string; tone: 'primary' | 'a
   PASSED: { label: 'Lulus', tone: 'primary' },
   FAILED: { label: 'Tidak Lulus', tone: 'danger' },
 };
+
+const fmtDate = (d?: string | null) =>
+  d ? new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
 
 export default function UsPage() {
   const { confirm, dialog } = useConfirm();
@@ -40,6 +55,13 @@ export default function UsPage() {
   const [docGrade, setDocGrade] = useState<number>(9);
   const [docBusy, setDocBusy] = useState(false);
   const [gradeOpts, setGradeOpts] = useState<number[]>([7, 8, 9]);
+  // Data administrasi siswa (kandidat US) — tabel + edit + kategori pasca-lulus.
+  const [usData, setUsData] = useState<UsCandidates | null>(null);
+  const [usLoading, setUsLoading] = useState(false);
+  const [canManage, setCanManage] = useState(false);
+  const [categories, setCategories] = useState<GraduationCategory[]>([]);
+  const [editStu, setEditStu] = useState<(UsCandidate & { rombel: string }) | null>(null);
+  const [catModal, setCatModal] = useState(false);
 
   useEffect(() => {
     listAcademicYears()
@@ -60,24 +82,41 @@ export default function UsPage() {
     }).catch(() => {});
   }, [yearId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    me().then((u) => setCanManage(u.permissions.includes(PERMISSIONS.STUDENT_MANAGE))).catch(() => undefined);
+    listGraduationCategories().then(setCategories).catch(() => undefined);
+  }, []);
+
+  const loadUs = useCallback(() => {
+    if (!yearId) return;
+    setUsLoading(true);
+    getUsCandidates(yearId, docGrade)
+      .then(setUsData)
+      .catch(() => setError('Gagal memuat data siswa.'))
+      .finally(() => setUsLoading(false));
+  }, [yearId, docGrade]);
+
+  useEffect(() => { loadUs(); }, [loadUs]);
+
   const KOP_CSS = `
-    body{font-family:'Times New Roman',serif;color:#111;margin:18px;font-size:12pt}
+    body{font-family:'Times New Roman',serif;color:#111;margin:14px;font-size:11pt}
     .kop{display:flex;align-items:center;gap:14px;border-bottom:3px double #111;padding-bottom:8px;margin-bottom:10px}
-    .kop img{height:64px}
+    .kop img{height:60px}
     .kop .mid{flex:1;text-align:center}
-    .kop .yayasan{font-size:11pt}.kop .nama{font-size:16pt;font-weight:800;color:#0f3a63}
-    .kop .alamat{font-size:10pt}
-    .kop .kanan{text-align:right;font-size:9.5pt;line-height:1.4}
-    h1{text-align:center;font-size:13.5pt;margin:10px 0 2px;text-decoration:underline}
-    h2{text-align:center;font-size:11.5pt;margin:0 0 12px;font-weight:400}
-    table.us{width:100%;border-collapse:collapse;font-size:10.5pt;margin-bottom:18px}
-    .us th,.us td{border:1px solid #111;padding:4px 6px}
+    .kop .yayasan{font-size:10.5pt}.kop .nama{font-size:15pt;font-weight:800;color:#0f3a63}
+    .kop .alamat{font-size:9.5pt}
+    .kop .kanan{text-align:right;font-size:9pt;line-height:1.4}
+    h1{text-align:center;font-size:13pt;margin:8px 0 2px;text-decoration:underline}
+    h2{text-align:center;font-size:11pt;margin:0 0 10px;font-weight:400}
+    table.us{width:100%;border-collapse:collapse;font-size:8.2pt;margin-bottom:16px}
+    .us th,.us td{border:1px solid #111;padding:3px 4px;vertical-align:top}
     .us th{background:#eee;text-align:center}
-    .kelas{font-weight:800;font-size:12pt;margin:14px 0 4px}
-    .ttd{display:flex;justify-content:space-between;margin-top:22px;font-size:11pt}
+    .us td.c{text-align:center}
+    .kelas{font-weight:800;font-size:11pt;margin:12px 0 4px}
+    .ttd{display:flex;justify-content:space-between;margin-top:20px;font-size:10.5pt}
     .ttd div{text-align:center;width:230px}
-    .ttd .nm{margin-top:64px;text-decoration:underline;font-weight:700}
-    @page{size:A4;margin:12mm}
+    .ttd .nm{margin-top:60px;text-decoration:underline;font-weight:700}
+    @page{size:A4 landscape;margin:10mm}
     @media print{.kelas,.us{page-break-inside:avoid} h1{page-break-after:avoid}}
   `;
   const kop = (school: { name?: string; logoUrl?: string | null; npsn?: string | null; address?: string | null } | null) => `
@@ -91,8 +130,6 @@ export default function UsPage() {
       <div class="kanan">NPSN<br>${school?.npsn ?? '—'}</div>
     </div>`;
   const esc = (v?: string | null) => (v ?? '—').replace(/</g, '&lt;');
-  const ttl = (p?: string | null, d?: string | null) =>
-    [p, d ? new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : null].filter(Boolean).join(', ') || '—';
 
   async function printUs(kind: 'us1' | 'us2') {
     if (!yearId) return;
@@ -109,13 +146,22 @@ export default function UsPage() {
           d.classes.map((c) => `
             <p class="kelas">Rombel: ${c.name} &nbsp;·&nbsp; Wali Kelas: ${c.homeroom ?? '—'}</p>
             <table class="us"><thead><tr>
-              <th style="width:26px">No</th><th>NISN</th><th>NIS</th><th>Nama Peserta</th>
-              <th style="width:30px">L/P</th><th>Tempat, Tgl Lahir</th><th>Nama Orang Tua/Wali</th>
+              <th style="width:22px">No</th><th>NISN</th><th>NIS</th><th>Nama Peserta</th>
+              <th style="width:24px">L/P</th><th>Rombel</th><th>Agama</th><th>Nama Orang Tua/Wali</th>
+              <th>Tempat Lahir</th><th>Tgl Lahir</th><th style="width:30px">Absen</th>
+              <th>Token / Kode</th><th>No. Ijazah</th>
+              <th style="width:52px">TA Kls 7</th><th style="width:52px">TA Kls 8</th><th style="width:52px">TA Kls 9</th>
             </tr></thead><tbody>
             ${c.students.map((s, i) => `<tr>
-              <td style="text-align:center">${i + 1}</td><td>${esc(s.nisn)}</td><td>${esc(s.nis)}</td>
-              <td>${esc(s.name)}</td><td style="text-align:center">${s.gender === 'MALE' ? 'L' : s.gender === 'FEMALE' ? 'P' : '—'}</td>
-              <td>${ttl(s.birthPlace, s.birthDate)}</td><td>${esc(s.fatherName ?? s.parent?.name ?? s.motherName)}</td>
+              <td class="c">${i + 1}</td><td>${esc(s.nisn)}</td><td>${esc(s.nis)}</td>
+              <td>${esc(s.name)}</td><td class="c">${s.gender === 'MALE' ? 'L' : s.gender === 'FEMALE' ? 'P' : '—'}</td>
+              <td class="c">${esc(c.name)}</td><td class="c">${esc(s.agama)}</td>
+              <td>${esc(s.fatherName ?? s.parent?.name ?? s.motherName)}</td>
+              <td>${esc(s.birthPlace)}</td><td>${s.birthDate ? esc(new Date(s.birthDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })) : '—'}</td>
+              <td class="c">${s.absenceNo ?? '—'}</td>
+              <td>${[s.password, s.examCode].filter(Boolean).map(esc).join('<br>') || '—'}</td>
+              <td>${esc(s.diplomaNo)}</td>
+              <td class="c">${esc(s.rapor?.[7])}</td><td class="c">${esc(s.rapor?.[8])}</td><td class="c">${esc(s.rapor?.[9])}</td>
             </tr>`).join('')}
             </tbody></table>`).join('') +
           `<div class="ttd"><div>Mengetahui,<br>Kepala Sekolah<div class="nm">${school?.headmaster ?? '(………………………)'}</div>NIP/NUPTK. ${school?.headmasterNip ?? '……………'}</div>
@@ -234,7 +280,89 @@ export default function UsPage() {
         </Field>
         <Button size="sm" variant="outline" onClick={() => void printUs('us1')} disabled={docBusy || !yearId}>🖨 Cetak US-1</Button>
         <Button size="sm" variant="outline" onClick={() => void printUs('us2')} disabled={docBusy || !yearId}>🖨 Cetak US-2</Button>
+        <span className="grow" />
+        {canManage ? (
+          <Button size="sm" variant="outline" onClick={() => setCatModal(true)}>⚙ Kategori Kelanjutan</Button>
+        ) : null}
       </div>
+
+      {/* Data administrasi siswa kelas 9 — sesuai kolom buku induk US:
+          NISN, NIS, Nama, L/P, Rombel, Agama, Ortu, TTL, Absen, Token/Kode,
+          No Ijazah, TA rapor 7/8/9, status ijazah & transkrip, kelanjutan. */}
+      <Widget title={`Data Siswa Kelas ${docGrade} — ${usData ? `${usData.classes.reduce((a, c) => a + c.total, 0)} siswa` : '…'}`}>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1450px] text-sm">
+            <thead>
+              <tr className="border-b border-sand-200 text-left text-[11px] uppercase tracking-wide text-sand-500">
+                <th className="px-2 py-2">No</th><th className="px-2 py-2">NISN</th><th className="px-2 py-2">NIS</th>
+                <th className="px-2 py-2">Nama</th><th className="px-2 py-2">L/P</th><th className="px-2 py-2">Rombel</th>
+                <th className="px-2 py-2">Agama</th><th className="px-2 py-2">Orang Tua</th>
+                <th className="px-2 py-2">Tempat Lahir</th><th className="px-2 py-2">Tgl Lahir</th>
+                <th className="px-2 py-2">Absen</th><th className="px-2 py-2">Token/Kode</th>
+                <th className="px-2 py-2">No. Ijazah</th>
+                <th className="px-2 py-2" title="Tahun rapor kelas 7">TA7</th>
+                <th className="px-2 py-2" title="Tahun rapor kelas 8">TA8</th>
+                <th className="px-2 py-2" title="Tahun rapor kelas 9">TA9</th>
+                <th className="px-2 py-2">Ijazah</th><th className="px-2 py-2">Transkrip</th>
+                <th className="px-2 py-2">Kelanjutan</th><th className="px-2 py-2" />
+              </tr>
+            </thead>
+            <tbody>
+              {usLoading ? (
+                <tr><td colSpan={20} className="px-3 py-6 text-center text-sand-400">Memuat data siswa…</td></tr>
+              ) : !usData?.classes.some((c) => c.students.length) ? (
+                <tr><td colSpan={20} className="px-3 py-6 text-center text-sand-400">Belum ada siswa di jenjang ini.</td></tr>
+              ) : (
+                usData.classes.map((c) => (
+                  <Fragment key={c.id}>
+                    <tr className="bg-sand-50">
+                      <td colSpan={20} className="px-3 py-2 text-xs font-bold text-sand-700">
+                        Rombel {c.name} · Wali: {c.homeroom ?? '—'} · {c.total} siswa
+                      </td>
+                    </tr>
+                    {c.students.map((s, i) => (
+                      <tr key={s.id} className="border-b border-sand-100 hover:bg-sand-50/60">
+                        <td className="px-2 py-2 text-sand-500">{i + 1}</td>
+                        <td className="px-2 py-2 font-mono text-xs">{s.nisn ?? '—'}</td>
+                        <td className="px-2 py-2 font-mono text-xs">{s.nis ?? '—'}</td>
+                        <td className="px-2 py-2 font-semibold text-sand-900">{s.name}</td>
+                        <td className="px-2 py-2 text-center">{s.gender === 'MALE' ? 'L' : s.gender === 'FEMALE' ? 'P' : '—'}</td>
+                        <td className="px-2 py-2">{c.name}</td>
+                        <td className="px-2 py-2">{s.agama ?? '—'}</td>
+                        <td className="px-2 py-2 text-xs">{s.fatherName ?? s.parent?.name ?? s.motherName ?? '—'}</td>
+                        <td className="px-2 py-2 text-xs">{s.birthPlace ?? '—'}</td>
+                        <td className="px-2 py-2 text-xs">{fmtDate(s.birthDate)}</td>
+                        <td className="px-2 py-2 text-center font-bold">{s.absenceNo ?? '—'}</td>
+                        <td className="px-2 py-2 font-mono text-[11px]">{[s.password, s.examCode].filter(Boolean).join(' / ') || '—'}</td>
+                        <td className="px-2 py-2 font-mono text-xs">{s.diplomaNo ?? '—'}</td>
+                        <td className="px-2 py-2 text-center text-[11px]">{s.rapor?.[7] ?? '—'}</td>
+                        <td className="px-2 py-2 text-center text-[11px]">{s.rapor?.[8] ?? '—'}</td>
+                        <td className="px-2 py-2 text-center text-[11px]">{s.rapor?.[9] ?? '—'}</td>
+                        <td className="px-2 py-2 text-center">
+                          {s.ijazahTakenAt ? <Badge tone="primary">✓ {fmtDate(s.ijazahTakenAt)}</Badge> : <Badge tone="neutral">Belum</Badge>}
+                        </td>
+                        <td className="px-2 py-2 text-center">
+                          {s.transcriptTakenAt ? <Badge tone="primary">✓ {fmtDate(s.transcriptTakenAt)}</Badge> : <Badge tone="neutral">Belum</Badge>}
+                        </td>
+                        <td className="px-2 py-2 text-xs">
+                          {s.continuation ? (
+                            <span><Badge tone="accent">{s.continuation.name}</Badge>{s.continuationDetail ? <p className="mt-0.5 text-[10px] text-sand-500">{s.continuationDetail}</p> : null}</span>
+                          ) : '—'}
+                        </td>
+                        <td className="px-2 py-2 text-right">
+                          {canManage ? (
+                            <RowBtn type="button" onClick={() => setEditStu({ ...s, rombel: c.name })}>Edit</RowBtn>
+                          ) : null}
+                        </td>
+                      </tr>
+                    ))}
+                  </Fragment>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Widget>
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="flex rounded-xl border border-sand-200 bg-white p-1 shadow-sm">
@@ -333,6 +461,124 @@ export default function UsPage() {
             <Button type="submit" disabled={busy}>{busy ? 'Menyimpan…' : 'Simpan'}</Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Modal edit administrasi siswa — absen, ijazah/transkrip, kelanjutan. */}
+      <Modal open={!!editStu} onClose={() => setEditStu(null)} title={`Administrasi — ${editStu?.name ?? ''}`} size="md">
+        {editStu ? (
+          <form
+            className="grid gap-3"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const fd = new FormData(e.currentTarget);
+              setBusy(true);
+              try {
+                await updateGraduation(editStu.id, {
+                  academicYearId: yearId,
+                  absenceNo: fd.get('absenceNo') ? Number(fd.get('absenceNo')) : null,
+                  diplomaNo: String(fd.get('diplomaNo') || '').trim() || null,
+                  ijazahTaken: fd.get('ijazahTaken') === 'on',
+                  transcriptTaken: fd.get('transcriptTaken') === 'on',
+                  continuationId: String(fd.get('continuationId') || '') || null,
+                  continuationDetail: String(fd.get('continuationDetail') || '').trim() || null,
+                });
+                setNotice(`Data ${editStu.name} disimpan.`);
+                setEditStu(null);
+                loadUs();
+              } catch {
+                setError('Gagal menyimpan data.');
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            <p className="text-xs text-sand-500">{editStu.rombel} · NISN {editStu.nisn ?? '—'}</p>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="No. Absen">
+                <Input name="absenceNo" type="number" min={1} defaultValue={editStu.absenceNo ?? ''} />
+              </Field>
+              <Field label="No. Ijazah">
+                <Input name="diplomaNo" defaultValue={editStu.diplomaNo ?? ''} />
+              </Field>
+            </div>
+            <Field label="Kelanjutan (melanjutkan / bekerja / dll)">
+              <Select name="continuationId" defaultValue={editStu.continuation?.id ?? ''}>
+                <option value="">— Belum diatur —</option>
+                {categories.filter((c) => c.isActive).map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Keterangan kelanjutan (nama sekolah / tempat kerja)">
+              <Input name="continuationDetail" defaultValue={editStu.continuationDetail ?? ''} placeholder="mis. SMAN 5 Bandung" />
+            </Field>
+            <div className="flex flex-wrap gap-5 rounded-lg border border-sand-200 p-3">
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" name="ijazahTaken" defaultChecked={!!editStu.ijazahTakenAt} />
+                Ijazah sudah diambil{editStu.ijazahTakenAt ? ` (${fmtDate(editStu.ijazahTakenAt)})` : ''}
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" name="transcriptTaken" defaultChecked={!!editStu.transcriptTakenAt} />
+                Transkrip sudah diambil{editStu.transcriptTakenAt ? ` (${fmtDate(editStu.transcriptTakenAt)})` : ''}
+              </label>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={() => setEditStu(null)}>Batal</Button>
+              <Button type="submit" disabled={busy}>{busy ? 'Menyimpan…' : 'Simpan'}</Button>
+            </div>
+          </form>
+        ) : null}
+      </Modal>
+
+      {/* Modal kelola kategori kelanjutan pasca-lulus. */}
+      <Modal open={catModal} onClose={() => setCatModal(false)} title="Kategori Kelanjutan Pasca-Lulus" size="md">
+        <div className="grid gap-3">
+          <ul className="grid gap-2">
+            {categories.map((c) => (
+              <li key={c.id} className="flex items-center gap-2 rounded-lg border border-sand-200 px-3 py-2">
+                <span className={`grow text-sm ${c.isActive ? '' : 'text-sand-400 line-through'}`}>{c.name}</span>
+                <RowBtn
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const u = await updateGraduationCategory(c.id, { isActive: !c.isActive });
+                      setCategories((cs) => cs.map((x) => (x.id === u.id ? u : x)));
+                    } catch { setError('Gagal mengubah kategori.'); }
+                  }}
+                >{c.isActive ? 'Nonaktifkan' : 'Aktifkan'}</RowBtn>
+                <RowBtn
+                  type="button" tone="danger"
+                  onClick={async () => {
+                    if (!(await confirm(`Hapus kategori "${c.name}"? Siswa yang memakainya akan dikosongkan.`))) return;
+                    try {
+                      await deleteGraduationCategory(c.id);
+                      setCategories((cs) => cs.filter((x) => x.id !== c.id));
+                    } catch { setError('Gagal menghapus kategori.'); }
+                  }}
+                >Hapus</RowBtn>
+              </li>
+            ))}
+            {!categories.length ? <li className="py-3 text-center text-sm text-sand-400">Belum ada kategori.</li> : null}
+          </ul>
+          <form
+            className="flex gap-2"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const fd = new FormData(e.currentTarget);
+              const name = String(fd.get('name') || '').trim();
+              if (!name) return;
+              setBusy(true);
+              try {
+                const c = await createGraduationCategory(name);
+                setCategories((cs) => [...cs, c]);
+                (e.target as HTMLFormElement).reset();
+              } catch { setError('Gagal menambah kategori.'); } finally { setBusy(false); }
+            }}
+          >
+            <Input name="name" placeholder="Kategori baru (mis. Bekerja)" className="grow" />
+            <Button type="submit" size="sm" disabled={busy}>Tambah</Button>
+          </form>
+        </div>
       </Modal>
           {dialog}
       </Shell>

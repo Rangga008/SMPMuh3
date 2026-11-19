@@ -357,6 +357,18 @@ export interface UsCandidate {
   gender?: string | null; birthPlace?: string | null; birthDate?: string | null;
   fatherName?: string | null; motherName?: string | null; status: string;
   parent?: { name: string } | null;
+  /** Data lengkap administrasi US kelas 9. */
+  agama?: string | null;
+  absenceNo?: number | null;
+  password?: string | null;
+  examCode?: string | null;
+  diplomaNo?: string | null;
+  ijazahTakenAt?: string | null;
+  transcriptTakenAt?: string | null;
+  continuationDetail?: string | null;
+  continuation?: { id: string; name: string } | null;
+  /** Tahun rapor per jenjang — {7:'2023/2024', 8:'2024/2025', 9:'2025/2026'}. */
+  rapor?: Record<number, string>;
 }
 export interface UsCandidates {
   school: { name: string; logoUrl?: string | null; npsn?: string | null; address?: string | null; headmaster?: string | null; headmasterNip?: string | null } | null;
@@ -365,6 +377,27 @@ export interface UsCandidates {
 }
 export const getUsCandidates = (academicYearId: string, gradeLevel?: number) =>
   req<UsCandidates>(`/ops/us/candidates?academicYearId=${academicYearId}${gradeLevel ? `&gradeLevel=${gradeLevel}` : ''}`);
+
+// ---- Kelulusan & pasca-lulus ----
+export interface GraduationCategory {
+  id: string; name: string; isActive: boolean; sortOrder: number;
+}
+export const listGraduationCategories = () =>
+  req<GraduationCategory[]>('/ops/graduation-categories');
+export const createGraduationCategory = (name: string) =>
+  req<GraduationCategory>('/ops/graduation-categories', { method: 'POST', json: { name } });
+export const updateGraduationCategory = (id: string, dto: { name?: string; isActive?: boolean; sortOrder?: number }) =>
+  req<GraduationCategory>(`/ops/graduation-categories/${id}`, { method: 'PATCH', json: dto });
+export const deleteGraduationCategory = (id: string) =>
+  req<{ deleted: boolean }>(`/ops/graduation-categories/${id}`, { method: 'DELETE' });
+export const updateGraduation = (studentId: string, dto: {
+  academicYearId?: string; absenceNo?: number | null; diplomaNo?: string | null;
+  ijazahTaken?: boolean; transcriptTaken?: boolean;
+  continuationId?: string | null; continuationDetail?: string | null;
+}) => req(`/ops/students/${studentId}/graduation`, { method: 'PATCH', json: dto });
+/** Rekap nilai format Buku Daya Serap — satu workbook semua rombel setahun. */
+export const downloadDayaSerapXlsx = (academicYearId: string, gradeLevel?: number, semester?: string) =>
+  downloadFile(`/ops/ledger/daya-serap.xlsx?academicYearId=${academicYearId}${gradeLevel ? `&gradeLevel=${gradeLevel}` : ''}${semester ? `&semester=${encodeURIComponent(semester)}` : ''}`, 'rekap-daya-serap.xlsx');
 
 export const uploadMutationLetter = (mutationId: string, file: File) => {
   const fd = new FormData(); fd.append('file', file);

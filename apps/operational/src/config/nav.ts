@@ -27,7 +27,9 @@ export interface NavItem {
 const ADM = ['superadmin', 'ops_admin'];
 /** Role yang melihat Ringkasan Sekolah — kepsek + admin penuh. */
 const VIEW_ALL = [...ADM, 'kepala_sekolah'];
-export const KURIKULUM_ROLES = [...ADM, 'staff_kurikulum', 'guru_mapel'];
+export const KURIKULUM_ROLES = [...ADM, 'staff_kurikulum'];
+/** Guru mapel punya sidebar sendiri (menu Mengajar) — bukan seluruh menu Kurikulum. */
+const GURU_ROLES = ['guru_mapel'];
 const KESISWAAN_ROLES = [...ADM, 'staff_kesiswaan'];
 const TU_ROLES = [...ADM, 'kepala_tu', 'staff_tu', 'staff_sarpras'];
 const KEUANGAN_ROLES = [...ADM, 'bendahara'];
@@ -231,6 +233,59 @@ export const NAV: NavItem[] = [
         label: 'Arsip Kurikulum',
         icon: '🗄',
         href: '/kurikulum/arsip',
+        permission: PERMISSIONS.ACADEMIC_READ,
+        enabled: true,
+      },
+    ],
+  },
+  /* Sidebar khusus guru mata pelajaran — hanya menu kerja guru
+     (jadwal, asesmen, penilaian, ledger, dokumen). Master data &
+     pengaturan kurikulum tetap milik staf kurikulum. */
+  {
+    key: 'mengajar',
+    label: 'Mengajar',
+    icon: '👩‍🏫',
+    permission: PERMISSIONS.ACADEMIC_READ,
+    roles: GURU_ROLES,
+    enabled: true,
+    children: [
+      {
+        key: 'guru-jadwal',
+        label: 'Jadwal Mengajar',
+        icon: '🗓',
+        href: '/kurikulum/jadwal-kelas',
+        permission: PERMISSIONS.ACADEMIC_READ,
+        enabled: true,
+      },
+      {
+        key: 'guru-asesmen',
+        label: 'Asesmen & Ujian',
+        icon: '📝',
+        href: '/kurikulum/asesmen',
+        permission: PERMISSIONS.ACADEMIC_READ,
+        enabled: true,
+      },
+      {
+        key: 'guru-penilaian',
+        label: 'Penilaian',
+        icon: '✍️',
+        href: '/kurikulum/penilaian',
+        permission: PERMISSIONS.ACADEMIC_READ,
+        enabled: true,
+      },
+      {
+        key: 'guru-ledger',
+        label: 'Ledger & Rekap',
+        icon: '📊',
+        href: '/kurikulum/ledger',
+        permission: PERMISSIONS.ACADEMIC_READ,
+        enabled: true,
+      },
+      {
+        key: 'guru-dokumen',
+        label: 'Dokumen & Pengumpulan',
+        icon: '📄',
+        href: '/kurikulum/dokumen',
         permission: PERMISSIONS.ACADEMIC_READ,
         enabled: true,
       },

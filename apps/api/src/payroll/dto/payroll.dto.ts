@@ -448,6 +448,38 @@ export class CreatePayrollRunDto {
   note?: string;
 }
 
+/** Ubah parameter run DRAFT — bulan, periode absen, minggu, catatan.
+    Item langsung dihitung ulang setelah perubahan. */
+export class UpdatePayrollRunDto {
+  @emptyToUndefined()
+  @IsOptional()
+  @isMonth()
+  month?: string;
+
+  @emptyToUndefined()
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'format tanggal harus YYYY-MM-DD' })
+  periodStart?: string;
+
+  @emptyToUndefined()
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'format tanggal harus YYYY-MM-DD' })
+  periodEnd?: string;
+
+  @emptyToUndefined()
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(6)
+  weeks?: number;
+
+  @emptyToUndefined()
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  note?: string;
+}
+
 export class PayRunDto {
   @IsUUID()
   cashAccountId!: string;

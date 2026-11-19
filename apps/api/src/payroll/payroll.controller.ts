@@ -27,6 +27,7 @@ import {
   PayrollSettingsDto,
   UpdateLoanDto,
   UpdatePayrollItemDto,
+  UpdatePayrollRunDto,
   UpdatePayScaleDto,
 } from './dto/payroll.dto';
 import { PayrollService } from './payroll.service';
@@ -300,6 +301,17 @@ export class PayrollController {
   @RequirePermission(PERMISSIONS.PAYROLL_MANAGE)
   createRun(@Body() dto: CreatePayrollRunDto, @CurrentUser() user: AuthUser) {
     return this.payroll.createRun(dto, user.id);
+  }
+
+  /** Ubah bulan/periode/minggu/catatan run DRAFT — item dihitung ulang otomatis. */
+  @Patch('runs/:id')
+  @RequirePermission(PERMISSIONS.PAYROLL_MANAGE)
+  updateRun(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdatePayrollRunDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.payroll.updateRun(id, dto, user.id);
   }
 
   @Post('runs/:id/recompute')

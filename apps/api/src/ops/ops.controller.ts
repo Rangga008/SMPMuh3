@@ -6,6 +6,7 @@ import {
   ForbiddenException,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Put,
@@ -239,6 +240,22 @@ export class OpsController {
     res.setHeader('Content-Disposition', 'attachment; filename="statistik-mapel.xlsx"');
     res.send(buf);
   }
+  /** Rekap nilai format "Buku Daya Serap" — semua rombel satu tahun (atau satu jenjang):
+      sheet leger per kelas + Rekap Perkelas + Daya Serap (rata/tinggi/rendah). */
+  @Get('ledger/daya-serap.xlsx')
+  @RequirePermission(PERMISSIONS.ACADEMIC_READ)
+  async dayaSerapXlsx(
+    @Res() res: Response,
+    @Query('academicYearId') y: string,
+    @Query('gradeLevel') g?: string,
+    @Query('semester') s?: string,
+  ) {
+    const buf = await this.ops.dayaSerapXlsx(y, g ? Number(g) : undefined, s);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="rekap-daya-serap.xlsx"');
+    res.send(buf);
+  }
+
   @Get('attendance/recap-class.xlsx')
   @RequirePermission(PERMISSIONS.ACADEMIC_READ)
   async recapClassXlsx(@Res() res: Response, @Query('classId') c: string, @Query('from') f: string, @Query('to') t: string) {
@@ -624,6 +641,48 @@ export class OpsController {
   @RequirePermission(PERMISSIONS.TATAUSAHA_READ)
   usCandidates(@Query('academicYearId') y: string, @Query('gradeLevel') g?: string) {
     return this.ops.usCandidates(y, g ? Number(g) : undefined);
+  }
+
+  // ---- Kelulusan & pasca-lulus ----
+  /** Kategori pasca-lulus (SMA/SMK/Kerja/dll) — dikelola TU. */
+  @Get('graduation-categories')
+  @RequirePermission(PERMISSIONS.STUDENT_READ)
+  graduationCategories() {
+    return this.ops.listGraduationCategories();
+  }
+  @Post('graduation-categories')
+  @RequirePermission(PERMISSIONS.STUDENT_MANAGE)
+  createGraduationCategory(@Body() dto: { name: string }) {
+    if (!dto?.name?.trim()) throw new BadRequestException('Nama kategori wajib.');
+    return this.ops.createGraduationCategory({ name: dto.name.trim() });
+  }
+  @Patch('graduation-categories/:id')
+  @RequirePermission(PERMISSIONS.STUDENT_MANAGE)
+  updateGraduationCategory(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: { name?: string; isActive?: boolean; sortOrder?: number },
+  ) {
+    return this.ops.updateGraduationCategory(id, dto);
+  }
+  @Delete('graduation-categories/:id')
+  @RequirePermission(PERMISSIONS.STUDENT_MANAGE)
+  deleteGraduationCategory(@Param('id', ParseUUIDPipe) id: string) {
+    return this.ops.deleteGraduationCategory(id);
+  }
+
+  /** Update data kelulusan siswa: no absen, no ijazah, ambil ijazah/transkrip, kelanjutan. */
+  @Patch('students/:id/graduation')
+  @RequirePermission(PERMISSIONS.STUDENT_MANAGE)
+  updateGraduation(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body()
+    dto: {
+      academicYearId?: string; absenceNo?: number | null; diplomaNo?: string | null;
+      ijazahTaken?: boolean; transcriptTaken?: boolean;
+      continuationId?: string | null; continuationDetail?: string | null;
+    },
+  ) {
+    return this.ops.updateGraduation(id, dto);
   }
 
   // ---- Mutasi: surat ----

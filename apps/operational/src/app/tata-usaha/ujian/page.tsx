@@ -176,23 +176,23 @@ export default function UjianPage() {
         .sheet:last-child{page-break-after:auto}
         .pair{display:flex;flex-direction:column;page-break-inside:avoid}
         .card{border:1.5px solid #334155;border-radius:8px 8px 0 0;padding:10px 12px;flex:1}
-        .meja{border:1.5px solid #334155;border-top:2px dashed #94a3b8;border-radius:0 0 8px 8px;padding:5px 10px;display:flex;align-items:center;gap:10px}
-        .mb{display:flex;align-items:baseline;gap:5px;white-space:nowrap}
-        .mtl{font-size:9px;letter-spacing:.12em;color:#64748b;text-transform:uppercase}
-        .mc{font-family:ui-monospace,monospace;font-size:26px;font-weight:800;letter-spacing:.03em}
-        .mi{font-size:10px;line-height:1.45;flex:1}
+        .meja{border:1.5px solid #334155;border-top:2px dashed #94a3b8;border-radius:0 0 8px 8px;padding:8px 14px;display:flex;align-items:center;gap:14px}
+        .mb{display:flex;align-items:baseline;gap:6px;white-space:nowrap}
+        .mtl{font-size:11px;letter-spacing:.12em;color:#64748b;text-transform:uppercase}
+        .mc{font-family:ui-monospace,monospace;font-size:40px;font-weight:800;letter-spacing:.03em}
+        .mi{font-size:12px;line-height:1.45;flex:1}
         .sub2{color:#64748b}
-        .mcut{font-size:8px;color:#94a3b8;text-align:center;border-left:1px dashed #cbd5e1;padding-left:8px;line-height:1.4}
-        .peserta{font-family:ui-monospace,monospace;font-size:15px;font-weight:800;letter-spacing:.05em;margin:0 0 6px}
+        .mcut{font-size:9px;color:#94a3b8;text-align:center;border-left:1px dashed #cbd5e1;padding-left:10px;line-height:1.4}
+        .peserta{font-family:ui-monospace,monospace;font-size:16px;font-weight:800;letter-spacing:.05em;margin:0 0 6px}
         .kop{display:flex;gap:8px;align-items:center;border-bottom:2px solid #0f3a63;padding-bottom:6px;margin-bottom:6px}
-        .logo{height:34px}.sub{font-size:10px;color:#475569}
-        table.bio{font-size:11px}table.bio td{padding:1.5px 5px 1.5px 0}
-        table.jadwal{width:100%;border-collapse:collapse;font-size:9.5px;margin-top:6px}
-        table.jadwal th,table.jadwal td{border:1px solid #cbd5e1;padding:2.5px 4px;text-align:left}
-        table.jadwal th{background:#f1f5f9;font-size:8px;text-transform:uppercase;letter-spacing:.04em}
+        .logo{height:36px}.sub{font-size:11px;color:#475569}
+        table.bio{font-size:12px}table.bio td{padding:1.5px 5px 1.5px 0}
+        table.jadwal{width:100%;border-collapse:collapse;font-size:10.5px;margin-top:6px}
+        table.jadwal th,table.jadwal td{border:1px solid #cbd5e1;padding:3px 4px;text-align:left}
+        table.jadwal th{background:#f1f5f9;font-size:9px;text-transform:uppercase;letter-spacing:.04em}
         table.jadwal td.c{text-align:center}
-        .kode{font-family:ui-monospace,monospace;font-size:11px;letter-spacing:.04em}
-        .hint{margin-top:6px;font-size:9.5px;color:#64748b;border-top:1px dashed #cbd5e1;padding-top:5px}
+        .kode{font-family:ui-monospace,monospace;font-size:12px;letter-spacing:.04em}
+        .hint{margin-top:6px;font-size:10px;color:#64748b;border-top:1px dashed #cbd5e1;padding-top:5px}
       </style>${sheets.join('')}`);
   };
 

@@ -19,6 +19,7 @@ import {
   recomputePayrollRun,
   reopenPayrollRun,
   updatePayrollItem,
+  updatePayrollRun,
   voidPayrollRun,
   type CashAccountView,
   type PayrollRunView,
@@ -41,6 +42,7 @@ export default function PayrollRunPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [payModal, setPayModal] = useState(false);
+  const [editModal, setEditModal] = useState(false);
   const [slipId, setSlipId] = useState<string | null>(null);
   const [principal, setPrincipal] = useState('');
   const [treasurer, setTreasurer] = useState('');
@@ -135,6 +137,9 @@ export default function PayrollRunPage() {
             action={
               canManage ? (
                 <span className="flex gap-2">
+                  {run.status === 'DRAFT' ? (
+                    <Button size="sm" variant="outline" onClick={() => setEditModal(true)} disabled={busy}>Edit Periode</Button>
+                  ) : null}
                   {run.status === 'DRAFT' || run.status === 'FINALIZED' ? (
                     <Button size="sm" variant="outline" onClick={async () => void run_(() => recomputePayrollRun(run.id), 'Dihitung ulang.')} disabled={busy}>Hitung Ulang</Button>
                   ) : null}
@@ -218,6 +223,74 @@ export default function PayrollRunPage() {
       ) : null}
 
       {/* Modal bayar */}
+      {/* Edit run DRAFT — bulan, rentang tanggal absen, minggu, catatan.
+          Item dihitung ulang otomatis setelah simpan. */}
+      <Modal open={editModal && !!run} onClose={() => setEditModal(false)} title="Edit Run Penggajian">
+        {run ? (
+          <form
+            key={run.id}
+            className="grid gap-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const f = new FormData(e.currentTarget);
+              void run_(
+                () =>
+                  updatePayrollRun(run.id, {
+                    month: String(f.get('month')),
+                    ...(f.get('periodStart') ? { periodStart: String(f.get('periodStart')) } : {}),
+                    ...(f.get('periodEnd') ? { periodEnd: String(f.get('periodEnd')) } : {}),
+                    weeks: Number(f.get('weeks')) || run.weeks,
+                    note: String(f.get('note') ?? ''),
+                  }),
+                'Run diperbarui & dihitung ulang.',
+              ).then((ok) => { if (ok) setEditModal(false); });
+            }}
+          >
+            <Field label="Bulan Tagihan" hint="Ganti bulan tanpa tanggal baru → periode dihitung ulang dari siklus">
+              <Input name="month" type="month" required defaultValue={run.month}
+                onChange={(e) => {
+                  // Periode ikut bergeser mengikuti siklus saat bulan diganti.
+                  const [y, m] = e.target.value.split('-').map(Number);
+                  if (!y || !m || !run.periodStart || !run.periodEnd) return;
+                  const sDay = new Date(`${run.periodStart}T00:00:00Z`).getUTCDate();
+                  const eDay = new Date(`${run.periodEnd}T00:00:00Z`).getUTCDate();
+                  const startMonth = sDay > eDay ? m - 1 : m;
+                  const clamp = (yy: number, mm: number, d: number) => {
+                    const dim = new Date(Date.UTC(yy, mm, 0)).getUTCDate();
+                    return new Date(Date.UTC(yy, mm - 1, Math.min(d, dim))).toISOString().slice(0, 10);
+                  };
+                  const form = e.target.form;
+                  const si = form?.elements.namedItem('periodStart') as HTMLInputElement | null;
+                  const ei = form?.elements.namedItem('periodEnd') as HTMLInputElement | null;
+                  if (si) si.value = clamp(startMonth < 1 ? y - 1 : y, ((startMonth - 1 + 12) % 12) + 1, sDay);
+                  if (ei) ei.value = clamp(y, m, eDay);
+                }} />
+            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Absen mulai">
+                <Input name="periodStart" type="date" defaultValue={run.periodStart?.slice(0, 10) ?? ''} />
+              </Field>
+              <Field label="Absen sampai">
+                <Input name="periodEnd" type="date" defaultValue={run.periodEnd?.slice(0, 10) ?? ''} />
+              </Field>
+            </div>
+            <p className="-mt-1 text-[11px] text-sand-400">
+              Periode absen boleh melintasi bulan (mis. 21 bulan lalu → 19 bulan tagihan). Menghitung ulang semua item dari absen rentang ini.
+            </p>
+            <Field label="Jumlah Minggu Aktif">
+              <Input name="weeks" type="number" min={1} max={6} defaultValue={run.weeks} required />
+            </Field>
+            <Field label="Catatan">
+              <Input name="note" defaultValue={run.note ?? ''} placeholder="opsional" />
+            </Field>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="ghost" onClick={() => setEditModal(false)}>Batal</Button>
+              <Button type="submit" disabled={busy}>Simpan & Hitung Ulang</Button>
+            </div>
+          </form>
+        ) : null}
+      </Modal>
+
       <Modal open={payModal} onClose={() => setPayModal(false)} title="Bayar Run">
         <form
           className="grid gap-3"

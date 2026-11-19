@@ -874,6 +874,135 @@ export class OpsService {
     return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
   }
 
+  /** Rekap nilai leger format "Buku Daya Serap" — satu workbook per tahun ajaran:
+      - sheet per rombel: leger siswa × mapel + Jml + Rata-rata + Rangking kelas
+      - sheet "Rekap Perkelas": rata-rata mapel per rombel, berkelompok jenjang
+      - sheet "Daya Serap": per rombel — RATA-RATA / TERTINGGI / TERENDAH per mapel. */
+  async dayaSerapXlsx(academicYearId: string, gradeLevel?: number, semesterLabel?: string) {
+    const year = await this.prisma.academicYear.findUniqueOrThrow({ where: { id: academicYearId } });
+    const classes = await this.prisma.class.findMany({
+      where: { academicYearId, ...(gradeLevel ? { gradeLevel } : {}) },
+      orderBy: [{ gradeLevel: 'asc' }, { name: 'asc' }],
+    });
+    const ledgers = await Promise.all(classes.map((c) => this.gradeLedger(c.id, academicYearId)));
+    // Kolom mapel gabungan semua kelas — urut kode agar konsisten antar sheet.
+    const subjects = new Map<string, { id: string; name: string; code: string }>();
+    for (const l of ledgers) for (const s of l.subjects) subjects.set(s.id, s);
+    const subjectList = [...subjects.values()].sort((a, b) => a.code.localeCompare(b.code));
+    const n = subjectList.length;
+    const r1 = (v: number | null) => (v == null ? '' : Math.round(v * 10) / 10);
+    const semLabel = semesterLabel?.trim() || 'SEMESTER';
+    const kopRows = (kelasLabel?: string): (string | number)[][] => [
+      ['NILAI LEGER/RAPORT'],
+      [semLabel],
+      [`TAHUN PELAJARAN ${year.name}`],
+      ...(kelasLabel ? [[`KELAS/LEVEL :`, '', kelasLabel]] : []),
+      [],
+      ['SATUAN PENDIDIKAN SMP MUHAMMADIYAH 3 BANDUNG'],
+    ];
+
+    const wb = XLSX.utils.book_new();
+    type ClsAgg = {
+      cls: (typeof classes)[number];
+      subjectAvg: (number | null)[];
+      subjectMax: (number | null)[];
+      subjectMin: (number | null)[];
+      totalAvg: number | null;
+      count: number;
+    };
+    const aggs: ClsAgg[] = [];
+
+    // --- Sheet per rombel: leger + ranking ---
+    for (const l of ledgers) {
+      const idx = l.subjects.map((s) => subjectList.findIndex((x) => x.id === s.id));
+      const rows = l.students.map((st) => {
+        const cells = subjectList.map((_, i) => ((idx[i] ?? -1) >= 0 ? st.scores[idx[i]!] ?? null : null));
+        const filled = cells.filter((v): v is number => v != null);
+        const jml = filled.reduce((a, b) => a + b, 0);
+        return {
+          name: st.name, cells, jml: filled.length ? jml : null,
+          avg: filled.length ? jml / filled.length : null,
+          rank: null as number | null,
+        };
+      });
+      // Rangking kompetisi dalam kelas — total sama = peringkat sama.
+      const totals = rows.map((r) => r.jml ?? -1);
+      for (const r of rows) {
+        r.rank = r.jml == null ? null : 1 + totals.filter((t) => t > r.jml!).length;
+      }
+      const sheetRows: (string | number)[][] = [
+        ...kopRows(l.class.name),
+        ['NO', 'NAMA PESERTA', 'NILAI MATA PELAJARAN', ...Array<string>(Math.max(0, n + 1)).fill(''), 'RATA-RATA', 'RANGKING'],
+        ['', '', ...subjectList.map((s) => s.code), 'Jml', '', ''],
+        ...rows.map((r, i) => [i + 1, r.name, ...r.cells.map(r1), r.jml ?? '', r1(r.avg), r.rank ?? '']),
+      ];
+      const ws = XLSX.utils.aoa_to_sheet(sheetRows);
+      ws['!cols'] = [{ wch: 4 }, { wch: 28 }, ...subjectList.map(() => ({ wch: 7 })), { wch: 7 }, { wch: 9 }, { wch: 9 }];
+      const hr = kopRows(l.class.name).length; // baris judul header (0-indexed)
+      ws['!merges'] = [
+        { s: { c: 2, r: hr }, e: { c: 2 + n, r: hr } }, // "NILAI MATA PELAJARAN" melebar
+        { s: { c: 0, r: hr }, e: { c: 0, r: hr + 1 } }, // NO
+        { s: { c: 1, r: hr }, e: { c: 1, r: hr + 1 } }, // NAMA PESERTA
+        { s: { c: 3 + n, r: hr }, e: { c: 3 + n, r: hr + 1 } }, // RATA-RATA
+        { s: { c: 4 + n, r: hr }, e: { c: 4 + n, r: hr + 1 } }, // RANGKING
+      ];
+      XLSX.utils.book_append_sheet(wb, ws, l.class.name.slice(0, 31));
+
+      // Agregat untuk rekap: rata-rata/min/max per mapel dari nilai yang terisi.
+      const col = (i: number) => rows.map((r) => r.cells[i]).filter((v): v is number => v != null);
+      aggs.push({
+        cls: l.class, count: rows.length,
+        subjectAvg: subjectList.map((_, i) => { const v = col(i); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; }),
+        subjectMax: subjectList.map((_, i) => { const v = col(i); return v.length ? Math.max(...v) : null; }),
+        subjectMin: subjectList.map((_, i) => { const v = col(i); return v.length ? Math.min(...v) : null; }),
+        totalAvg: (() => { const v = rows.map((r) => r.avg).filter((x): x is number => x != null); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; })(),
+      });
+    }
+
+    // --- Sheet "Rekap Perkelas": rata-rata mapel per rombel per jenjang ---
+    const gradeGroups = new Map<number, ClsAgg[]>();
+    for (const a of aggs) (gradeGroups.get(a.cls.gradeLevel) ?? gradeGroups.set(a.cls.gradeLevel, []).get(a.cls.gradeLevel)!).push(a);
+    const rekapRows: (string | number)[][] = [
+      ...kopRows(),
+      ['NO', 'KELAS/LEVEL', 'NILAI MATA PELAJARAN', ...Array<string>(Math.max(0, n + 1)).fill(''), 'RATA-RATA', 'RANGKING'],
+      ['', '', ...subjectList.map((s) => s.code), 'Jml', '', ''],
+    ];
+    for (const [lvl, group] of [...gradeGroups.entries()].sort((a, b) => a[0] - b[0])) {
+      const avgs = group.map((g) => g.totalAvg ?? -1);
+      group.forEach((g, i) => {
+        rekapRows.push([i + 1, g.cls.name, ...g.subjectAvg.map(r1), r1(g.subjectAvg.reduce((a: number, b) => a + (b ?? 0), 0)), r1(g.totalAvg), g.totalAvg == null ? '' : 1 + avgs.filter((x) => x > g.totalAvg!).length]);
+      });
+      const sumCol = (arr: (number | null)[][]) => subjectList.map((_, i) => arr.reduce((a, b) => a + (b[i] ?? 0), 0));
+      const avgCol = (arr: (number | null)[][]) => subjectList.map((_, i) => { const v = arr.map((x) => x[i]).filter((x): x is number => x != null); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; });
+      rekapRows.push(['JUMLAH', '', ...sumCol(group.map((g) => g.subjectAvg)).map(r1), '', r1(group.reduce((a, g) => a + (g.totalAvg ?? 0), 0)), '']);
+      rekapRows.push(['RATA-RATA', `Kelas ${lvl}`, ...avgCol(group.map((g) => g.subjectAvg)).map(r1), '', r1(group.length ? group.reduce((a, g) => a + (g.totalAvg ?? 0), 0) / group.length : null), '']);
+    }
+    const wsR = XLSX.utils.aoa_to_sheet(rekapRows);
+    wsR['!cols'] = [{ wch: 9 }, { wch: 12 }, ...subjectList.map(() => ({ wch: 7 })), { wch: 8 }, { wch: 9 }, { wch: 9 }];
+    XLSX.utils.book_append_sheet(wb, wsR, 'Rekap Perkelas');
+
+    // --- Sheet "Daya Serap": per rombel — rata-rata / tertinggi / terendah ---
+    const dsRows: (string | number)[][] = [
+      ...kopRows(),
+      ['NO', 'KELAS', '', 'NILAI MATA PELAJARAN', ...Array<string>(Math.max(0, n)).fill(''), 'RATA-RATA'],
+      ['', '', '', ...subjectList.map((s) => s.code), 'Jml', ''],
+    ];
+    for (const [lvl, group] of [...gradeGroups.entries()].sort((a, b) => a[0] - b[0])) {
+      group.forEach((g, i) => {
+        dsRows.push([i + 1, g.cls.name, 'RATA-RATA', ...g.subjectAvg.map(r1), r1(g.subjectAvg.reduce((a: number, b) => a + (b ?? 0), 0)), r1(g.totalAvg)]);
+        dsRows.push(['', '', 'TERTINGGI', ...g.subjectMax.map(r1), '', '']);
+        dsRows.push(['', '', 'TERENDAH', ...g.subjectMin.map(r1), '', '']);
+      });
+      dsRows.push(['JENJANG', `Kelas ${lvl}`, 'RATA-RATA', ...subjectList.map((_, i) => { const v = group.map((g) => g.subjectAvg[i]).filter((x): x is number => x != null); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; }).map(r1), '', '']);
+      dsRows.push([]);
+    }
+    const wsD = XLSX.utils.aoa_to_sheet(dsRows);
+    wsD['!cols'] = [{ wch: 8 }, { wch: 10 }, { wch: 12 }, ...subjectList.map(() => ({ wch: 7 })), { wch: 8 }, { wch: 9 }];
+    XLSX.utils.book_append_sheet(wb, wsD, 'Daya Serap');
+
+    return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+  }
+
   /** Statistik per mapel dalam satu kelas: avg/min/max + jumlah penilai.
       Nilai dibaca dari Grade — menempel ke ujian (baru) maupun asesmen (lama). */
   async classSubjectStats(classId: string, academicYearId: string) {
@@ -1966,13 +2095,39 @@ export class OpsService {
           select: {
             id: true, name: true, nis: true, nisn: true, gender: true,
             birthPlace: true, birthDate: true, status: true,
-            fatherName: true, motherName: true,
+            fatherName: true, motherName: true, recordDetails: true,
+            password: true, diplomaNo: true, ijazahTakenAt: true,
+            transcriptTakenAt: true, continuationDetail: true,
             parent: { select: { name: true } },
+            continuation: { select: { id: true, name: true } },
+            examSeats: {
+              select: { code: true, room: { select: { academicYearId: true } } },
+            },
           },
         },
       },
       orderBy: { student: { name: 'asc' } },
     });
+    const studentIds = enrollments.map((e) => e.studentId);
+    // Tahun rapor per jenjang (kelas 7/8/9) — dari riwayat enrollment siswa.
+    const history = await this.prisma.enrollment.findMany({
+      where: { studentId: { in: studentIds } },
+      select: {
+        studentId: true,
+        class: { select: { gradeLevel: true } },
+        academicYear: { select: { name: true } },
+      },
+    });
+    const raporYear = new Map<string, Record<number, string>>();
+    for (const h of history) {
+      const rec = raporYear.get(h.studentId) ?? {};
+      rec[h.class.gradeLevel] = h.academicYear.name;
+      raporYear.set(h.studentId, rec);
+    }
+    const religionOf = (rd: unknown) => {
+      const r = (rd as Record<string, unknown> | null)?.['agama'];
+      return typeof r === 'string' && r ? r : 'Islam';
+    };
     const byClass = new Map(enrollments.reduce((a, e) => {
       const arr = a.get(e.classId) ?? []; arr.push(e); return a.set(e.classId, arr);
     }, new Map<string, typeof enrollments>()));
@@ -1980,7 +2135,17 @@ export class OpsService {
     return {
       school, academicYear: { id: year.id, name: year.name },
       classes: classes.map((c) => {
-        const students = (byClass.get(c.id) ?? []).map((e) => e.student);
+        const students = (byClass.get(c.id) ?? []).map((e) => {
+          const s = e.student;
+          const { examSeats, ...rest } = s;
+          return {
+            ...rest,
+            agama: religionOf(s.recordDetails),
+            absenceNo: e.absenceNo,
+            examCode: examSeats.find((x) => x.room.academicYearId === academicYearId)?.code ?? null,
+            rapor: raporYear.get(s.id) ?? {},
+          };
+        });
         return {
           id: c.id, name: c.name, gradeLevel: c.gradeLevel, homeroom: c.homeroom?.name ?? null,
           students,
@@ -1990,6 +2155,63 @@ export class OpsService {
         };
       }),
     };
+  }
+
+  // ---------- Kelulusan & pasca-lulus kelas 9 ----------
+
+  listGraduationCategories() {
+    return this.prisma.graduationCategory.findMany({ orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }] });
+  }
+
+  createGraduationCategory(dto: { name: string }) {
+    return this.prisma.graduationCategory.create({
+      data: { name: dto.name.trim(), sortOrder: 99 },
+    });
+  }
+
+  async updateGraduationCategory(id: string, dto: { name?: string; isActive?: boolean; sortOrder?: number }) {
+    await this.prisma.graduationCategory.findUniqueOrThrow({ where: { id } });
+    return this.prisma.graduationCategory.update({
+      where: { id },
+      data: {
+        ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
+        ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+        ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),
+      },
+    });
+  }
+
+  async deleteGraduationCategory(id: string) {
+    const used = await this.prisma.student.count({ where: { continuationId: id } });
+    if (used) throw new BadRequestException(`Kategori masih dipakai ${used} siswa — nonaktifkan saja.`);
+    await this.prisma.graduationCategory.delete({ where: { id } });
+    return { deleted: true };
+  }
+
+  /** Update data kelulusan siswa: no absen rombel, no ijazah, status ambil
+      ijazah/transkrip, kategori & detail pasca-lulus. */
+  async updateGraduation(studentId: string, dto: {
+    academicYearId?: string; absenceNo?: number | null; diplomaNo?: string | null;
+    ijazahTaken?: boolean; transcriptTaken?: boolean;
+    continuationId?: string | null; continuationDetail?: string | null;
+  }) {
+    await this.prisma.student.findUniqueOrThrow({ where: { id: studentId } });
+    const data: Record<string, unknown> = {};
+    if (dto.diplomaNo !== undefined) data.diplomaNo = dto.diplomaNo || null;
+    if (dto.ijazahTaken !== undefined) data.ijazahTakenAt = dto.ijazahTaken ? new Date() : null;
+    if (dto.transcriptTaken !== undefined) data.transcriptTakenAt = dto.transcriptTaken ? new Date() : null;
+    if (dto.continuationId !== undefined) data.continuationId = dto.continuationId || null;
+    if (dto.continuationDetail !== undefined) data.continuationDetail = dto.continuationDetail || null;
+    const [student] = await this.prisma.$transaction([
+      this.prisma.student.update({ where: { id: studentId }, data: data as never }),
+      ...(dto.absenceNo !== undefined && dto.academicYearId
+        ? [this.prisma.enrollment.updateMany({
+            where: { studentId, academicYearId: dto.academicYearId },
+            data: { absenceNo: dto.absenceNo },
+          })]
+        : []),
+    ]);
+    return student;
   }
 
   // ================= Mutasi: upload surat =================

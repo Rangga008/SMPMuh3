@@ -6,7 +6,8 @@ import { Shell } from '@/components/shell';
 import { PageTitle, Widget } from '@/components/widgets';
 import { DataTable } from '@/components/data-table';
 import {
-  downloadLedgerXlsx, downloadRecapXlsx, downloadStatsXlsx, examResults, exportExamResults,
+  downloadDayaSerapXlsx, downloadLedgerXlsx, downloadRecapXlsx, downloadStatsXlsx,
+  examResults, exportExamResults,
   getAttendanceRecap, getClassSubjectStats, getGradeLedger, listExams, syncExamGrades,
   type ExamView,
 } from '@/lib/api-ops';
@@ -180,6 +181,14 @@ export default function LedgerPage() {
             </button>
           ))}
         </div>
+        {/* Rekap Daya Serap — satu workbook seluruh rombel (per jenjang bila dipilih). */}
+        <Button
+          size="sm"
+          variant="outline"
+          title="Workbook: leger siswa + rekap perkelas + data serap, semua rombel"
+          disabled={!yearId}
+          onClick={() => downloadDayaSerapXlsx(yearId, grade || undefined).catch(() => setError('Gagal mengunduh rekap daya serap.'))}
+        >⬇ Daya Serap</Button>
       </div>
 
       {tab === 'ledger' && ledger && (

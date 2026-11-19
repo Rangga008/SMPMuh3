@@ -1363,6 +1363,13 @@ model Student {
   recordDetails    Json?    @map("record_details") // kantong detail buku induk (32 item Dapodik)
   photoKey         String?  @map("photo_key") // pas foto buku induk (key storage)
   password       String?    // password login CBT siswa — tercetak di kartu ujian
+  // ---- kelulusan & pasca-lulus (kelas 9) ----
+  diplomaNo          String?   @map("diploma_no") // nomor seri ijazah
+  ijazahTakenAt      DateTime? @map("ijazah_taken_at") // ijazah sudah diambil — null = belum
+  transcriptTakenAt  DateTime? @map("transcript_taken_at") // transkrip nilai sudah diambil
+  continuationId     String?   @map("continuation_id") @db.Uuid // kategori pasca-lulus (lanjut sekolah/kerja/dll)
+  continuationDetail String?   @map("continuation_detail") // detail: nama SMA/SMK tujuan, tempat kerja, dll
+  continuation       GraduationCategory? @relation(fields: [continuationId], references: [id], onDelete: SetNull)
   createdAt    DateTime      @default(now()) @map("created_at")
   updatedAt    DateTime      @updatedAt @map("updated_at")
   deletedAt    DateTime?     @map("deleted_at") // soft delete / arsip
@@ -1508,11 +1515,24 @@ model Class {
   @@map("classes")
 }
 
+/** Kategori pasca-lulus siswa — dikelola TU (SMA/SMK/MA/Kerja/dll). */
+model GraduationCategory {
+  id        String    @id @default(uuid()) @db.Uuid
+  name      String
+  isActive  Boolean   @default(true) @map("is_active")
+  sortOrder Int       @default(0) @map("sort_order")
+  createdAt DateTime  @default(now()) @map("created_at")
+  students  Student[]
+
+  @@map("graduation_categories")
+}
+
 model Enrollment {
   id             String  @id @default(uuid()) @db.Uuid
   studentId      String  @map("student_id") @db.Uuid
   classId        String  @map("class_id") @db.Uuid
   academicYearId String  @map("academic_year_id") @db.Uuid
+  absenceNo      Int?    @map("absence_no") // nomor urut absen di rombel tahun ini
   createdAt      DateTime @default(now()) @map("created_at")
 
   student      Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)

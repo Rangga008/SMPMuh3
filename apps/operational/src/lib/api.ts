@@ -2254,6 +2254,9 @@ export const listPayrollRuns = () => req<PayrollRunView[]>(`${py}/runs`);
 export const getPayrollRun = (id: string) => req<PayrollRunView>(`${py}/runs/${id}`);
 export const createPayrollRun = (dto: Record<string, unknown>) =>
   req<PayrollRunView>(`${py}/runs`, { method: 'POST', json: dto });
+/** Ubah bulan/periode/minggu/catatan run DRAFT — item dihitung ulang otomatis. */
+export const updatePayrollRun = (id: string, dto: { month?: string; periodStart?: string; periodEnd?: string; weeks?: number; note?: string }) =>
+  req<PayrollRunView>(`${py}/runs/${id}`, { method: 'PATCH', json: dto });
 export const recomputePayrollRun = (id: string) =>
   req<PayrollRunView>(`${py}/runs/${id}/recompute`, { method: 'POST' });
 export const finalizePayrollRun = (id: string) =>
