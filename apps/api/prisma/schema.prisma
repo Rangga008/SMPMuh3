@@ -950,7 +950,8 @@ model EmployeeAttendance {
   teachingJp      Float           @default(0) @map("teaching_jp") // JP efektif hari itu — entri manual langsung JP; otomatis dari jadwal/tap dikonversi ÷ menit-per-JP
   note            String?
   checkInAt       DateTime?       @map("check_in_at")  // tap masuk (mesin/manual)
-  checkOutAt      DateTime?       @map("check_out_at") // tap pulang
+  checkOutAt      DateTime?       @map("check_out_at") // tap pulang (di-cap ke akhir jam kerja)
+  partialLeaveFromMin Int?        @map("partial_leave_from_min") // izin pulang awal — menit WIB mulai izin; sisa hari tercatat izin
   lateMinutes     Int             @default(0) @map("late_minutes") // menit lewat jam masuk (shift/global)
   source          AttendanceSource @default(MANUAL)
   recordedBy      String?         @map("recorded_by") @db.Uuid
@@ -1075,6 +1076,8 @@ model PayrollSetting {
   lateDeductionPerDay Int      @default(0) @map("late_deduction_per_day") // potongan per hari telat
   lateDeductionPerMin Int      @default(0) @map("late_deduction_per_min") // potongan per menit telat
   lessonMinutes       Int      @default(40) @map("lesson_minutes") // 1 jam pelajaran = N menit (untuk konversi absen → JP)
+  periodStartDay      Int      @default(21) @map("period_start_day") // siklus absen gaji: mulai tanggal N bulan SEBELUMNYA (bila > periodEndDay)
+  periodEndDay        Int      @default(19) @map("period_end_day")   // siklus absen gaji: berakhir tanggal N bulan tagihan
   updatedAt           DateTime @updatedAt @map("updated_at")
 
   @@map("payroll_settings")
@@ -1083,6 +1086,7 @@ model PayrollSetting {
 model AttendanceSetting {
   id           String   @id @default("global")
   workStart    String   @default("07:00") @map("work_start")     // "HH:mm" — batas jam masuk
+  workEnd      String   @default("15:00") @map("work_end")       // "HH:mm" — akhir jam kerja default (cap jam pulang & batas absen masuk)
   lateAfter    Int      @default(10) @map("late_after")          // toleransi menit sebelum TELAT
   checkOutFrom String   @default("12:00") @map("check_out_from") // tap >= jam ini dihitung pulang
   autoDerive   Boolean  @default(true) @map("auto_derive")       // tap mesin → status harian
@@ -1212,7 +1216,9 @@ model PensionEntry {
  */
 model PayrollRun {
   id             String        @id @default(uuid()) @db.Uuid
-  month          String        // "YYYY-MM"
+  month          String        // "YYYY-MM" — bulan tagihan (untuk honor/potongan/pinjaman bulanan)
+  periodStart    DateTime?     @map("period_start") @db.Date // awal rentang absen — mis. tgl 21 bulan lalu
+  periodEnd      DateTime?     @map("period_end") @db.Date   // akhir rentang absen (inklusif) — mis. tgl 19 bulan ini
   academicYearId String?       @map("academic_year_id") @db.Uuid
   weeks          Int           @default(4) // jumlah minggu aktif bulan itu
   status         PayrollStatus @default(DRAFT)

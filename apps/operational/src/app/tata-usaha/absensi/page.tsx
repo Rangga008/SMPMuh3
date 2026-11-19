@@ -144,6 +144,12 @@ export default function AbsensiPegawaiPage() {
               <td className="px-5 py-2.5 font-semibold text-sand-900">{fmtTime(r.checkOutAt)}</td>
               <td className="px-5 py-2.5">
                 {r.status ? <Badge tone={STATUS_TONE[r.status] ?? 'neutral'}>{r.status}</Badge> : <span className="text-xs text-sand-400">belum absen</span>}
+                {r.partialLeaveFromMin != null ? (
+                  <span className="mt-0.5 block text-[10px] font-medium text-amber-700">
+                    izin sejak {`${String(Math.floor(r.partialLeaveFromMin / 60)).padStart(2, '0')}:${String(r.partialLeaveFromMin % 60).padStart(2, '0')}`}
+                    {r.leaveCategory ? ` · ${r.leaveCategory.toLowerCase()}` : ''}
+                  </span>
+                ) : null}
               </td>
               <td className="px-5 py-2.5 text-xs text-sand-600">
                 {r.lateMinutes ? `${r.lateMinutes} mnt` : '—'}

@@ -124,13 +124,14 @@ export default function UjianPage() {
   useEffect(load, [load]);
 
   /** Kartu ujian serentak — satu kartu per siswa: identitas + password CBT +
-   *  jadwal semua ujiannya + ruang/kursi tetap + nomor peserta, dengan kartu
-   *  meja di sebelahnya (digunting & ditempel di bangku). */
+   *  jadwal semua ujiannya + ruang/kursi tetap + nomor peserta. Kartu meja
+   *  diletakkan MELEBAR di bawah kartu (digunting & ditempel di bangku).
+   *  Satu lembar HVS (A4) = tepat 4 kartu (2 kolom × 2 baris). */
   const printCards = async (roomId: string) => {
     const { room, school, cards } = await getExamCards(roomId);
     const fmt = (s?: string | null) =>
-      s ? new Date(s).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
-    const html = cards.map((c) => `
+      s ? new Date(s).toLocaleString('id-ID', { weekday: 'long', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
+    const pairs = cards.map((c) => `
       <div class="pair">
       <div class="card">
         <div class="kop">${school?.logoUrl ? `<img src="/logo.png" class="logo" onerror="this.style.display='none'"/>` : ''}<div>
@@ -145,7 +146,7 @@ export default function UjianPage() {
           <tr><td>Ruang</td><td>: <b>${room.name}</b> · Meja No. ${c.seatNo ?? '—'}</td></tr>
         </table>
         <table class="jadwal">
-          <thead><tr><th>Ujian</th><th>Waktu</th><th>Durasi</th></tr></thead>
+          <thead><tr><th>Ujian</th><th>Hari &amp; Waktu</th><th>Durasi</th></tr></thead>
           <tbody>
             ${c.rows.length ? c.rows.map((r) => `<tr>
               <td>${r.examTitle}</td>
@@ -157,33 +158,42 @@ export default function UjianPage() {
         <div class="hint">Login CBT: <b>NIS</b> &amp; <b>Password</b> di atas. <b>Kode ujian diumumkan pengawas</b> di ruang. Simpan kartu ini.</div>
       </div>
       <div class="meja">
-        <div class="mt">Meja Nomor</div>
-        <div class="mc">${c.seatNo ?? '—'}</div>
-        <div class="mi"><b class="kode">${c.code ?? '—'}</b><br>${c.student.name}<br>${c.className ?? '—'} · ${room.name}</div>
-        <div class="mcut">✂ tempel di meja — gunting di sini</div>
+        <div class="mb"><span class="mtl">Meja</span><span class="mc">${c.seatNo ?? '—'}</span></div>
+        <div class="mi"><b class="kode">${c.code ?? '—'}</b><br>${c.student.name}<br><span class="sub2">${c.className ?? '—'} · ${room.name}</span></div>
+        <div class="mcut">✂<br>tempel<br>di meja</div>
       </div>
-      </div>`).join('');
+      </div>`);
+    // Kelompokkan 4 kartu per lembar — grid 2×2, page-break antar lembar.
+    const sheets: string[] = [];
+    for (let i = 0; i < pairs.length; i += 4) {
+      sheets.push(`<div class="sheet">${pairs.slice(i, i + 4).join('')}</div>`);
+    }
     printHtml(`Kartu Ujian ${room.period} — ${room.name}`, `
       <style>
-        .pair{display:inline-flex;align-items:stretch;margin:0 0 14px;vertical-align:top}
-        .card{border:1.5px solid #334155;border-radius:8px 0 0 8px;border-right:none;padding:14px;width:430px}
-        .meja{width:200px;border:1.5px solid #334155;border-left:2px dashed #94a3b8;border-radius:0 8px 8px 0;padding:14px;display:flex;flex-direction:column}
-        .mt{font-size:9px;letter-spacing:.12em;color:#64748b;text-transform:uppercase}
-        .mc{font-family:ui-monospace,monospace;font-size:34px;font-weight:800;letter-spacing:.03em;margin:6px 0}
-        .mi{font-size:11.5px;line-height:1.5}
-        .mcut{margin-top:auto;padding-top:8px;font-size:9px;color:#94a3b8;border-top:1px dashed #cbd5e1}
-        .peserta{font-family:ui-monospace,monospace;font-size:17px;font-weight:800;letter-spacing:.05em;margin:2px 0 8px}
-        .kop{display:flex;gap:10px;align-items:center;border-bottom:2px solid #0f3a63;padding-bottom:8px;margin-bottom:8px}
-        .logo{height:40px}.sub{font-size:11px;color:#475569}
-        table.bio{font-size:12.5px}table.bio td{padding:2px 6px 2px 0}
-        table.jadwal{width:100%;border-collapse:collapse;font-size:10.5px;margin-top:8px}
-        table.jadwal th,table.jadwal td{border:1px solid #cbd5e1;padding:3px 5px;text-align:left}
-        table.jadwal th{background:#f1f5f9;font-size:9px;text-transform:uppercase;letter-spacing:.04em}
+        @page{size:A4;margin:10mm 8mm}
+        body{margin:0}
+        .sheet{display:grid;grid-template-columns:94mm 94mm;grid-auto-rows:minmax(0,auto);gap:5mm;justify-content:center;align-content:start;page-break-after:always}
+        .sheet:last-child{page-break-after:auto}
+        .pair{display:flex;flex-direction:column;page-break-inside:avoid}
+        .card{border:1.5px solid #334155;border-radius:8px 8px 0 0;padding:10px 12px;flex:1}
+        .meja{border:1.5px solid #334155;border-top:2px dashed #94a3b8;border-radius:0 0 8px 8px;padding:5px 10px;display:flex;align-items:center;gap:10px}
+        .mb{display:flex;align-items:baseline;gap:5px;white-space:nowrap}
+        .mtl{font-size:9px;letter-spacing:.12em;color:#64748b;text-transform:uppercase}
+        .mc{font-family:ui-monospace,monospace;font-size:26px;font-weight:800;letter-spacing:.03em}
+        .mi{font-size:10px;line-height:1.45;flex:1}
+        .sub2{color:#64748b}
+        .mcut{font-size:8px;color:#94a3b8;text-align:center;border-left:1px dashed #cbd5e1;padding-left:8px;line-height:1.4}
+        .peserta{font-family:ui-monospace,monospace;font-size:15px;font-weight:800;letter-spacing:.05em;margin:0 0 6px}
+        .kop{display:flex;gap:8px;align-items:center;border-bottom:2px solid #0f3a63;padding-bottom:6px;margin-bottom:6px}
+        .logo{height:34px}.sub{font-size:10px;color:#475569}
+        table.bio{font-size:11px}table.bio td{padding:1.5px 5px 1.5px 0}
+        table.jadwal{width:100%;border-collapse:collapse;font-size:9.5px;margin-top:6px}
+        table.jadwal th,table.jadwal td{border:1px solid #cbd5e1;padding:2.5px 4px;text-align:left}
+        table.jadwal th{background:#f1f5f9;font-size:8px;text-transform:uppercase;letter-spacing:.04em}
         table.jadwal td.c{text-align:center}
-        .kode{font-family:ui-monospace,monospace;font-size:12px;letter-spacing:.04em}
-        .hint{margin-top:8px;font-size:10.5px;color:#64748b;border-top:1px dashed #cbd5e1;padding-top:6px}
-        @media print{.pair{page-break-inside:avoid}}
-      </style>${html}`);
+        .kode{font-family:ui-monospace,monospace;font-size:11px;letter-spacing:.04em}
+        .hint{margin-top:6px;font-size:9.5px;color:#64748b;border-top:1px dashed #cbd5e1;padding-top:5px}
+      </style>${sheets.join('')}`);
   };
 
   /** Daftar duduk + absensi: nomor bangku → siswa, dikelompokkan kelas, dengan

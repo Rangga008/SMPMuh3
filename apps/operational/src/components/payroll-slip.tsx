@@ -9,6 +9,14 @@ export const jp = (n?: number | null) =>
   `${(+(n ?? 0).toFixed(1)).toLocaleString('id-ID')} JP`;
 export const monthLabel = (m?: string | null) =>
   m ? new Date(`${m}-15T00:00:00`).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' }) : '—';
+/** Rentang absen run — "21 Okt – 19 Nov 2026", fallback bulan kalender. */
+export const periodLabel = (run: { month: string; periodStart?: string | null; periodEnd?: string | null }) => {
+  if (!run.periodStart || !run.periodEnd) return monthLabel(run.month);
+  const fmt = (s: string, withYear: boolean) =>
+    new Date(`${s.slice(0, 10)}T12:00:00`).toLocaleDateString('id-ID',
+      withYear ? { day: 'numeric', month: 'short', year: 'numeric' } : { day: 'numeric', month: 'short' });
+  return `${fmt(run.periodStart, false)} – ${fmt(run.periodEnd, true)}`;
+};
 
 export const RUN_TONE: Record<string, 'primary' | 'accent' | 'neutral' | 'danger'> = {
   DRAFT: 'neutral',
@@ -152,7 +160,7 @@ export function SlipView({
             <td style={{ ...td, ...muted }}>NIP/NUPTK</td>
             <td style={td}>: {item.employee?.nip ?? '—'}</td>
             <td style={{ ...td, ...muted }}>Bulan</td>
-            <td style={td}>: {monthLabel(run.month)}</td>
+            <td style={td}>: {monthLabel(run.month)}{run.periodStart && run.periodEnd ? <span style={{ ...muted, fontSize: 10 }}> (absen {periodLabel(run)})</span> : null}</td>
           </tr>
           <tr>
             <td style={{ ...td, ...muted }}>Jam wajib</td>

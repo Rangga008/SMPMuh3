@@ -211,6 +211,7 @@ export default function JadwalKerjaPage() {
       () =>
         updateAttendanceSettings({
           workStart: String(f.get('workStart')),
+          workEnd: String(f.get('workEnd')),
           lateAfter: Number(f.get('lateAfter')) || 0,
           checkOutFrom: String(f.get('checkOutFrom')),
           autoDerive: f.get('autoDerive') === 'on',
@@ -281,6 +282,9 @@ export default function JadwalKerjaPage() {
           <form onSubmit={onSaveSettings} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Field label="Jam masuk (default)">
               <Input type="time" name="workStart" required defaultValue={settings.workStart} />
+            </Field>
+            <Field label="Akhir jam kerja" hint="Absen masuk dibatasi sampai jam ini; jam pulang tersimpan maksimal jam ini">
+              <Input type="time" name="workEnd" required defaultValue={settings.workEnd ?? '15:00'} />
             </Field>
             <Field label="Toleransi telat (menit)">
               <Input type="number" name="lateAfter" min={0} max={240} required defaultValue={settings.lateAfter} />

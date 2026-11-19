@@ -141,6 +141,11 @@ export class AttendanceSettingsDto {
   @Matches(HHMM, { message: 'Format jam harus HH:mm' })
   workStart?: string;
 
+  /** Akhir jam kerja default — cap jam pulang & batas akhir absen masuk. */
+  @IsOptional()
+  @Matches(HHMM, { message: 'Format jam harus HH:mm' })
+  workEnd?: string;
+
   @IsOptional()
   @IsInt()
   @Min(0)
@@ -266,4 +271,11 @@ export class LeaveDto {
   @IsString()
   @MaxLength(300)
   note?: string;
+
+  /** Izin pulang awal — menit sejak 00:00 WIB mulai izin (kosong = izin penuh sehari). */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(1439)
+  fromMinute?: number;
 }

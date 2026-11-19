@@ -415,7 +415,19 @@ export class BosHonorDto {
 
 export class CreatePayrollRunDto {
   @isMonth()
-  month!: string; // "YYYY-MM"
+  month!: string; // "YYYY-MM" — bulan tagihan
+
+  /** Awal periode absen "YYYY-MM-DD" — kosong = otomatis dari siklus pengaturan. */
+  @emptyToUndefined()
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'format tanggal harus YYYY-MM-DD' })
+  periodStart?: string;
+
+  /** Akhir periode absen "YYYY-MM-DD" (inklusif) — kosong = otomatis dari siklus. */
+  @emptyToUndefined()
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'format tanggal harus YYYY-MM-DD' })
+  periodEnd?: string;
 
   @emptyToUndefined()
   @IsOptional()
@@ -486,4 +498,18 @@ export class PayrollSettingsDto {
   @Min(5)
   @Max(240)
   lessonMinutes?: number;
+
+  /** Siklus periode absen: mulai tanggal N — > periodEndDay berarti bulan sebelumnya. */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(31)
+  periodStartDay?: number;
+
+  /** Siklus periode absen: berakhir tanggal N bulan tagihan. */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(31)
+  periodEndDay?: number;
 }

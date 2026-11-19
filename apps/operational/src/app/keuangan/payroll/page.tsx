@@ -9,11 +9,12 @@ import { PageTitle, Widget } from '@/components/widgets';
 import { PERMISSIONS } from '@smpmuh3/types';
 import {
   createPayrollRun,
+  getPayrollSettings,
   listPayrollRuns,
   me,
   type PayrollRunView,
 } from '@/lib/api';
-import { monthLabel, RUN_LABEL, RUN_TONE, rupiah } from '@/components/payroll-slip';
+import { monthLabel, periodLabel, RUN_LABEL, RUN_TONE, rupiah } from '@/components/payroll-slip';
 import { rowActionClasses } from '@/components/row-btn';
 
 export default function PayrollPage() {
@@ -24,6 +25,7 @@ export default function PayrollPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [createModal, setCreateModal] = useState(false);
+  const [cycle, setCycle] = useState({ start: 21, end: 19 });
 
   const loadRuns = useCallback(() => {
     listPayrollRuns()
@@ -34,6 +36,9 @@ export default function PayrollPage() {
 
   useEffect(() => {
     me().then((u) => setCanManage(u.permissions.includes(PERMISSIONS.PAYROLL_MANAGE))).catch(() => undefined);
+    getPayrollSettings()
+      .then((s) => setCycle({ start: s.periodStartDay ?? 21, end: s.periodEndDay ?? 19 }))
+      .catch(() => undefined);
     loadRuns();
   }, [loadRuns]);
 
@@ -64,6 +69,7 @@ export default function PayrollPage() {
                 <Link href={`/keuangan/payroll/${r.id}`} className="font-semibold text-primary-700 hover:underline">
                   {monthLabel(r.month)}
                 </Link>
+                <p className="text-[10px] text-sand-400">Absen {periodLabel(r)}</p>
                 {r.note ? <p className="text-[10px] text-sand-400">{r.note}</p> : null}
               </td>
               <td className="px-5 py-3 text-sand-600">{r._count?.items ?? 0} orang</td>
@@ -96,6 +102,8 @@ export default function PayrollPage() {
             createPayrollRun({
               month: String(f.get('month')),
               weeks: Number(f.get('weeks')) || 4,
+              ...(f.get('periodStart') ? { periodStart: String(f.get('periodStart')) } : {}),
+              ...(f.get('periodEnd') ? { periodEnd: String(f.get('periodEnd')) } : {}),
               ...(f.get('note') ? { note: String(f.get('note')) } : {}),
             })
               .then((r) => {
@@ -109,9 +117,35 @@ export default function PayrollPage() {
               .finally(() => setBusy(false));
           }}
         >
-          <Field label="Bulan" hint="Periode gaji — satu run per bulan">
-            <Input name="month" type="month" required defaultValue={new Date().toISOString().slice(0, 7)} />
+          <Field label="Bulan" hint="Bulan tagihan gaji — satu run per bulan">
+            <Input name="month" type="month" required defaultValue={new Date().toISOString().slice(0, 7)}
+              onChange={(e) => {
+                // Auto-isi periode absen dari siklus saat bulan diganti.
+                const [y, m] = e.target.value.split('-').map(Number);
+                if (!y || !m) return;
+                const startMonth = cycle.start > cycle.end ? m - 1 : m;
+                const clamp = (yy: number, mm: number, d: number) => {
+                  const dim = new Date(Date.UTC(yy, mm, 0)).getUTCDate();
+                  return new Date(Date.UTC(yy, mm - 1, Math.min(d, dim))).toISOString().slice(0, 10);
+                };
+                const form = e.target.form;
+                const si = form?.elements.namedItem('periodStart') as HTMLInputElement | null;
+                const ei = form?.elements.namedItem('periodEnd') as HTMLInputElement | null;
+                if (si) si.value = clamp(startMonth < 1 ? y - 1 : y, ((startMonth - 1 + 12) % 12) + 1, cycle.start);
+                if (ei) ei.value = clamp(y, m, cycle.end);
+              }} />
           </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Absen mulai" hint={`Siklus: tgl ${cycle.start}`}>
+              <Input name="periodStart" type="date" />
+            </Field>
+            <Field label="Absen sampai" hint={`Siklus: tgl ${cycle.end}`}>
+              <Input name="periodEnd" type="date" />
+            </Field>
+          </div>
+          <p className="-mt-1 text-[11px] text-sand-400">
+            Periode absen boleh melintasi bulan (mis. 21 {cycle.start > cycle.end ? 'bulan lalu' : ''} → {cycle.end} bulan tagihan). Kosongkan = otomatis dari siklus. Ubah siklus di Pengaturan → Gaji.
+          </p>
           <Field label="Jumlah Minggu Aktif" hint="Jam wajib pegawai dikalikan angka ini">
             <Input name="weeks" type="number" min={1} max={6} defaultValue={4} required />
           </Field>

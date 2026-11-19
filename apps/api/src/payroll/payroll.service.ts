@@ -28,6 +28,32 @@ const monthRange = (month: string) => {
   return { gte: new Date(Date.UTC(y ?? 1970, (m ?? 1) - 1, 1)), lt: new Date(Date.UTC(y ?? 1970, m ?? 1, 1)) };
 };
 
+/** Rentang absen sebuah run — periode per tanggal (mis. 21 lalu → 19 ini),
+    fallback ke bulan kalender untuk run lama tanpa period_start/end. */
+const runRange = (run: { month: string; periodStart: Date | null; periodEnd: Date | null }) =>
+  run.periodStart && run.periodEnd
+    ? { gte: run.periodStart, lt: new Date(run.periodEnd.getTime() + 86400000) }
+    : monthRange(run.month);
+
+/** Label periode singkat untuk catatan/jurnal — "21 Nov–19 Des" atau "2026-12". */
+const runLabel = (run: { month: string; periodStart: Date | null; periodEnd: Date | null }) => {
+  if (!run.periodStart || !run.periodEnd) return run.month;
+  const f = (d: Date) =>
+    d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  return `${f(run.periodStart)}–${f(run.periodEnd)}`;
+};
+
+/** Jepit tanggal ke panjang bulan (mis. 31 di Februari → 28/29). */
+const clampDay = (year: number, month1to12: number, day: number) => {
+  const dim = new Date(Date.UTC(year, month1to12, 0)).getUTCDate();
+  return new Date(Date.UTC(year, month1to12 - 1, Math.min(Math.max(1, day), dim)));
+};
+
+const parseDay = (s: string) => {
+  const d = new Date(`${s}T00:00:00.000Z`);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+
 const PENSION_KEY = 'pensiun';
 const SALARY_CATEGORY_KEY = 'ops_gaji';
 
@@ -137,7 +163,7 @@ export class PayrollService {
   }
 
   async updatePayrollSettings(
-    dto: { lateDeductionPerDay?: number; lateDeductionPerMin?: number; lessonMinutes?: number },
+    dto: { lateDeductionPerDay?: number; lateDeductionPerMin?: number; lessonMinutes?: number; periodStartDay?: number; periodEndDay?: number },
     actorId: string,
   ) {
     const s = await this.prisma.payrollSetting.upsert({
@@ -151,6 +177,12 @@ export class PayrollService {
           : {}),
         ...(dto.lessonMinutes !== undefined
           ? { lessonMinutes: Math.min(240, Math.max(5, Math.round(dto.lessonMinutes))) }
+          : {}),
+        ...(dto.periodStartDay !== undefined
+          ? { periodStartDay: Math.min(31, Math.max(1, Math.round(dto.periodStartDay))) }
+          : {}),
+        ...(dto.periodEndDay !== undefined
+          ? { periodEndDay: Math.min(31, Math.max(1, Math.round(dto.periodEndDay))) }
           : {}),
       },
       create: { id: 'global' },
@@ -283,9 +315,11 @@ export class PayrollService {
     return Math.max(1, s?.lessonMinutes ?? 40);
   }
 
-  listAttendance(month: string, employeeId?: string) {
+  async listAttendance(month: string, employeeId?: string) {
     this.assertMonth(month);
-    const range = monthRange(month);
+    // Bila run bulan ini punya periode per tanggal — pakai rentangnya (sinkron slip).
+    const run = await this.prisma.payrollRun.findUnique({ where: { month } });
+    const range = run ? runRange(run) : monthRange(month);
     return this.prisma.employeeAttendance.findMany({
       where: {
         date: { gte: range.gte, lt: range.lt },
@@ -749,7 +783,7 @@ export class PayrollService {
   private async computeItems(tx: Prisma.TransactionClient, runId: string) {
     const run = await tx.payrollRun.findUniqueOrThrow({ where: { id: runId } });
     const month = run.month;
-    const range = monthRange(month);
+    const range = runRange(run);
 
     const employees = await tx.employee.findMany({
       where: { isActive: true },
@@ -993,10 +1027,33 @@ export class PayrollService {
     this.assertMonth(dto.month);
     const existing = await this.prisma.payrollRun.findUnique({ where: { month: dto.month } });
     if (existing) throw new ConflictException(`Run ${dto.month} sudah ada (status ${existing.status})`);
+
+    // Periode absen: eksplisit dari request, atau otomatis dari siklus pengaturan
+    // (startDay bulan SEBELUMNYA → endDay bulan tagihan; startDay ≤ endDay → bulan sama).
+    const [y, m] = dto.month.split('-').map(Number);
+    let periodStart = dto.periodStart ? parseDay(dto.periodStart) : null;
+    let periodEnd = dto.periodEnd ? parseDay(dto.periodEnd) : null;
+    if (!periodStart || !periodEnd) {
+      const st = await this.getPayrollSettings();
+      const sDay = st.periodStartDay, eDay = st.periodEndDay;
+      const startMonth = sDay > eDay ? (m ?? 1) - 1 : m ?? 1; // 21→19 → bulan lalu
+      periodStart ??= clampDay(startMonth < 1 ? (y ?? 1970) - 1 : y ?? 1970, ((startMonth - 1 + 12) % 12) + 1, sDay);
+      periodEnd ??= clampDay(y ?? 1970, m ?? 1, eDay);
+    }
+    if (periodEnd <= periodStart) {
+      throw new BadRequestException('Akhir periode harus setelah awal periode.');
+    }
+    const spanDays = Math.round((periodEnd.getTime() - periodStart.getTime()) / 86400000) + 1;
+    if (spanDays > 45) {
+      throw new BadRequestException(`Periode ${spanDays} hari terlalu panjang — maksimal 45 hari.`);
+    }
+
     const run = await this.prisma.$transaction(async (tx) => {
       const r = await tx.payrollRun.create({
         data: {
           month: dto.month,
+          periodStart,
+          periodEnd,
           weeks: dto.weeks ?? 4,
           academicYearId: dto.academicYearId ?? null,
           note: dto.note ?? null,
@@ -1041,7 +1098,7 @@ export class PayrollService {
     const manualNote = dto.manualNote !== undefined ? dto.manualNote || null : item.manualNote;
 
     // Hitung ulang transport dengan formula yang sama seperti computeItems (satuan JP).
-    const range = monthRange(item.run.month);
+    const range = runRange(item.run);
     const [att, payrollSettings] = await Promise.all([
       this.prisma.employeeAttendance.findMany({
         where: { employeeId: emp.id, date: { gte: range.gte, lt: range.lt } },
@@ -1200,7 +1257,7 @@ export class PayrollService {
               categoryId: salaryCat.id,
               amount: item.netAmount,
               occurredAt: new Date(),
-              description: `Gaji ${item.employee.name} — ${run.month}`,
+              description: `Gaji ${item.employee.name} — ${runLabel(run)}`,
               source: 'payroll',
               payrollItemId: item.id,
               cashAccountId,
@@ -1214,7 +1271,7 @@ export class PayrollService {
               amount: item.netAmount,
               refType: 'finance_tx',
               refId: ftx.id,
-              description: `Gaji ${item.employee.name} — ${run.month}`,
+              description: `Gaji ${item.employee.name} — ${runLabel(run)}`,
               occurredAt: new Date(),
             },
           });

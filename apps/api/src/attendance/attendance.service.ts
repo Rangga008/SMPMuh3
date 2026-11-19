@@ -56,6 +56,13 @@ const hhmmToMin = (s: string) => {
   return h * 60 + m;
 };
 
+/** Menit sejak 00:00 → "HH:mm". */
+const minToHHMM = (m: number) =>
+  `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+
+/** Toleransi absen masuk sebelum jam mulai — masuk lebih awal tetap sah. */
+const CHECKIN_EARLY_MIN = 120;
+
 /** Hari dalam seminggu versi lokal WIB — 0=Minggu … 6=Sabtu. */
 const dowLocal = (d: Date) =>
   new Date(d.getTime() + DEVICE_OFFSET_MS).getUTCDay();
@@ -208,6 +215,7 @@ export class AttendanceService {
       where: { id: 'global' },
       update: {
         ...(dto.workStart !== undefined ? { workStart: dto.workStart } : {}),
+        ...(dto.workEnd !== undefined ? { workEnd: dto.workEnd } : {}),
         ...(dto.lateAfter !== undefined ? { lateAfter: dto.lateAfter } : {}),
         ...(dto.checkOutFrom !== undefined ? { checkOutFrom: dto.checkOutFrom } : {}),
         ...(dto.autoDerive !== undefined ? { autoDerive: dto.autoDerive } : {}),
@@ -351,6 +359,9 @@ export class AttendanceService {
       workStartMin: sched?.startMin ?? shift?.startMinute ?? hhmmToMin(settings.workStart),
       lateAfterMin: shift?.lateAfter ?? settings.lateAfter,
       checkOutFromMin: sched?.endMin ?? shift?.checkOutFrom ?? hhmmToMin(settings.checkOutFrom),
+      // Akhir jam kerja — cap jam pulang (pulang lewat jam ini dihitung sampai sini
+      // saja) dan batas akhir absen masuk. Jadwal mengajar > shift > global.
+      workEndMin: sched?.endMin ?? shift?.endMinute ?? hhmmToMin(settings.workEnd),
       shiftName: shift?.name ?? (sched ? 'Jadwal mengajar' : null),
     };
   }
@@ -403,13 +414,28 @@ export class AttendanceService {
       (l) => l.inOut === 1 && (!checkIn || l.punchedAt > checkIn),
     );
     const last = logs[logs.length - 1]!.punchedAt;
-    const checkOut =
+    let checkOut =
       (outPunches.length ? outPunches[outPunches.length - 1]!.punchedAt : null) ??
       (checkIn &&
       last.getTime() !== checkIn.getTime() &&
       localMinutes(last) >= rule.checkOutFromMin
         ? last
         : null);
+    const existing = await this.prisma.employeeAttendance.findUnique({
+      where: { employeeId_date: { employeeId, date: day } },
+    });
+    const partialMin = existing?.partialLeaveFromMin ?? null;
+    // Cap jam pulang: tap lewat akhir jam kerja disimpan sampai akhir jam kerja saja
+    // (tap mentah tetap utuh di log) — JP tidak membengkak karena pulang malam.
+    // Izin pulang awal memperketat cap lebih jauh.
+    if (checkOut) {
+      const endCap = new Date(day.getTime() + rule.workEndMin * 60000 - DEVICE_OFFSET_MS);
+      if (checkOut > endCap) checkOut = endCap;
+      if (partialMin != null) {
+        const plCap = new Date(day.getTime() + partialMin * 60000 - DEVICE_OFFSET_MS);
+        if (checkOut > plCap) checkOut = plCap;
+      }
+    }
     const lateMinutes = checkIn
       ? Math.max(0, localMinutes(checkIn) - rule.workStartMin)
       : 0;
@@ -420,9 +446,6 @@ export class AttendanceService {
         ? 'TELAT'
         : 'HADIR'
       : 'ALPHA';
-    const existing = await this.prisma.employeeAttendance.findUnique({
-      where: { employeeId_date: { employeeId, date: day } },
-    });
     // Status manual (izin/sakit/alpha) tidak ditimpa — hanya jam yang dilengkapi.
     const finalStatus =
       existing && ['IZIN', 'SAKIT', 'ALPHA'].includes(existing.status)
@@ -430,10 +453,11 @@ export class AttendanceService {
         : status;
     // JP efektif hari itu — otomatis: jadwal mengajar (guru) bila ada, selain itu
     // durasi kehadiran masuk→pulang (staf). Dipakai payroll untuk JP hadir & transport.
+    // Izin pulang awal: hanya menit sebelum batas izin yang dihitung.
     const lessonMin = await this.lessonMinutes();
     const teaching =
       finalStatus === 'HADIR' || finalStatus === 'TELAT'
-        ? Math.round((await this.scheduledMinutes(employeeId, day)) / lessonMin) ||
+        ? Math.round((await this.scheduledMinutes(employeeId, day, partialMin ?? undefined)) / lessonMin) ||
           (checkIn && checkOut
             ? Math.round(Math.max(0, Math.round((checkOut.getTime() - checkIn.getTime()) / 60000)) / lessonMin)
             : 0)
@@ -471,8 +495,9 @@ export class AttendanceService {
   }
 
   /** Menit mengajar terjadwal seorang pegawai pada tanggal — dari jadwal pelajaran
-      tahun ajaran yang memuat tanggal itu (fallback: tahun aktif). */
-  private async scheduledMinutes(employeeId: string, day: Date) {
+      tahun ajaran yang memuat tanggal itu (fallback: tahun aktif).
+      `cutoffMin` opsional: hanya menit sebelum batas itu yang dihitung (izin pulang awal). */
+  private async scheduledMinutes(employeeId: string, day: Date, cutoffMin?: number) {
     const dow = day.getUTCDay(); // 0=Minggu … 6=Sabtu — day adalah tengah malam UTC dari tanggal WIB
     if (dow === 0) return 0;
     const year =
@@ -486,7 +511,10 @@ export class AttendanceService {
       where: { day: dow, assignment: { employeeId, academicYearId: year.id } },
       select: { startMinute: true, endMinute: true },
     });
-    return entries.reduce((s, e) => s + Math.max(0, e.endMinute - e.startMinute), 0);
+    return entries.reduce(
+      (s, e) => s + Math.max(0, Math.min(e.endMinute, cutoffMin ?? e.endMinute) - e.startMinute),
+      0,
+    );
   }
 
   /** Derivasi ulang seluruh hari yang punya log — dipanggil tombol "Hitung Ulang". */
@@ -557,9 +585,11 @@ export class AttendanceService {
         return {
           employee: e,
           status: r?.status ?? null,
+          leaveCategory: r?.leaveCategory ?? null,
           checkInAt: r?.checkInAt ?? null,
           checkOutAt: r?.checkOutAt ?? null,
           lateMinutes: r?.lateMinutes ?? null,
+          partialLeaveFromMin: r?.partialLeaveFromMin ?? null,
           source: r?.source ?? null,
           note: r?.note ?? null,
         };
@@ -595,10 +625,12 @@ export class AttendanceService {
       days: recs.map((r) => ({
         date: r.date,
         status: r.status,
+        leaveCategory: r.leaveCategory,
         checkInAt: r.checkInAt,
         checkOutAt: r.checkOutAt,
         lateMinutes: r.lateMinutes,
         teachingJp: r.teachingJp,
+        partialLeaveFromMin: r.partialLeaveFromMin,
         source: r.source,
         note: r.note,
       })),
@@ -684,6 +716,40 @@ export class AttendanceService {
       );
     }
     const now = new Date();
+    const day = localDay(now);
+    const existing = await this.prisma.employeeAttendance.findUnique({
+      where: { employeeId_date: { employeeId: emp.id, date: day } },
+    });
+    const nowMin = localMinutes(now);
+    if (inOut === 0) {
+      // Absen masuk: sekali per hari, dan hanya dalam jendela jam kerja.
+      if (existing?.checkInAt) {
+        throw new ConflictException(
+          `Sudah absen masuk hari ini pukul ${minToHHMM(localMinutes(existing.checkInAt))} WIB — masuk hanya bisa sekali.`,
+        );
+      }
+      const rule = await this.shiftRuleFor(emp.id, day);
+      if (nowMin < rule.workStartMin - CHECKIN_EARLY_MIN) {
+        throw new BadRequestException(
+          `Belum jam kerja — absen masuk paling awal ${minToHHMM(rule.workStartMin - CHECKIN_EARLY_MIN)} WIB.`,
+        );
+      }
+      if (nowMin > rule.workEndMin) {
+        throw new BadRequestException(
+          `Sudah di luar jam kerja (selesai ${minToHHMM(rule.workEndMin)} WIB) — absen masuk tidak bisa; absen pulang tetap bisa kapan saja.`,
+        );
+      }
+    } else {
+      // Absen pulang: harus sudah masuk, hanya sekali, tapi boleh jam berapa pun.
+      if (!existing?.checkInAt) {
+        throw new BadRequestException('Belum ada absen masuk hari ini — lakukan absen masuk lebih dulu.');
+      }
+      if (existing.checkOutAt) {
+        throw new ConflictException(
+          `Sudah absen pulang hari ini pukul ${minToHHMM(localMinutes(existing.checkOutAt))} WIB — pulang hanya bisa sekali.`,
+        );
+      }
+    }
     const ext = file.mimetype.includes('png') ? 'png' : 'jpg';
     const photoKey = `attendance/selfie/${emp.id}/${localDay(now).toISOString().slice(0, 10)}-${inOut}-${now.getTime()}.${ext}`;
     await this.storage.putObject(photoKey, file.buffer, file.mimetype);
@@ -700,7 +766,6 @@ export class AttendanceService {
         longitude,
       },
     });
-    const day = localDay(now);
     await this.deriveDay(emp.id, day);
     const attendance = await this.prisma.employeeAttendance.findUnique({
       where: { employeeId_date: { employeeId: emp.id, date: day } },
@@ -756,17 +821,27 @@ export class AttendanceService {
     return {
       employee: { id: emp.id, name: emp.name, nip: emp.nip },
       geo: { schoolLat: settings.schoolLat, schoolLng: settings.schoolLng, radiusM: settings.radiusM, configured: settings.schoolLat != null && settings.schoolLng != null },
+      work: { workStart: settings.workStart, workEnd: settings.workEnd, earlyMin: CHECKIN_EARLY_MIN },
       today: today
-        ? { status: today.status, checkInAt: today.checkInAt, checkOutAt: today.checkOutAt, lateMinutes: today.lateMinutes }
+        ? {
+            status: today.status,
+            leaveCategory: today.leaveCategory,
+            checkInAt: today.checkInAt,
+            checkOutAt: today.checkOutAt,
+            lateMinutes: today.lateMinutes,
+            partialLeaveFromMin: today.partialLeaveFromMin,
+          }
         : null,
       todayLogs,
       rows: rows.map((r) => ({
         date: r.date,
         status: r.status,
+        leaveCategory: r.leaveCategory,
         checkInAt: r.checkInAt,
         checkOutAt: r.checkOutAt,
         lateMinutes: r.lateMinutes,
         teachingJp: r.teachingJp,
+        partialLeaveFromMin: r.partialLeaveFromMin,
         note: r.note,
       })),
       shifts: shifts.map((s) => ({
@@ -783,19 +858,77 @@ export class AttendanceService {
   }
 
   /** Pegawai setor izin sendiri (sakit/dinas/workshop/lainnya) dari Absen Saya.
-      Status: SAKIT→SAKIT, lainnya→IZIN; tidak menimpa hari yang sudah HADIR/TELAT. */
-  async submitLeave(userId: string, dto: { date: string; category: 'SAKIT' | 'DINAS' | 'WORKSHOP' | 'LAINNYA'; note?: string }) {
+      Status: SAKIT→SAKIT, lainnya→IZIN; tidak menimpa hari yang sudah HADIR/TELAT.
+      `fromMinute` (menit WIB) → izin PULANG AWAL: hanya untuk yang sudah absen masuk;
+      sisa hari setelah menit itu dihitung izin (JP & jam pulang di-cap ke sana). */
+  async submitLeave(userId: string, dto: { date: string; category: 'SAKIT' | 'DINAS' | 'WORKSHOP' | 'LAINNYA'; note?: string; fromMinute?: number }) {
     const emp = await this.employeeOfUser(userId);
     const day = localDay(new Date(`${dto.date}T00:00:00+07:00`));
     if (Number.isNaN(day.getTime())) throw new BadRequestException('Tanggal tidak valid.');
     const existing = await this.prisma.employeeAttendance.findUnique({
       where: { employeeId_date: { employeeId: emp.id, date: day } },
     });
+    const catLabel = { SAKIT: 'Sakit', DINAS: 'Dinas luar', WORKSHOP: 'Workshop/Pelatihan', LAINNYA: 'Lainnya' }[dto.category];
+
+    // ---------- Izin pulang awal (parsial) ----------
+    if (dto.fromMinute != null) {
+      if (!existing?.checkInAt) {
+        throw new BadRequestException('Izin pulang awal hanya untuk hari yang sudah ada absen masuk — absen dulu, atau kirim izin penuh.');
+      }
+      if (existing.status === 'IZIN' || existing.status === 'SAKIT') {
+        throw new ConflictException(`Tanggal ${dto.date} sudah tercatat izin penuh.`);
+      }
+      const inMin = localMinutes(existing.checkInAt);
+      if (dto.fromMinute <= inMin) {
+        throw new BadRequestException(`Waktu mulai izin harus setelah jam masuk (${minToHHMM(inMin)} WIB).`);
+      }
+      const rec = await this.prisma.employeeAttendance.update({
+        where: { id: existing.id },
+        data: {
+          partialLeaveFromMin: dto.fromMinute,
+          leaveCategory: dto.category,
+          note: dto.note ?? `${catLabel} — izin sejak ${minToHHMM(dto.fromMinute)} WIB`,
+          source: 'SELFIE',
+        },
+      });
+      // Hitung ulang rekap: jam pulang & JP di-cap ke batas izin.
+      await this.deriveDay(emp.id, day);
+      // Rekap manual tanpa log tak ter-derive — JP dihitung ulang di sini:
+      // jadwal mengajar sampai batas izin, fallback durasi masuk→(min pulang/izin).
+      const refreshed = await this.prisma.employeeAttendance.findUnique({ where: { id: rec.id } });
+      if (refreshed && (refreshed.status === 'HADIR' || refreshed.status === 'TELAT') && refreshed.checkInAt) {
+        const lessonMin = await this.lessonMinutes();
+        let expected = Math.round(
+          (await this.scheduledMinutes(emp.id, day, dto.fromMinute)) / lessonMin,
+        );
+        if (!expected) {
+          const outMin = Math.min(
+            refreshed.checkOutAt ? localMinutes(refreshed.checkOutAt) : dto.fromMinute,
+            dto.fromMinute,
+          );
+          expected = Math.round(
+            Math.max(0, outMin - localMinutes(refreshed.checkInAt)) / lessonMin,
+          );
+        }
+        if (expected !== refreshed.teachingJp) {
+          await this.prisma.employeeAttendance.update({
+            where: { id: rec.id },
+            data: { teachingJp: expected },
+          });
+        }
+      }
+      await this.audit.log({
+        actorId: userId, action: 'attendance.leave', entity: 'employee_attendance', entityId: rec.id,
+        metadata: { date: dto.date, category: dto.category, partialFrom: dto.fromMinute },
+      });
+      return this.prisma.employeeAttendance.findUnique({ where: { id: rec.id } });
+    }
+
+    // ---------- Izin penuh sehari ----------
     if (existing && (existing.status === 'HADIR' || existing.status === 'TELAT')) {
       throw new ConflictException(`Tanggal ${dto.date} sudah tercatat hadir — izin tidak bisa dikirim.`);
     }
     const status = dto.category === 'SAKIT' ? 'SAKIT' : 'IZIN';
-    const catLabel = { SAKIT: 'Sakit', DINAS: 'Dinas luar', WORKSHOP: 'Workshop/Pelatihan', LAINNYA: 'Lainnya' }[dto.category];
     const rec = await this.prisma.employeeAttendance.upsert({
       where: { employeeId_date: { employeeId: emp.id, date: day } },
       update: { status, leaveCategory: dto.category, note: dto.note ?? `${catLabel}`, source: 'SELFIE' },

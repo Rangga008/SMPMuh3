@@ -308,6 +308,54 @@ export default function PayrollPengaturanPage() {
               Contoh: {payrollSettings?.lessonMinutes ?? 40} menit → hadir 12.00–17.00 (300 mnt) = {Math.round(300 / (payrollSettings?.lessonMinutes || 40))} JP transport.
             </p>
           </form>
+          <form
+            className="mb-4 flex flex-wrap items-end gap-3 rounded-xl border border-sand-200 bg-sand-50 p-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const f = new FormData(e.currentTarget);
+              void run(
+                () =>
+                  updatePayrollSettings({
+                    periodStartDay: Number(f.get('periodStartDay')) || 21,
+                    periodEndDay: Number(f.get('periodEndDay')) || 19,
+                  }),
+                'Siklus periode absen disimpan.',
+              );
+            }}
+          >
+            <div className="w-44">
+              <Field label="Periode mulai tgl" hint="bulan sebelumnya bila > tgl akhir">
+                <Input
+                  key={`ps${payrollSettings?.periodStartDay ?? 21}`}
+                  name="periodStartDay"
+                  type="number"
+                  min={1}
+                  max={31}
+                  step={1}
+                  defaultValue={payrollSettings?.periodStartDay ?? 21}
+                  disabled={!canManage}
+                />
+              </Field>
+            </div>
+            <div className="w-44">
+              <Field label="Periode sampai tgl" hint="di bulan tagihan">
+                <Input
+                  key={`pe${payrollSettings?.periodEndDay ?? 19}`}
+                  name="periodEndDay"
+                  type="number"
+                  min={1}
+                  max={31}
+                  step={1}
+                  defaultValue={payrollSettings?.periodEndDay ?? 19}
+                  disabled={!canManage}
+                />
+              </Field>
+            </div>
+            {canManage ? <Button type="submit" size="sm" disabled={busy}>Simpan</Button> : null}
+            <p className="pb-1 text-[11px] text-sand-400">
+              Run gaji mengambil absen dari tanggal ini — mis. tgl {payrollSettings?.periodStartDay ?? 21} bulan lalu → tgl {payrollSettings?.periodEndDay ?? 19} bulan tagihan (lintas bulan). Masih bisa dioverride per run.
+            </p>
+          </form>
           <DataTable
             head={['Pegawai', 'Masa kerja', 'Golongan', 'JP wajib/bln', 'Tarif/JP', 'Transport/JP', 'Sertifikasi', ...(canManage ? [''] : [])]}
             loading={false}

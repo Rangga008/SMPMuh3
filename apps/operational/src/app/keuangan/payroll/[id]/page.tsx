@@ -24,7 +24,7 @@ import {
   type PayrollRunView,
   type School,
 } from '@/lib/api';
-import { jp, monthLabel, printEl, RUN_LABEL, RUN_TONE, rupiah, SlipView } from '@/components/payroll-slip';
+import { jp, monthLabel, periodLabel, printEl, RUN_LABEL, RUN_TONE, rupiah, SlipView } from '@/components/payroll-slip';
 
 import { RowBtn } from '@/components/row-btn';
 import { useConfirm } from '@/components/confirm-dialog';
@@ -96,7 +96,7 @@ export default function PayrollRunPage() {
     <Shell>
       <PageTitle
         title={run ? `Payroll ${monthLabel(run.month)}` : 'Detail Run'}
-        subtitle={run ? `${run.items?.length ?? 0} pegawai · ${run.weeks} minggu aktif` : 'Memuat…'}
+        subtitle={run ? `${run.items?.length ?? 0} pegawai · ${run.weeks} minggu aktif · absen ${periodLabel(run)}` : 'Memuat…'}
         actions={
           <Link
             href="/keuangan/payroll"

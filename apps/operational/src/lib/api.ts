@@ -824,11 +824,15 @@ export interface DailyRow {
   checkInAt?: string | null;
   checkOutAt?: string | null;
   lateMinutes?: number | null;
+  /** Izin pulang awal — menit sejak 00:00 WIB mulai izin; sisa hari izin. */
+  partialLeaveFromMin?: number | null;
   source?: 'DEVICE' | 'IMPORT' | 'MANUAL' | 'SELFIE' | null;
   note?: string | null;
 }
 export interface AttendanceSettings {
   workStart: string;
+  /** Akhir jam kerja default — cap jam pulang & batas akhir absen masuk. */
+  workEnd: string;
   lateAfter: number;
   checkOutFrom: string;
   autoDerive: boolean;
@@ -1038,6 +1042,9 @@ export interface PayrollSettings {
   lateDeductionPerMin: number;
   /** 1 jam pelajaran = N menit — konversi absen harian → JP. */
   lessonMinutes: number;
+  /** Siklus periode absen: mulai tgl N (> endDay = bulan sebelumnya), akhir tgl N bulan tagihan. */
+  periodStartDay: number;
+  periodEndDay: number;
 }
 export const getPayrollSettings = () =>
   req<PayrollSettings>('/admin/payroll/settings');
@@ -2050,6 +2057,8 @@ export interface EmpAttendance {
   /** JP efektif hari itu — entri manual langsung JP; otomatis dari jadwal/tap. */
   teachingJp: number;
   lateMinutes?: number;
+  /** Izin pulang awal — menit sejak 00:00 WIB mulai izin. */
+  partialLeaveFromMin?: number | null;
   note?: string | null;
   checkInAt?: string | null;
   checkOutAt?: string | null;
@@ -2152,6 +2161,9 @@ export interface PayrollItemView {
 export interface PayrollRunView {
   id: string;
   month: string;
+  /** Rentang absen per tanggal (boleh lintas bulan) — null = bulan kalender. */
+  periodStart?: string | null;
+  periodEnd?: string | null;
   weeks: number;
   status: 'DRAFT' | 'FINALIZED' | 'PAID' | 'VOID';
   note?: string | null;
