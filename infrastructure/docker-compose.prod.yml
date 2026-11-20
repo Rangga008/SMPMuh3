@@ -314,6 +314,7 @@ services:
       - wp-data:/var/www/html:ro   # file statis WP dilayani Caddy; .php → fastcgi
       - caddy-data:/data
       - caddy-config:/config
+      - /var/log/caddy-edge:/var/log/caddy   # access log → dibaca fail2ban di host
     networks: [web]
     deploy:
       resources:
