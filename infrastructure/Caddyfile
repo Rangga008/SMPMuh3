@@ -21,6 +21,14 @@
 smpm3bdg.sch.id, www.smpm3bdg.sch.id {
 	import common
 	root * /var/www/html
+	# Access log JSON — dimonitor fail2ban untuk brute-force wp-login.
+	log {
+		output file /var/log/caddy/access.log {
+			roll_size 20mb
+			roll_keep 3
+		}
+		format json
+	}
 	request_body {
 		max_size 40MB
 	}
