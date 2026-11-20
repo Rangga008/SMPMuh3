@@ -8,6 +8,7 @@ import argon2 from 'argon2';
 import { randomBytes, randomInt } from 'node:crypto';
 import PDFDocument from 'pdfkit';
 import * as XLSX from 'xlsx';
+import { parseXlsx } from '../core/xlsx-guard';
 import { PrismaService } from '../core/prisma/prisma.service';
 import { StorageService } from '../core/storage/storage.service';
 import { normalizePhone } from '../identity/users/users.service';
@@ -51,8 +52,9 @@ export class SpmbImportService {
   async importExcel(buffer: Buffer, actorId: string, dry = false) {
     let workbook: XLSX.WorkBook;
     try {
-      workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true });
-    } catch {
+      workbook = parseXlsx(buffer, { cellDates: true });
+    } catch (e) {
+      if (e instanceof BadRequestException) throw e;
       throw new BadRequestException('File Excel tidak dapat dibaca');
     }
     const year = await this.prisma.academicYear.findFirst({

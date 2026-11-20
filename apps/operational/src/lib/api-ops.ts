@@ -428,7 +428,9 @@ export const uploadStudentPhoto = (id: string, file: File) => {
   fd.set('file', file);
   return req<{ photoKey: string }>(`/ops/students/${id}/photo`, { method: 'POST', body: fd });
 };
-export const studentPhotoUrl = (id: string) => `${API}/ops/students/${id}/photo`;
+/** URL foto bertanda tangan (24 jam) — endpoint gambar publik tapi wajib sig. */
+export const getStudentPhotoUrl = (id: string) =>
+  req<{ url: string; expiresAt: string }>(`/ops/students/${id}/photo-url`);
 
 export interface ImportResult {
   total: number; ok: number; failed: number;

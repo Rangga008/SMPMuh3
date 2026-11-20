@@ -13,7 +13,7 @@ import {
   type ExamRoomView, type ExamSeatView, type Prasarana,
 } from '@/lib/api-ops';
 import { listAcademicYears, listClasses, type AcademicYear, type ClassView } from '@/lib/api';
-import { printHtml } from '@/lib/print';
+import { printHtml, esc } from '@/lib/print';
 
 function SeatTable({ seats, roomName, roomId, onChanged }: { seats: ExamSeatView[]; roomName: string; roomId: string; onChanged: () => void }) {
   const [error, setError] = useState<string | null>(null);
@@ -135,21 +135,21 @@ export default function UjianPage() {
       <div class="pair">
       <div class="card">
         <div class="kop">${school?.logoUrl ? `<img src="/logo.png" class="logo" onerror="this.style.display='none'"/>` : ''}<div>
-          <b>${school?.name ?? 'SMP Muhammadiyah 3 Kota Bandung'}</b>${school?.npsn ? ` · NPSN ${school.npsn}` : ''}<br>
-          <span class="sub">Kartu Peserta ${room.period} · TA ${room.academicYear?.name ?? ''}</span></div></div>
-        <div class="peserta">${c.code ?? '—'}</div>
+          <b>${esc(school?.name ?? 'SMP Muhammadiyah 3 Kota Bandung')}</b>${school?.npsn ? ` · NPSN ${esc(school.npsn)}` : ''}<br>
+          <span class="sub">Kartu Peserta ${esc(room.period)} · TA ${esc(room.academicYear?.name ?? '')}</span></div></div>
+        <div class="peserta">${esc(c.code ?? '—')}</div>
         <table class="bio">
-          <tr><td>Nama</td><td>: <b>${c.student.name}</b></td></tr>
-          <tr><td>NIS</td><td>: <b class="kode">${c.student.nis ?? '—'}</b></td></tr>
-          <tr><td>Kelas</td><td>: ${c.className ?? '—'}</td></tr>
-          ${c.password ? `<tr><td>Password</td><td>: <b class="kode">${c.password}</b></td></tr>` : ''}
-          <tr><td>Ruang</td><td>: <b>${room.name}</b> · Meja No. ${c.seatNo ?? '—'}</td></tr>
+          <tr><td>Nama</td><td>: <b>${esc(c.student.name)}</b></td></tr>
+          <tr><td>NIS</td><td>: <b class="kode">${esc(c.student.nis ?? '—')}</b></td></tr>
+          <tr><td>Kelas</td><td>: ${esc(c.className ?? '—')}</td></tr>
+          ${c.password ? `<tr><td>Password</td><td>: <b class="kode">${esc(c.password)}</b></td></tr>` : ''}
+          <tr><td>Ruang</td><td>: <b>${esc(room.name)}</b> · Meja No. ${esc(c.seatNo ?? '—')}</td></tr>
         </table>
         <table class="jadwal">
           <thead><tr><th>Ujian</th><th>Hari &amp; Waktu</th><th>Durasi</th></tr></thead>
           <tbody>
             ${c.rows.length ? c.rows.map((r) => `<tr>
-              <td>${r.examTitle}</td>
+              <td>${esc(r.examTitle)}</td>
               <td>${fmt(r.startAt)}${r.endAt ? `–${new Date(r.endAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}` : ''}</td>
               <td class="c">${r.durationMin} mnt</td>
             </tr>`).join('') : '<tr><td colspan="3"><i>Jadwal ujian belum ada — ikuti pengumuman pengawas.</i></td></tr>'}
@@ -158,8 +158,8 @@ export default function UjianPage() {
         <div class="hint">Login CBT: <b>NIS</b> &amp; <b>Password</b> di atas. <b>Kode ujian diumumkan pengawas</b> di ruang. Simpan kartu ini.</div>
       </div>
       <div class="meja">
-        <div class="mb"><span class="mtl">Meja</span><span class="mc">${c.seatNo ?? '—'}</span></div>
-        <div class="mi"><b class="kode">${c.code ?? '—'}</b><br>${c.student.name}<br><span class="sub2">${c.className ?? '—'} · ${room.name}</span></div>
+        <div class="mb"><span class="mtl">Meja</span><span class="mc">${esc(c.seatNo ?? '—')}</span></div>
+        <div class="mi"><b class="kode">${esc(c.code ?? '—')}</b><br>${esc(c.student.name)}<br><span class="sub2">${esc(c.className ?? '—')} · ${esc(room.name)}</span></div>
         <div class="mcut">✂<br>tempel<br>di meja</div>
       </div>
       </div>`);
@@ -206,13 +206,13 @@ export default function UjianPage() {
       byClass.set(k, [...(byClass.get(k) ?? []), s]);
     }
     const rows = [...byClass.entries()].map(([cls, list]) => `
-      <h3>Kelas ${cls} <span class="cnt">(${list.length} siswa)</span></h3>
+      <h3>Kelas ${esc(cls)} <span class="cnt">(${list.length} siswa)</span></h3>
       <div className="overflow-x-auto"><table><thead><tr>
         <th>Meja</th><th>NIS</th><th>Nama</th><th>Kode Peserta</th><th colspan="2">Tanda Tangan</th>
       </tr></thead><tbody>
       ${list.map((s) => `<tr>
-        <td class="no">${s.seatNo ?? '—'}</td><td>${s.student.nis ?? '—'}</td><td>${s.student.name}</td>
-        <td class="mono">${s.code ?? '—'}</td><td class="ttd"></td><td class="ttd"></td>
+        <td class="no">${esc(s.seatNo ?? '—')}</td><td>${esc(s.student.nis ?? '—')}</td><td>${esc(s.student.name)}</td>
+        <td class="mono">${esc(s.code ?? '—')}</td><td class="ttd"></td><td class="ttd"></td>
       </tr>`).join('')}
       </tbody></table></div>`).join('');
     printHtml(`Daftar Duduk & Absensi ${r.name} — ${r.period}`, `
@@ -226,8 +226,8 @@ export default function UjianPage() {
         .no{font-weight:700;text-align:center;width:56px}.mono{font-family:ui-monospace,monospace;font-size:11px}
         .ttd{width:70px;height:24px}
       </style>
-      <h1>Daftar Duduk &amp; Absensi — ${r.name}</h1>
-      <p class="sub">${r.period} · ${seats.length}/${r.capacity} kursi · tanda tangan peserta di kolom kanan</p>
+      <h1>Daftar Duduk &amp; Absensi — ${esc(r.name)}</h1>
+      <p class="sub">${esc(r.period)} · ${seats.length}/${r.capacity} kursi · tanda tangan peserta di kolom kanan</p>
       ${rows}`);
   };
 
@@ -248,7 +248,7 @@ export default function UjianPage() {
       const female = seats.filter((s) => s.student.gender === 'FEMALE').length;
       tM += male; tF += female; tAll += seats.length;
       const cnt = (cn: string) => seats.filter((s) => s.class?.name === cn).length;
-      return `<tr><td><b>${r.name}</b></td>${classNames.map((cn) => `<td class="c">${cnt(cn) || ''}</td>`).join('')}
+      return `<tr><td><b>${esc(r.name)}</b></td>${classNames.map((cn) => `<td class="c">${cnt(cn) || ''}</td>`).join('')}
         <td class="c b">${seats.length}</td><td class="c">${male}</td><td class="c">${female}</td></tr>`;
     }).join('');
     printHtml(`Rekap Peserta ${period}`, `
@@ -263,9 +263,9 @@ export default function UjianPage() {
         tfoot td{font-weight:700;background:#f1f5f9;text-align:center}
         @media print{body{padding:0}}
       </style>
-      <h1>Rekapitulasi Peserta ${roster.period}</h1>
-      <p class="sub">${roster.school?.name ?? ''} · TA ${roster.academicYear?.name ?? ''}</p>
-      <table><thead><tr><th>RUANG</th>${classNames.map((cn) => `<th>${cn}</th>`).join('')}<th>JUMLAH</th><th>L</th><th>P</th></tr></thead>
+      <h1>Rekapitulasi Peserta ${esc(roster.period)}</h1>
+      <p class="sub">${esc(roster.school?.name ?? '')} · TA ${esc(roster.academicYear?.name ?? '')}</p>
+      <table><thead><tr><th>RUANG</th>${classNames.map((cn) => `<th>${esc(cn)}</th>`).join('')}<th>JUMLAH</th><th>L</th><th>P</th></tr></thead>
       <tbody>${body || '<tr><td class="c" colspan="99"><i>Belum ada peserta.</i></td></tr>'}</tbody>
       <tfoot><tr><td>JUMLAH</td>${classNames.map((cn) => `<td>${roster.rooms.reduce((a, r) => a + seatsOf(r).filter((s) => s.class?.name === cn).length, 0) || ''}</td>`).join('')}<td>${tAll}</td><td>${tM}</td><td>${tF}</td></tr></tfoot></table>`);
   };
@@ -283,9 +283,9 @@ export default function UjianPage() {
       }
     }
     const rows = [...seen.values()].map((x, i) => `<tr>
-      <td class="c">${i + 1}</td><td class="mono b">${x.code ?? '—'}</td><td>${x.name}</td>
+      <td class="c">${i + 1}</td><td class="mono b">${esc(x.code ?? '—')}</td><td>${esc(x.name)}</td>
       <td class="c">${x.gender === 'MALE' ? 'L' : x.gender === 'FEMALE' ? 'P' : '—'}</td>
-      <td class="c">${x.className}</td><td class="c">${x.room}</td></tr>`).join('');
+      <td class="c">${esc(x.className)}</td><td class="c">${esc(x.room)}</td></tr>`).join('');
     printHtml(`Semua Peserta ${period}`, `
       <style>
         body{font-family:Georgia,serif;padding:24px;color:#1e293b}
@@ -297,8 +297,8 @@ export default function UjianPage() {
         td.c{text-align:center}.mono{font-family:ui-monospace,monospace;font-size:11px}.b{font-weight:700}
         @media print{body{padding:0}}
       </style>
-      <h1>Daftar Seluruh Peserta ${roster.period}</h1>
-      <p class="sub">${roster.school?.name ?? ''} · TA ${roster.academicYear?.name ?? ''} · ${seen.size} peserta</p>
+      <h1>Daftar Seluruh Peserta ${esc(roster.period)}</h1>
+      <p class="sub">${esc(roster.school?.name ?? '')} · TA ${esc(roster.academicYear?.name ?? '')} · ${seen.size} peserta</p>
       <table><thead><tr><th style="width:36px">NO</th><th style="width:130px">NO PESERTA</th><th>NAMA SISWA</th><th style="width:40px">L/P</th><th style="width:60px">KLS</th><th style="width:80px">RUANG</th></tr></thead>
       <tbody>${rows || '<tr><td colspan="6" class="c"><i>Belum ada peserta.</i></td></tr>'}</tbody></table>`);
   };

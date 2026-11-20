@@ -28,6 +28,7 @@ import {
 } from '@/lib/api-ops';
 import { PERMISSIONS } from '@smpmuh3/types';
 import { me } from '@/lib/api';
+import { esc as escPrint } from '@/lib/print';
 
 import { RowBtn } from '@/components/row-btn';
 import { useConfirm } from '@/components/confirm-dialog';
@@ -124,12 +125,12 @@ export default function UsPage() {
       ${school?.logoUrl ? `<img src="/logo.png" onerror="this.style.display='none'"/>` : ''}
       <div class="mid">
         <div class="yayasan">MAJELIS PENDIDIKAN DASAR DAN MENENGAH<br>PIMPINAN DAERAH MUHAMMADIYAH KOTA BANDUNG</div>
-        <div class="nama">${(school?.name ?? 'SMP MUHAMMADIYAH 3 KOTA BANDUNG').toUpperCase()}</div>
-        <div class="alamat">${school?.address ?? ''}</div>
+        <div class="nama">${escPrint((school?.name ?? 'SMP MUHAMMADIYAH 3 KOTA BANDUNG').toUpperCase())}</div>
+        <div class="alamat">${escPrint(school?.address ?? '')}</div>
       </div>
-      <div class="kanan">NPSN<br>${school?.npsn ?? '—'}</div>
+      <div class="kanan">NPSN<br>${escPrint(school?.npsn ?? '—')}</div>
     </div>`;
-  const esc = (v?: string | null) => (v ?? '—').replace(/</g, '&lt;');
+  const esc = (v?: string | null) => escPrint(v ?? '—');
 
   async function printUs(kind: 'us1' | 'us2') {
     if (!yearId) return;
@@ -142,9 +143,9 @@ export default function UsPage() {
       let body = '';
       if (kind === 'us1') {
         body = `<h1>DAFTAR CALON PESERTA UJIAN SEKOLAH (US-1)</h1>
-          <h2>Tahun Pelajaran ${d.academicYear.name}</h2>` +
+          <h2>Tahun Pelajaran ${esc(d.academicYear.name)}</h2>` +
           d.classes.map((c) => `
-            <p class="kelas">Rombel: ${c.name} &nbsp;·&nbsp; Wali Kelas: ${c.homeroom ?? '—'}</p>
+            <p class="kelas">Rombel: ${esc(c.name)} &nbsp;·&nbsp; Wali Kelas: ${esc(c.homeroom ?? '—')}</p>
             <table class="us"><thead><tr>
               <th style="width:22px">No</th><th>NISN</th><th>NIS</th><th>Nama Peserta</th>
               <th style="width:24px">L/P</th><th>Rombel</th><th>Agama</th><th>Nama Orang Tua/Wali</th>
@@ -158,25 +159,25 @@ export default function UsPage() {
               <td class="c">${esc(c.name)}</td><td class="c">${esc(s.agama)}</td>
               <td>${esc(s.fatherName ?? s.parent?.name ?? s.motherName)}</td>
               <td>${esc(s.birthPlace)}</td><td>${s.birthDate ? esc(new Date(s.birthDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })) : '—'}</td>
-              <td class="c">${s.absenceNo ?? '—'}</td>
+              <td class="c">${esc(s.absenceNo?.toString())}</td>
               <td>${[s.password, s.examCode].filter(Boolean).map(esc).join('<br>') || '—'}</td>
               <td>${esc(s.diplomaNo)}</td>
               <td class="c">${esc(s.rapor?.[7])}</td><td class="c">${esc(s.rapor?.[8])}</td><td class="c">${esc(s.rapor?.[9])}</td>
             </tr>`).join('')}
             </tbody></table>`).join('') +
-          `<div class="ttd"><div>Mengetahui,<br>Kepala Sekolah<div class="nm">${school?.headmaster ?? '(………………………)'}</div>NIP/NUPTK. ${school?.headmasterNip ?? '……………'}</div>
+          `<div class="ttd"><div>Mengetahui,<br>Kepala Sekolah<div class="nm">${esc(school?.headmaster ?? '(………………………)')}</div>NIP/NUPTK. ${esc(school?.headmasterNip ?? '……………')}</div>
            <div>Bandung, ………………… 20…<br>Panitia Ujian Sekolah<div class="nm">(………………………)</div>NIP/NUPTK. ……………</div></div>`;
       } else {
         const tL = d.classes.reduce((a, c) => a + c.male, 0);
         const tP = d.classes.reduce((a, c) => a + c.female, 0);
         body = `<h1>DAFTAR REKAPITULASI CALON PESERTA UJIAN SEKOLAH (US-2)</h1>
-          <h2>Tahun Pelajaran ${d.academicYear.name}</h2>
+          <h2>Tahun Pelajaran ${esc(d.academicYear.name)}</h2>
           <table class="us"><thead><tr>
             <th style="width:30px">No</th><th>Rombongan Belajar</th><th>Wali Kelas</th>
             <th style="width:70px">Laki-laki</th><th style="width:70px">Perempuan</th><th style="width:70px">Jumlah</th>
           </tr></thead><tbody>
           ${d.classes.map((c, i) => `<tr>
-            <td style="text-align:center">${i + 1}</td><td>${c.name}</td><td>${c.homeroom ?? '—'}</td>
+            <td style="text-align:center">${i + 1}</td><td>${esc(c.name)}</td><td>${esc(c.homeroom ?? '—')}</td>
             <td style="text-align:center">${c.male}</td><td style="text-align:center">${c.female}</td><td style="text-align:center"><b>${c.total}</b></td>
           </tr>`).join('')}
           <tr><td colspan="3" style="text-align:center;font-weight:800">JUMLAH</td>
@@ -184,7 +185,7 @@ export default function UsPage() {
             <td style="text-align:center;font-weight:800">${tP}</td>
             <td style="text-align:center;font-weight:800">${tL + tP}</td></tr>
           </tbody></table>
-          <div class="ttd"><div>Mengetahui,<br>Kepala Sekolah<div class="nm">${school?.headmaster ?? '(………………………)'}</div>NIP/NUPTK. ${school?.headmasterNip ?? '……………'}</div>
+          <div class="ttd"><div>Mengetahui,<br>Kepala Sekolah<div class="nm">${esc(school?.headmaster ?? '(………………………)')}</div>NIP/NUPTK. ${esc(school?.headmasterNip ?? '……………')}</div>
            <div>Bandung, ………………… 20…<br>Panitia Ujian Sekolah<div class="nm">(………………………)</div>NIP/NUPTK. ……………</div></div>`;
       }
       w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${kind === 'us1' ? 'US-1 Daftar Calon Peserta' : 'US-2 Rekapitulasi'}</title><style>${KOP_CSS}</style></head><body>${kop(school)}${body}<script>window.print()</script></body></html>`);

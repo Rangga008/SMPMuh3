@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -25,6 +26,25 @@ import {
   SubmissionDto,
   UniformDayDto,
 } from './dto/ops.dto';
+import { sanitizeHtml } from './question-docx';
+import { parseXlsx } from '../core/xlsx-guard';
+
+/**
+ * Sanitasi mendalam untuk payload JSON soal (prompt/opsi/kunci) — setiap
+ * string HTML disaring ke whitelist tag aman sebelum disimpan, sehingga
+ * editor/impor tak bisa menyimpan <script>/handler on* yang nanti dieksekusi
+ * di sesi admin kurikulum, superadmin, maupun aplikasi ujian siswa.
+ */
+const sanitizeDeep = (v: unknown, depth = 0): unknown => {
+  if (v == null || depth > 6) return v;
+  if (typeof v === 'string') return sanitizeHtml(v);
+  if (Array.isArray(v)) return v.map((x) => sanitizeDeep(x, depth + 1));
+  if (typeof v === 'object')
+    return Object.fromEntries(
+      Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, sanitizeDeep(x, depth + 1)]),
+    );
+  return v;
+};
 
 const WIB = 'Asia/Jakarta';
 const toDateOnly = (iso: string) => {
@@ -369,8 +389,9 @@ export class OpsService {
     }
     let wb: XLSX.WorkBook;
     try {
-      wb = XLSX.read(file.buffer, { type: 'buffer' });
-    } catch {
+      wb = parseXlsx(file.buffer);
+    } catch (e) {
+      if (e instanceof BadRequestException) throw e;
       throw new BadRequestException('File tidak dapat dibaca.');
     }
     const ws = wb.Sheets[wb.SheetNames[0] ?? ''];
@@ -532,9 +553,9 @@ export class OpsService {
         data: questions.map((q) => ({
           assessmentId, number: q.number, type: q.type as never,
           weight: q.weight ?? 1,
-          key: q.key === undefined ? Prisma.JsonNull : (q.key as Prisma.InputJsonValue),
-          prompt: q.prompt ?? null,
-          options: q.options === undefined ? Prisma.JsonNull : (q.options as Prisma.InputJsonValue),
+          key: q.key === undefined ? Prisma.JsonNull : (sanitizeDeep(q.key) as Prisma.InputJsonValue),
+          prompt: q.prompt ? sanitizeHtml(q.prompt) : null,
+          options: q.options === undefined ? Prisma.JsonNull : (sanitizeDeep(q.options) as Prisma.InputJsonValue),
           passageCode: q.passageCode ?? null,
           media: q.media === undefined ? Prisma.JsonNull : (q.media as Prisma.InputJsonValue),
         })),
@@ -543,10 +564,11 @@ export class OpsService {
         const codes = new Set(passages.map((p) => p.code));
         await tx.assessmentPassage.deleteMany({ where: { assessmentId, code: { notIn: [...codes] } } });
         for (const [i, p] of passages.entries()) {
+          const content = sanitizeHtml(p.content);
           await tx.assessmentPassage.upsert({
             where: { assessmentId_code: { assessmentId, code: p.code } },
-            update: { content: p.content, sortOrder: i, ...(p.media ? { media: p.media as Prisma.InputJsonValue } : {}) },
-            create: { assessmentId, code: p.code, content: p.content, sortOrder: i, media: p.media === undefined ? Prisma.JsonNull : (p.media as Prisma.InputJsonValue) },
+            update: { content, sortOrder: i, ...(p.media ? { media: p.media as Prisma.InputJsonValue } : {}) },
+            create: { assessmentId, code: p.code, content, sortOrder: i, media: p.media === undefined ? Prisma.JsonNull : (p.media as Prisma.InputJsonValue) },
           });
         }
       }
@@ -582,9 +604,9 @@ export class OpsService {
         data: questions.map((q) => ({
           examId, assessmentId: null, number: q.number, type: q.type as never,
           weight: q.weight ?? 1,
-          key: q.key === undefined ? Prisma.JsonNull : (q.key as Prisma.InputJsonValue),
-          prompt: q.prompt ?? null,
-          options: q.options === undefined ? Prisma.JsonNull : (q.options as Prisma.InputJsonValue),
+          key: q.key === undefined ? Prisma.JsonNull : (sanitizeDeep(q.key) as Prisma.InputJsonValue),
+          prompt: q.prompt ? sanitizeHtml(q.prompt) : null,
+          options: q.options === undefined ? Prisma.JsonNull : (sanitizeDeep(q.options) as Prisma.InputJsonValue),
           passageCode: q.passageCode ?? null,
           media: q.media === undefined ? Prisma.JsonNull : (q.media as Prisma.InputJsonValue),
         })),
@@ -593,10 +615,11 @@ export class OpsService {
         const codes = new Set(passages.map((p) => p.code));
         await tx.assessmentPassage.deleteMany({ where: { assessmentId: exam.assessmentId, code: { notIn: [...codes] } } });
         for (const [i, p] of passages.entries()) {
+          const content = sanitizeHtml(p.content);
           await tx.assessmentPassage.upsert({
             where: { assessmentId_code: { assessmentId: exam.assessmentId, code: p.code } },
-            update: { content: p.content, sortOrder: i, ...(p.media ? { media: p.media as Prisma.InputJsonValue } : {}) },
-            create: { assessmentId: exam.assessmentId, code: p.code, content: p.content, sortOrder: i, media: p.media === undefined ? Prisma.JsonNull : (p.media as Prisma.InputJsonValue) },
+            update: { content, sortOrder: i, ...(p.media ? { media: p.media as Prisma.InputJsonValue } : {}) },
+            create: { assessmentId: exam.assessmentId, code: p.code, content, sortOrder: i, media: p.media === undefined ? Prisma.JsonNull : (p.media as Prisma.InputJsonValue) },
           });
         }
       }
@@ -615,10 +638,11 @@ export class OpsService {
     await this.prisma.$transaction(async (tx) => {
       await tx.assessmentPassage.deleteMany({ where: { assessmentId, code: { notIn: [...codes] } } });
       for (const [i, p] of passages.entries()) {
+        const content = sanitizeHtml(p.content);
         await tx.assessmentPassage.upsert({
           where: { assessmentId_code: { assessmentId, code: p.code } },
-          update: { content: p.content, sortOrder: i, ...(p.media !== undefined ? { media: p.media as Prisma.InputJsonValue } : {}) },
-          create: { assessmentId, code: p.code, content: p.content, sortOrder: i, media: p.media === undefined ? Prisma.JsonNull : (p.media as Prisma.InputJsonValue) },
+          update: { content, sortOrder: i, ...(p.media !== undefined ? { media: p.media as Prisma.InputJsonValue } : {}) },
+          create: { assessmentId, code: p.code, content, sortOrder: i, media: p.media === undefined ? Prisma.JsonNull : (p.media as Prisma.InputJsonValue) },
         });
       }
     });
@@ -1517,8 +1541,19 @@ export class OpsService {
     });
   }
 
-  async staffDocFile(id: string) {
-    const doc = await this.prisma.staffDocument.findUniqueOrThrow({ where: { id } });
+  async staffDocFile(id: string, u: { id: string; permissions: string[] }) {
+    const doc = await this.prisma.staffDocument.findUniqueOrThrow({
+      where: { id },
+      include: { employee: { select: { userId: true } } },
+    });
+    // Berkas kepegawaian: pemilik, atau staf pengelola pegawai/bidang.
+    const manage =
+      u.permissions.includes('employee.manage') ||
+      u.permissions.includes('academic.manage') ||
+      u.permissions.includes('tatausaha.manage');
+    if (doc.employee.userId !== u.id && !manage) {
+      throw new ForbiddenException('Berkas ini bukan milik Anda.');
+    }
     const buf = await this.storage.getObjectBuffer(doc.storageKey);
     return { buf, mime: doc.mimeType, name: doc.fileName };
   }
@@ -1582,9 +1617,23 @@ export class OpsService {
     });
   }
 
-  async collectionItemFile(itemId: string) {
-    const item = await this.prisma.docCollectionItem.findUniqueOrThrow({ where: { id: itemId } });
+  async collectionItemFile(itemId: string, u: { id: string; permissions: string[] }) {
+    const item = await this.prisma.docCollectionItem.findUniqueOrThrow({
+      where: { id: itemId },
+      include: {
+        employee: { select: { userId: true } },
+        collection: { select: { createdBy: true } },
+      },
+    });
     if (!item.storageKey) throw new NotFoundException('Belum ada berkas.');
+    // Pengumpul (pemilik berkas), pembuat pengumpulan, atau pengelola kurikulum.
+    const allowed =
+      item.employee.userId === u.id ||
+      item.collection.createdBy === u.id ||
+      u.permissions.includes('academic.manage');
+    if (!allowed) {
+      throw new ForbiddenException('Berkas ini bukan milik Anda.');
+    }
     const buf = await this.storage.getObjectBuffer(item.storageKey);
     return { buf, mime: item.mimeType ?? 'application/octet-stream', name: item.fileName ?? 'file' };
   }
@@ -1608,9 +1657,21 @@ export class OpsService {
     });
   }
 
-  listSubmissions(department?: string, status?: string) {
+  async listSubmissions(department: string | undefined, status: string | undefined, u?: { id: string; permissions: string[] }) {
+    // Non-pengelola hanya melihat pengajuan miliknya atau satu bidangnya.
+    let scope: Record<string, unknown> = {};
+    if (u && !u.permissions.includes('academic.manage')) {
+      const emp = await this.prisma.employee.findUnique({ where: { userId: u.id }, select: { department: true } });
+      scope = {
+        OR: [
+          { submittedBy: u.id },
+          ...(emp?.department ? [{ department: emp.department }] : []),
+        ],
+      };
+    }
     return this.prisma.programSubmission.findMany({
       where: {
+        ...scope,
         ...(department ? { department } : {}),
         ...(status ? { status: status as never } : {}),
       },
@@ -1627,9 +1688,13 @@ export class OpsService {
     });
   }
 
-  async submissionFile(id: string) {
+  async submissionFile(id: string, u: { id: string; permissions: string[] }) {
     const sub = await this.prisma.programSubmission.findUniqueOrThrow({ where: { id } });
     if (!sub.storageKey) throw new NotFoundException('Tidak ada berkas.');
+    // Pengaju sendiri atau pengelola kurikulum (reviewer) — isi RAB sensitif.
+    if (sub.submittedBy !== u.id && !u.permissions.includes('academic.manage')) {
+      throw new ForbiddenException('Berkas ini bukan milik Anda.');
+    }
     const buf = await this.storage.getObjectBuffer(sub.storageKey);
     return { buf, mime: 'application/octet-stream', name: sub.fileName ?? 'file' };
   }
@@ -2512,7 +2577,7 @@ export class OpsService {
     dry = false,
     forceClassId?: string,
   ) {
-    const wb = XLSX.read(buffer, { type: 'buffer' });
+    const wb = parseXlsx(buffer);
     const sheet = wb.Sheets[wb.SheetNames[0]!]!;
     // Template punya baris keterangan di atas — cari baris header (kolom
     // pertama == "nama") agar file lama (header di baris 1) tetap jalan.

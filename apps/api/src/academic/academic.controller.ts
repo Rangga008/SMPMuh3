@@ -18,6 +18,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import * as XLSX from 'xlsx';
+import { parseXlsx } from '../core/xlsx-guard';
 import { PERMISSIONS, type AuthUser } from '@smpmuh3/types';
 import { CurrentUser } from '../identity/decorators/current-user.decorator';
 import { RequirePermission } from '../identity/decorators/require-permission.decorator';
@@ -94,6 +95,7 @@ export class AcademicController {
 
   /** Anggota bidang milik pegawai yang login — untuk kepala bidang. */
   @Get('employees/my-department')
+  @RequirePermission(ER)
   myDepartment(@CurrentUser() u: AuthUser) {
     return this.academic.myDepartment(u.id);
   }
@@ -212,8 +214,9 @@ export class AcademicController {
     }
     let wb: XLSX.WorkBook;
     try {
-      wb = XLSX.read(file.buffer, { type: 'buffer' });
-    } catch {
+      wb = parseXlsx(file.buffer);
+    } catch (e) {
+      if (e instanceof BadRequestException) throw e;
       throw new BadRequestException('File tidak dapat dibaca');
     }
     const rows: Parameters<AcademicService['importEmployees']>[0] = [];
@@ -433,12 +436,14 @@ export class AcademicController {
 
   /** Kalender sebulan — siapa mengajar per tanggal + event libur/kegiatan. Terbuka untuk semua bidang yang login. */
   @Get('academic-calendar')
+  @RequirePermission(R)
   academicCalendar(@Query('month') month: string) {
     if (!month) throw new BadRequestException('Parameter month wajib (YYYY-MM).');
     return this.academic.academicCalendar(month);
   }
 
   @Get('academic-calendar/events')
+  @RequirePermission(R)
   calendarEvents(@Query('from') from?: string, @Query('to') to?: string) {
     return this.academic.listCalendarEvents(from || undefined, to || undefined);
   }

@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -542,6 +543,20 @@ export class AcademicService {
       if (role.key === 'spmb_parent') {
         throw new BadRequestException('Role orang tua tidak untuk pegawai.');
       }
+      // Role superadmin hanya boleh diberikan oleh superadmin — pemegang
+      // employee.manage (staf TU) jangan sampai bisa eskalasi ke akses penuh.
+      if (role.key === 'superadmin') {
+        const actor = await this.prisma.user.findUnique({
+          where: { id: actorId },
+          select: { roles: { select: { role: { select: { key: true } } } } },
+        });
+        const actorIsSuper = actor?.roles.some((r) => r.role.key === 'superadmin');
+        if (!actorIsSuper) {
+          throw new ForbiddenException(
+            'Role superadmin hanya bisa diberikan oleh superadmin.',
+          );
+        }
+      }
       // Cegah konflik login — email/no HP harus unik antar akun.
       await this.assertLoginFree(dto.email, dto.phone);
       accountPlan = {
@@ -827,9 +842,12 @@ export class AcademicService {
             },
             maps,
           );
-          const role = await this.prisma.role.findUnique({
-            where: { key: roleKey },
-          });
+          const role =
+            roleKey === 'superadmin'
+              ? null // impor tak pernah boleh menetapkan superadmin
+              : await this.prisma.role.findUnique({
+                  where: { key: roleKey },
+                });
           const custom = raw.password?.trim();
           const password = custom || `m3${Math.random().toString(36).slice(2, 8)}`;
           // Akun + pegawai atomik per baris — baris gagal di tengah tak

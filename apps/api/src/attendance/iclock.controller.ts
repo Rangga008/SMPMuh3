@@ -36,7 +36,9 @@ export class IclockController {
     @Query('SN') sn: string | undefined,
     @Query('options') _o?: string,
   ) {
-    if (sn) await this.attendance.touchDevice(sn);
+    if (sn && !(await this.attendance.touchDevice(sn))) {
+      return 'ERROR: SN tidak terdaftar';
+    }
     // Format respon konfigurasi standar iClock.
     return 'GET OPTION FROM: ' + (sn ?? '') + '\nStamp=9999\nOpStamp=9999\nErrorDelay=60\nDelay=30\nResLogDelay=0\nResLogDelCount=10000\nResLogCount=50000\nRealtime=1\nTransInterval=1\nTransFlag=1111000000\nTimeZone=7';
   }
@@ -54,6 +56,8 @@ export class IclockController {
   ) {
     if (!sn) throw new BadRequestException('SN wajib');
     const device = await this.attendance.touchDevice(sn);
+    // SN tak terdaftar/nonaktif → tolak; jangan pernah ingest tap dari mesin liar.
+    if (!device) return 'ERROR: SN tidak terdaftar';
     const t = (table ?? '').toUpperCase();
     if (t === 'ATTLOG' || t === 'OPERLOG') {
       const punches: PunchInput[] = [];
@@ -68,7 +72,7 @@ export class IclockController {
       }
       const r = await this.attendance.ingestPunches(punches, {
         deviceKey: sn,
-        deviceId: device?.id ?? null,
+        deviceId: device.id,
         source: 'DEVICE',
       });
       return `OK: ${r.inserted}`;
@@ -77,12 +81,14 @@ export class IclockController {
     return 'OK';
   }
 
-  /** Registrasi awal mesin ke server. */
+  /** Registrasi awal mesin ke server — hanya SN yang sudah didaftarkan TU. */
   @Get('registry')
   @Header('Content-Type', 'text/plain')
   async registry(@Query('SN') sn: string | undefined) {
-    if (sn) await this.attendance.touchDevice(sn);
-    return 'Registry from ' + (sn ?? '') + ' OK';
+    if (!sn || !(await this.attendance.touchDevice(sn))) {
+      return 'ERROR: SN tidak terdaftar';
+    }
+    return 'Registry from ' + sn + ' OK';
   }
 
   /** Mesin menanyakan perintah antre — tidak ada, jawab OK. */

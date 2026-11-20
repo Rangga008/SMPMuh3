@@ -7,6 +7,7 @@ import { DataTable } from '@/components/data-table';
 import { RowBtn } from '@/components/row-btn';
 import { PageTitle, Widget } from '@/components/widgets';
 import { getSchool, listReceipts, type ReceiptRow, type School } from '@/lib/api';
+import { esc } from '@/lib/print';
 
 const rp = (n: number) => `Rp${n.toLocaleString('id-ID')}`;
 const fmtDate = (iso?: string | null) =>
@@ -59,36 +60,36 @@ export default function KwitansiPage() {
       <div class="kop" id="koptext"${s?.kopUrl ? ' style="display:none"' : ''}>
         ${s?.logoUrl ? `<img src="/logo.png" alt="Logo" class="logo" onerror="this.style.display='none'" />` : ''}
         <div class="kop-text">
-          ${s?.kopLine1 ? `<p class="kop-yayasan">${s.kopLine1}</p>` : ''}
-          ${s?.kopLine2 ? `<p class="kop-yayasan" style="font-weight:normal">${s.kopLine2}</p>` : ''}
-          <p class="kop-name">${s?.name ?? 'SMP Muhammadiyah 3 Kota Bandung'}</p>
-          ${s?.tagline ? `<p class="kop-tag">${s.tagline}</p>` : ''}
-          ${s?.npsn ? `<p class="kop-tag">NPSN: ${s.npsn}</p>` : ''}
-          <p class="kop-sub">${[s?.address, s?.phone ? `Telp. ${s.phone}` : null].filter(Boolean).join(' · ')}</p>
+          ${s?.kopLine1 ? `<p class="kop-yayasan">${esc(s.kopLine1)}</p>` : ''}
+          ${s?.kopLine2 ? `<p class="kop-yayasan" style="font-weight:normal">${esc(s.kopLine2)}</p>` : ''}
+          <p class="kop-name">${esc(s?.name ?? 'SMP Muhammadiyah 3 Kota Bandung')}</p>
+          ${s?.tagline ? `<p class="kop-tag">${esc(s.tagline)}</p>` : ''}
+          ${s?.npsn ? `<p class="kop-tag">NPSN: ${esc(s.npsn)}</p>` : ''}
+          <p class="kop-sub">${esc([s?.address, s?.phone ? `Telp. ${s.phone}` : null].filter(Boolean).join(' · '))}</p>
         </div>
       </div>`;
     return `<div class="kw">
       ${kop}
-      <div class="title"><h1>KWITANSI</h1><div class="num">No. ${r.number}</div></div>
+      <div class="title"><h1>KWITANSI</h1><div class="num">No. ${esc(r.number)}</div></div>
       <table>
-        <tr><td style="width:140px">Sudah diterima dari</td><td>: <b>${r.recipient}</b></td></tr>
-        <tr><td>Untuk</td><td>: ${r.body}</td></tr>
-        <tr><td>Jenis</td><td>: ${REF_LABEL[r.refType ?? 'payment'] ?? r.refType ?? 'Pembayaran'}</td></tr>
+        <tr><td style="width:140px">Sudah diterima dari</td><td>: <b>${esc(r.recipient)}</b></td></tr>
+        <tr><td>Untuk</td><td>: ${esc(r.body)}</td></tr>
+        <tr><td>Jenis</td><td>: ${esc(REF_LABEL[r.refType ?? 'payment'] ?? r.refType ?? 'Pembayaran')}</td></tr>
         <tr><td>Tanggal terbit</td><td>: ${fmtDate(r.createdAt)}</td></tr>
       </table>
       <div class="amt">${r.payment?.amount != null ? rp(r.payment.amount) : '—'}</div>
       <div class="signs">
         <div class="sign">Penerima,<div class="nm">&nbsp;</div><div class="nip">&nbsp;</div></div>
-        <div class="sign">Bendahara,<div class="nm">${s?.treasurer ? `<span class="nmv">${s.treasurer}</span>` : '&nbsp;'}</div>${s?.treasurerNip ? `<div class="nip">NIP/NUPTK. ${s.treasurerNip}</div>` : '<div class="nip">&nbsp;</div>'}</div>
+        <div class="sign">Bendahara,<div class="nm">${s?.treasurer ? `<span class="nmv">${esc(s.treasurer)}</span>` : '&nbsp;'}</div>${s?.treasurerNip ? `<div class="nip">NIP/NUPTK. ${esc(s.treasurerNip)}</div>` : '<div class="nip">&nbsp;</div>'}</div>
       </div>
-      <p class="unit">Dicetak oleh Bidang Keuangan ${s?.name ? `— ${s.name}` : ''}</p>
+      <p class="unit">Dicetak oleh Bidang Keuangan ${s?.name ? `— ${esc(s.name)}` : ''}</p>
     </div>`;
   };
 
   const print = (r: ReceiptRow) => {
     const w = window.open('', '_blank', 'width=720,height=560');
     if (!w) return;
-    w.document.write(`<!doctype html><html><head><title>${r.number}</title><style>body{margin:32px}${receiptCss}</style></head><body>
+    w.document.write(`<!doctype html><html><head><title>${esc(r.number)}</title><style>body{margin:32px}${receiptCss}</style></head><body>
       ${receiptHtml(r)}
       <script>window.onload=function(){window.print()}</script>
     </body></html>`);

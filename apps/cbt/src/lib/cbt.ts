@@ -66,8 +66,33 @@ export const renderMathHtml = (html: string) =>
     }
   });
 
-/** HTML soal siap tampil — media + rumus sekaligus. */
-export const richHtml = (html: string) => renderMathHtml(fixMediaHtml(html));
+/**
+ * Sanitasi HTML soal/bacaan sebelum dangerouslySetInnerHTML — whitelist tag
+ * aman; script/style/event-handler/atribut lain dibuang. Mirror sanitizer
+ * server — pertahanan untuk konten lama yang tersimpan sebelum sanitasi-tulis.
+ */
+export const sanitizeRichHtml = (html: string) => {
+  let out = html
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<!--[\s\S]*?-->/g, '');
+  out = out.replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+  out = out.replace(/\sstyle\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+  const keep = /^(p|b|i|u|em|strong|ul|ol|li|br|img|sup|sub|span|div|table|thead|tbody|tr|td|th|h[1-6]|hr|blockquote)$/i;
+  out = out.replace(/<\/?([a-zA-Z0-9]+)((?:\s[^<>]*)?)>/g, (m, tag: string, attrs: string) => {
+    const t = tag.toLowerCase();
+    if (!keep.test(t)) return '';
+    if (t === 'img') {
+      const src = /\ssrc\s*=\s*"([^"]*)"/i.exec(attrs)?.[1] ?? '';
+      return src ? `<img src="${src}">` : '';
+    }
+    return m.startsWith('</') ? `</${t}>` : `<${t}>`;
+  });
+  return out;
+};
+
+/** HTML soal siap tampil — sanitasi + media + rumus sekaligus. */
+export const richHtml = (html: string) => renderMathHtml(fixMediaHtml(sanitizeRichHtml(html)));
 
 export interface CbtResult {
   status: string; submittedAt: string | null;

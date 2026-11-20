@@ -186,16 +186,18 @@ export class AttendanceService {
   }
 
   /**
-   * Handshake/push dari mesin: perbarui heartbeat + auto-register SN baru
-   * (mode ICLOCK) supaya data langsung tampil di TU tanpa input manual.
+   * Handshake/push dari mesin: perbarui heartbeat. SN HARUS sudah terdaftar
+   * & aktif — serial asing ditolak (siapa pun di internet jangan sampai bisa
+   * "mendaftarkan" mesin palsu lalu mengirim tap atas nama pegawai).
    */
-  async touchDevice(serial: string, ip?: string) {
+  async touchDevice(serial: string, _ip?: string) {
     const sn = serial.trim();
     if (!sn) return null;
-    const device = await this.prisma.attendanceDevice.upsert({
-      where: { serial: sn },
-      update: { lastSeenAt: new Date() },
-      create: { serial: sn, name: `Mesin ${sn}`, mode: 'ICLOCK', location: ip ?? null, lastSeenAt: new Date() },
+    const device = await this.prisma.attendanceDevice.findUnique({ where: { serial: sn } });
+    if (!device?.isActive) return null;
+    await this.prisma.attendanceDevice.update({
+      where: { id: device.id },
+      data: { lastSeenAt: new Date() },
     });
     return device;
   }
@@ -471,17 +473,19 @@ export class AttendanceService {
     const logs = await this.prisma.attendanceLog.findMany({
       where: { employeeId, punchedAt: { gte: from, lt: to } },
       orderBy: { punchedAt: 'asc' },
-      select: { punchedAt: true, inOut: true },
+      select: { punchedAt: true, inOut: true, source: true },
     });
     if (logs.length === 0) return;
     const inPunches = logs.filter((l) => l.inOut === 0);
-    const checkIn = inPunches.length ? inPunches[0]!.punchedAt : null;
+    const inLog = inPunches.length ? inPunches[0]! : null;
+    const checkIn = inLog?.punchedAt ?? null;
     const outPunches = logs.filter(
       (l) => l.inOut === 1 && (!checkIn || l.punchedAt > checkIn),
     );
+    const outLog = outPunches.length ? outPunches[outPunches.length - 1]! : null;
     const last = logs[logs.length - 1]!.punchedAt;
     let checkOut =
-      (outPunches.length ? outPunches[outPunches.length - 1]!.punchedAt : null) ??
+      (outLog?.punchedAt ?? null) ??
       (checkIn &&
       last.getTime() !== checkIn.getTime() &&
       localMinutes(last) >= rule.checkOutFromMin
@@ -513,10 +517,16 @@ export class AttendanceService {
         : 'HADIR'
       : 'ALPHA';
     // Status manual (izin/sakit/alpha) tidak ditimpa — hanya jam yang dilengkapi.
-    const finalStatus =
-      existing && ['IZIN', 'SAKIT', 'ALPHA'].includes(existing.status)
-        ? existing.status
-        : status;
+    const manualKept =
+      !!existing && ['IZIN', 'SAKIT', 'ALPHA'].includes(existing.status);
+    const finalStatus = manualKept ? existing!.status : status;
+    // Sumber rekap ikuti perangkat tap masuk aslinya (fallback tap pulang /
+    // log terakhir) — jangan selalu DEVICE: tap aplikasi/web harus kebaca.
+    // Rekap status manual mempertahankan sumber pencatatan manualnya.
+    const source =
+      manualKept && existing!.source
+        ? existing!.source
+        : (inLog?.source ?? outLog?.source ?? logs[logs.length - 1]!.source);
     // JP efektif hari itu — otomatis: jadwal mengajar (guru) bila ada, selain itu
     // durasi kehadiran masuk→pulang (staf). Dipakai payroll untuk JP hadir & transport.
     // Izin pulang awal: hanya menit sebelum batas izin yang dihitung.
@@ -536,7 +546,7 @@ export class AttendanceService {
         checkOutAt: checkOut,
         lateMinutes,
         teachingJp: teaching,
-        source: 'DEVICE',
+        source,
       },
       create: {
         employeeId,
@@ -546,7 +556,7 @@ export class AttendanceService {
         checkOutAt: checkOut,
         lateMinutes,
         teachingJp: teaching,
-        source: 'DEVICE',
+        source,
       },
     });
   }

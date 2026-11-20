@@ -170,8 +170,11 @@ export class AuthService {
           expiresAt: new Date(Date.now() + 60 * 60 * 1000),
         },
       });
-      this.logger.warn(
-        `Password reset token for ${identifier} (dev only, delivery pending): ${raw}`,
+      // JANGAN log token mentah — token = kunci takeover akun; siapa pun yang
+      // bisa membaca log (journald, file log) jangan sampai bisa reset akun.
+      // Log metadata saja; token dikirim lewat kanal notifikasi.
+      this.logger.log(
+        `Password reset token diterbitkan untuk ${identifier} (berlaku 1 jam, pengiriman via notifikasi).`,
       );
       await this.audit.log({
         actorId: user.id,

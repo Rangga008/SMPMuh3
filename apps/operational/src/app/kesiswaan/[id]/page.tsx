@@ -9,6 +9,7 @@ import { RpInput } from '@/components/rp-input';
 import { Shell } from '@/components/shell';
 import { SearchSelect } from '@/components/search-select';
 import { PageTitle, Widget } from '@/components/widgets';
+import { esc } from '@/lib/print';
 import {
   addAchievement,
   addEkskulMember,
@@ -205,12 +206,12 @@ export default function StudentDetailPage() {
         .map(
           (a, i) => `<tr>
             <td style="padding:7px 10px;border-bottom:1px solid #e5e0d8">${i + 1}</td>
-            <td style="padding:7px 10px;border-bottom:1px solid #e5e0d8">${a.item?.label ?? a.invoice.title}<br/><span style="font-size:11px;color:#8a8578">${a.invoice.number}</span></td>
+            <td style="padding:7px 10px;border-bottom:1px solid #e5e0d8">${esc(a.item?.label ?? a.invoice.title)}<br/><span style="font-size:11px;color:#8a8578">${esc(a.invoice.number)}</span></td>
             <td style="padding:7px 10px;border-bottom:1px solid #e5e0d8;text-align:right">${rupiah(a.amount)}</td>
           </tr>`,
         )
         .join('');
-      win.document.write(`<!doctype html><html><head><base href="${window.location.origin}"><title>Kwitansi ${number}</title>
+      win.document.write(`<!doctype html><html><head><base href="${window.location.origin}"><title>Kwitansi ${esc(number)}</title>
         <style>
           body{font-family:ui-sans-serif,system-ui,sans-serif;color:#29261f;margin:32px;font-size:13px}
           .kop{display:flex;align-items:center;gap:12px;border-bottom:3px double #29261f;padding-bottom:12px;margin-bottom:18px}
@@ -233,17 +234,17 @@ export default function StudentDetailPage() {
         <div class="kop">
           ${school?.logoUrl ? `<img src="/logo.png" alt="" style="width:56px;height:56px;object-fit:contain"/>` : ''}
           <div style="flex:1;text-align:center">
-            <h1>${school?.name ?? 'Sekolah'}</h1>
-            <p>${school?.address ?? ''}${school?.phone ? ` · Telp ${school.phone}` : ''}${school?.whatsapp ? ` · WA ${school.whatsapp}` : ''}</p>
+            <h1>${esc(school?.name ?? 'Sekolah')}</h1>
+            <p>${esc(school?.address ?? '')}${school?.phone ? ` · Telp ${esc(school.phone)}` : ''}${school?.whatsapp ? ` · WA ${esc(school.whatsapp)}` : ''}</p>
           </div>
           ${school?.logoUrl ? '<span style="width:56px"></span>' : ''}
         </div>
-        <div class="nomor"><b>KWITANSI PEMBAYARAN</b><br/><span style="font-size:12px;color:#6b675a">No. ${number}</span></div>
+        <div class="nomor"><b>KWITANSI PEMBAYARAN</b><br/><span style="font-size:12px;color:#6b675a">No. ${esc(number)}</span></div>
         <div className="overflow-x-auto"><table class="meta"><tbody>
-          <tr><td>Telah diterima dari</td><td><b>${r.invoice.student?.parent?.name ?? 'Orang Tua/Wali'}</b></td></tr>
-          <tr><td>Untuk pembayaran siswa</td><td><b>${r.invoice.student?.name ?? '-'}</b>${r.invoice.student?.nis ? ` · NIS ${r.invoice.student.nis}` : ''}</td></tr>
+          <tr><td>Telah diterima dari</td><td><b>${esc(r.invoice.student?.parent?.name ?? 'Orang Tua/Wali')}</b></td></tr>
+          <tr><td>Untuk pembayaran siswa</td><td><b>${esc(r.invoice.student?.name ?? '-')}</b>${r.invoice.student?.nis ? ` · NIS ${esc(r.invoice.student.nis)}` : ''}</td></tr>
           <tr><td>Tanggal bayar</td><td>${fmtDate(r.paidAt)}</td></tr>
-          <tr><td>Metode / Kas</td><td>${METHOD_LABEL[r.method ?? ''] ?? r.method ?? '-'}${r.cashAccount?.name ? ` · ${r.cashAccount.name}` : ''}</td></tr>
+          <tr><td>Metode / Kas</td><td>${esc(METHOD_LABEL[r.method ?? ''] ?? r.method ?? '-')}${r.cashAccount?.name ? ` · ${esc(r.cashAccount.name)}` : ''}</td></tr>
         </tbody></table></div>
         <br/>
         <div className="overflow-x-auto"><table><thead><tr><th style="width:34px">No</th><th>Rincian Pembayaran</th><th style="width:130px;text-align:right">Jumlah</th></tr></thead>
@@ -251,9 +252,9 @@ export default function StudentDetailPage() {
         <tfoot><tr class="total"><td></td><td>TOTAL DITERIMA</td><td style="text-align:right">${rupiah(r.amount)}</td></tr></tfoot>
         </table></div>
         <div class="ttd">
-          <div><p>Orang Tua/Wali</p><p class="nm">${r.invoice.student?.parent?.name ?? '( …………………… )'}</p></div>
-          ${school?.headmaster ? `<div><p>Mengetahui,<br/>Kepala Sekolah</p>${school.headmasterSignatureUrl ? `<img class="sig" src="/signature.png" alt=""/>` : ''}<p class="nm${school.headmasterSignatureUrl ? ' hassig' : ''}">${school.headmaster}${school.headmasterNip ? `<br/><span style="font-weight:400;font-size:11px">NIP/NUPTK ${school.headmasterNip}</span>` : ''}</p></div>` : ''}
-          <div><p>Bandung, ${fmtDate(r.paidAt)}<br/>Bendahara,</p><p class="nm">${r.cashierName ?? '( …………………… )'}</p></div>
+          <div><p>Orang Tua/Wali</p><p class="nm">${esc(r.invoice.student?.parent?.name ?? '( …………………… )')}</p></div>
+          ${school?.headmaster ? `<div><p>Mengetahui,<br/>Kepala Sekolah</p>${school.headmasterSignatureUrl ? `<img class="sig" src="/signature.png" alt=""/>` : ''}<p class="nm${school.headmasterSignatureUrl ? ' hassig' : ''}">${esc(school.headmaster)}${school.headmasterNip ? `<br/><span style="font-weight:400;font-size:11px">NIP/NUPTK ${esc(school.headmasterNip)}</span>` : ''}</p></div>` : ''}
+          <div><p>Bandung, ${fmtDate(r.paidAt)}<br/>Bendahara,</p><p class="nm">${esc(r.cashierName ?? '( …………………… )')}</p></div>
         </div>
         <script>window.onload=()=>{window.print();}<\/script>
         </body></html>`);

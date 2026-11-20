@@ -168,9 +168,12 @@ export class CbtController {
     res.send(buf);
   }
 
-  /** Acak ulang password login satu siswa — cetak ulang kartu setelah ini. */
+  /** Acak ulang password login satu siswa — cetak ulang kartu setelah ini.
+   *  MANAGE (bukan READ): endpoint ini mereset password master CBT siswa
+   *  dan mengembalikannya plaintext — guru tak boleh mengambil alih akun
+   *  ujian siswa lain; hanya admin kurikulum yang berhak. */
   @Post('exams/:id/credentials/:studentId/regen')
-  @RequirePermission(PERMISSIONS.ACADEMIC_READ)
+  @RequirePermission(PERMISSIONS.ACADEMIC_MANAGE)
   regenCredential(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Param('studentId', ParseUUIDPipe) studentId: string) {
     return this.cbt.regenCredential(id, studentId, u);
   }

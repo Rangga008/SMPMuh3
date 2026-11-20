@@ -1,5 +1,11 @@
 'use client';
 
+/** Escape teks yang masuk markup print — judul/nama dari data bisa mengandung <>&"'. */
+export const esc = (s: unknown) =>
+  String(s ?? '').replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c,
+  );
+
 /**
  * Cetak isi sebuah elemen di jendela baru — menyalin markup + CSS teks yang
  * diberikan (BUKAN Tailwind: jendela print tak memuat stylesheet app).
@@ -12,7 +18,7 @@ export function printNode(el: HTMLElement, opts: { title?: string; css?: string;
     *{box-sizing:border-box}body{font-family:'Times New Roman',Times,serif;color:#111;margin:0}
     table{border-collapse:collapse}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
     ${opts.css ?? ''}`;
-  win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${opts.title ?? 'Cetak'}</title><style>${css}</style></head><body>${el.outerHTML}</body></html>`);
+  win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(opts.title ?? 'Cetak')}</title><style>${css}</style></head><body>${el.outerHTML}</body></html>`);
   win.document.close();
   const imgs = Array.from(win.document.images);
   const ready = imgs.length
@@ -25,7 +31,7 @@ export function printNode(el: HTMLElement, opts: { title?: string; css?: string;
 export function printHtml(title: string, html: string, opts: { landscape?: boolean } = {}) {
   const win = window.open('', '_blank', 'width=960,height=720');
   if (!win) return;
-  win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>
+  win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title>
     <style>${opts.landscape ? '@page{size:A4 landscape;margin:8mm}' : '@page{size:A4;margin:10mm}'}
     *{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#111;margin:16px}
     table{border-collapse:collapse}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style>

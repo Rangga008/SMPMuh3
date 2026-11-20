@@ -12,7 +12,7 @@ import type {
   PaymentStatus,
   RegistrationStatus,
 } from '@prisma/client';
-import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../core/prisma/prisma.service';
 import { FinanceService } from '../finance/finance.service';
@@ -41,12 +41,26 @@ export interface PaymentProvider {
 /**
  * Dev provider: webhook is an HMAC-signed POST with JSON
  * { providerRef, status }. Signature = sha256(rawBody + secret).
- * Secret comes from MOCK_PAYMENT_SECRET env (default dev value).
+ * Secret wajib dari MOCK_PAYMENT_SECRET env. Tanpa env (atau env berisi
+ * nilai contoh publik) secret diganti acak per-boot → tanda tangan tak bisa
+ * dipalsukan dan webhook efektif nonaktif (fail-closed, API tetap jalan).
  */
 export class MockPaymentProvider implements PaymentProvider {
   readonly key = 'mock';
-  private readonly secret =
-    process.env.MOCK_PAYMENT_SECRET ?? 'mock_dev_secret';
+  private readonly logger = new Logger(MockPaymentProvider.name);
+  private readonly secret: string;
+
+  constructor() {
+    const env = process.env.MOCK_PAYMENT_SECRET?.trim();
+    if (env && env !== 'mock_dev_secret') {
+      this.secret = env;
+    } else {
+      this.secret = randomBytes(32).toString('hex');
+      this.logger.warn(
+        'MOCK_PAYMENT_SECRET belum diset — webhook pembayaran nonaktif (signature tak dapat diverifikasi pihak luar).',
+      );
+    }
+  }
 
   async createInvoice(input: {
     invoiceId: string;

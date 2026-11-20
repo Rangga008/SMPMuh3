@@ -24,6 +24,7 @@ import { Public } from '../identity/decorators/public.decorator';
 import { RequirePermission } from '../identity/decorators/require-permission.decorator';
 import { OpsService } from './ops.service';
 import { BukuIndukPdfService } from './buku-induk-pdf.service';
+import { signPhotoUrl, verifyPhotoSig } from './photo-sign';
 import {
   CollectionDto,
   ExamRoomDto,
@@ -344,6 +345,7 @@ export class OpsController {
     return this.ops.listStaffDocs(e, c, q);
   }
   @Post('staff-docs')
+  @RequirePermission(PERMISSIONS.ACADEMIC_MANAGE)
   @UseInterceptors(FileInterceptor('file'))
   uploadStaffDoc(
     @UploadedFile() file: Express.Multer.File,
@@ -354,8 +356,9 @@ export class OpsController {
     return this.ops.uploadStaffDoc(body.employeeId, body.category || 'ADMINISTRASI', body.title || file.originalname, file, u.id);
   }
   @Get('staff-docs/:id/file')
-  async staffDocFile(@Param('id') id: string, @Res() res: Response) {
-    sendFile(res, await this.ops.staffDocFile(id));
+  @RequirePermission(PERMISSIONS.EMPLOYEE_READ)
+  async staffDocFile(@Param('id') id: string, @Res() res: Response, @CurrentUser() u: AuthUser) {
+    sendFile(res, await this.ops.staffDocFile(id, u));
   }
   @Delete('staff-docs/:id')
   @RequirePermission(PERMISSIONS.ACADEMIC_MANAGE)
@@ -380,6 +383,7 @@ export class OpsController {
     return this.ops.createCollection(dto, u.id);
   }
   @Post('collections/:id/submit')
+  @RequirePermission(PERMISSIONS.EMPLOYEE_READ)
   @UseInterceptors(FileInterceptor('file'))
   submitItem(
     @Param('id') id: string,
@@ -391,16 +395,19 @@ export class OpsController {
     return this.ops.submitCollectionItem(id, u.id, file, note);
   }
   @Get('collection-items/:id/file')
-  async collectionFile(@Param('id') id: string, @Res() res: Response) {
-    sendFile(res, await this.ops.collectionItemFile(id));
+  @RequirePermission(PERMISSIONS.ACADEMIC_READ)
+  async collectionFile(@Param('id') id: string, @Res() res: Response, @CurrentUser() u: AuthUser) {
+    sendFile(res, await this.ops.collectionItemFile(id, u));
   }
 
   // ---- ProgramSubmission ----
   @Get('submissions')
-  submissions(@Query('department') d?: string, @Query('status') s?: string) {
-    return this.ops.listSubmissions(d, s);
+  @RequirePermission(PERMISSIONS.EMPLOYEE_READ)
+  submissions(@Query('department') d: string | undefined, @Query('status') s: string | undefined, @CurrentUser() u: AuthUser) {
+    return this.ops.listSubmissions(d, s, u);
   }
   @Post('submissions')
+  @RequirePermission(PERMISSIONS.EMPLOYEE_READ)
   @UseInterceptors(FileInterceptor('file'))
   createSubmission(@Body() body: Record<string, string>, @UploadedFile() file: Express.Multer.File | undefined, @CurrentUser() u: AuthUser) {
     let rab: unknown;
@@ -424,8 +431,9 @@ export class OpsController {
     return this.ops.reviewSubmission(id, dto.action, dto.note, u.id);
   }
   @Get('submissions/:id/file')
-  async submissionFile(@Param('id') id: string, @Res() res: Response) {
-    sendFile(res, await this.ops.submissionFile(id));
+  @RequirePermission(PERMISSIONS.EMPLOYEE_READ)
+  async submissionFile(@Param('id') id: string, @Res() res: Response, @CurrentUser() u: AuthUser) {
+    sendFile(res, await this.ops.submissionFile(id, u));
   }
 
   // ---- Arsip — tersekat per bidang (tiap bidang punya arsip & kategori sendiri) ----
@@ -516,22 +524,26 @@ export class OpsController {
 
   // ---- Policy docs ----
   @Get('policies')
+  @RequirePermission(PERMISSIONS.EMPLOYEE_READ)
   policies(@Query('kind') kind?: string) {
     return this.ops.listPolicies(kind);
   }
   @Post('policies')
+  @RequirePermission(PERMISSIONS.ACADEMIC_MANAGE)
   @UseInterceptors(FileInterceptor('file'))
   uploadPolicy(@Body() body: { kind: string; title: string }, @UploadedFile() file: Express.Multer.File, @CurrentUser() u: AuthUser) {
     if (!file) throw new BadRequestException('File wajib.');
     return this.ops.uploadPolicy(body.kind || 'LAINNYA', body.title || file.originalname, file, u.id);
   }
   @Get('policies/:id/file')
+  @RequirePermission(PERMISSIONS.EMPLOYEE_READ)
   async policyFile(@Param('id') id: string, @Res() res: Response) {
     sendFile(res, await this.ops.policyFile(id));
   }
 
   // ---- Seragam ----
   @Get('uniforms')
+  @RequirePermission(PERMISSIONS.EMPLOYEE_READ)
   uniforms() {
     return this.ops.listUniforms();
   }
@@ -694,6 +706,7 @@ export class OpsController {
     return this.ops.mutationLetter(id, file);
   }
   @Get('mutations/:id/letter')
+  @RequirePermission(PERMISSIONS.TATAUSAHA_READ)
   async mutationLetterFile(@Param('id') id: string, @Res() res: Response) {
     sendFile(res, await this.ops.mutationLetterFile(id));
   }
@@ -745,13 +758,29 @@ export class OpsController {
     return this.ops.uploadStudentPhoto(id, file);
   }
 
-  /** Pas foto siswa — publik agar <img> langsung menampilkannya di buku induk. */
+  /** URL foto bertanda tangan — dipakai <img> (tak bisa kirim Authorization). */
+  @Get('students/:id/photo-url')
+  @RequirePermission(PERMISSIONS.STUDENT_READ)
+  studentPhotoUrl(@Param('id', ParseUUIDPipe) id: string) {
+    return signPhotoUrl(id);
+  }
+
+  /** Pas foto siswa — tetap tanpa Authorization agar <img>/cetak jalan, tapi
+   *  wajib tanda tangan HMAC + kedaluwarsa dari photo-url; UUID saja tak cukup. */
   @Get('students/:id/photo')
   @Public()
-  async studentPhoto(@Param('id') id: string, @Res() res: Response) {
+  async studentPhoto(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('exp') exp: string | undefined,
+    @Query('sig') sig: string | undefined,
+    @Res() res: Response,
+  ) {
+    if (!verifyPhotoSig(id, exp, sig)) {
+      throw new ForbiddenException('Tautan foto tidak valid atau kedaluwarsa.');
+    }
     const f = await this.ops.studentPhoto(id);
     res.setHeader('Content-Type', f.mime);
-    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.setHeader('Cache-Control', 'private, max-age=300');
     res.send(f.buf);
   }
 

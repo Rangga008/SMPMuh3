@@ -114,11 +114,23 @@ export class BackupService {
     try {
       // Dekompres ke file — psql membaca dari file, bukan stdin, agar
       // --single-transaction dan penanganan error konsisten.
+      // Batas dekompresi — gzip bomb (file kecil → SQL raksasa) jangan
+      // sampai menghabiskan memori proses API.
+      const MAX_SQL = 512 * 1024 * 1024;
       const sql = name.endsWith('.gz')
         ? await new Promise<Buffer>((resolve, reject) => {
             const chunks: Buffer[] = [];
+            let size = 0;
             const gun = createGunzip();
-            gun.on('data', (c: Buffer) => chunks.push(c));
+            gun.on('data', (c: Buffer) => {
+              size += c.length;
+              if (size > MAX_SQL) {
+                gun.destroy();
+                reject(new BadRequestException('Hasil dekompresi melebihi 512MB.'));
+                return;
+              }
+              chunks.push(c);
+            });
             gun.on('end', () => resolve(Buffer.concat(chunks)));
             gun.on('error', () =>
               reject(new BadRequestException('File .gz rusak / bukan gzip.')),
@@ -126,11 +138,18 @@ export class BackupService {
             gun.end(file.buffer);
           })
         : file.buffer;
+      if (sql.length > MAX_SQL) {
+        throw new BadRequestException('File SQL melebihi 512MB.');
+      }
       if (!sql.includes('PostgreSQL database dump')) {
         throw new BadRequestException(
           'File bukan dump pg_dump yang valid — gunakan file dari Unduh Backup.',
         );
       }
+      // File dieksekusi psql sebagai superuser — SQL upload jangan boleh
+      // membawa perintah berbahaya (RCE OS via \!/COPY PROGRAM, eskalasi
+      // via CREATE ROLE/GRANT, eksekusi kode via DO/FUNCTION, dst.).
+      this.assertSafeDump(sql.toString('utf8'));
       await writeFile(sqlPath, sql);
 
       const code = await new Promise<number>((resolve) => {
@@ -171,6 +190,53 @@ export class BackupService {
       }
     } finally {
       await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    }
+  }
+
+  /**
+   * Validasi isi dump sebelum dijalankan psql. Dump sah dari `pg_dump` fitur
+   * Unduh Backup hanya berisi SET/DDL schema + COPY data — tidak pernah
+   * mengandung meta-perintah psql maupun pernyataan privilege/OS ini.
+   */
+  private assertSafeDump(sqlText: string) {
+    // Meta-perintah psql: hanya `\.` (akhir data COPY) dan pasangan
+    // \restrict/\unrestrict (fitur keamanan pg_dump PG18) yang sah.
+    for (const line of sqlText.split('\n')) {
+      const t = line.trim();
+      if (t.startsWith('\\') && !/^(\\\.|\\restrict\b|\\unrestrict\b)/.test(t)) {
+        throw new BadRequestException(
+          'Dump mengandung meta-perintah psql yang tidak diizinkan.',
+        );
+      }
+    }
+    // Komentar baris dibuang sebelum scan — komentar pg_dump sah dan boleh
+    // menyebut kata apa pun; pernyataan berbahaya hanya dinilai dari kode.
+    const code = sqlText
+      .split('\n')
+      .filter((l) => !l.trim().startsWith('--'))
+      .join('\n');
+    const banned: [RegExp, string][] = [
+      [/\bCOPY\s+[^;\n]*\bPROGRAM\b/i, 'COPY ... PROGRAM (eksekusi perintah OS)'],
+      [/\bCOPY\s+[^;\n]*\b(?:TO|FROM)\s*'/i, 'COPY ... TO/FROM file server'],
+      [/\bALTER\s+SYSTEM\b/i, 'ALTER SYSTEM'],
+      [/\bDO\s*(?:\$|\bLANGUAGE\b)/i, 'blok DO (eksekusi kode)'],
+      [/\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:FUNCTION|PROCEDURE|TRIGGER|RULE|AGGREGATE|OPERATOR|CAST)\b/i, 'objek executable (FUNCTION/TRIGGER/dsb)'],
+      [/\bSECURITY\s+DEFINER\b/i, 'SECURITY DEFINER'],
+      [/\b(?:CREATE|ALTER|DROP)\s+(?:ROLE|USER|TABLESPACE|SERVER|FOREIGN\s+SERVER|PUBLICATION|SUBSCRIPTION)\b/i, 'DDL role/server/tablespace'],
+      // GRANT/REVOKE objek (… ON TABLE/SCHEMA …) sah dari pg_dump; yang
+      // diblok hanya grant ROLE (tanpa ON) — eskalasi hak ke role lain.
+      [/\b(?:GRANT|REVOKE)\b(?![^;]*\bON\b)[^;]*;/i, 'GRANT/REVOKE role'],
+      [/\bSET\s+(?:SESSION\s+AUTHORIZATION|ROLE)\b/i, 'SET ROLE/AUTHORIZATION'],
+      [/\bLOAD\b/i, 'LOAD modul'],
+      [/\bCREATE\s+EXTENSION\b/i, 'CREATE EXTENSION'],
+      [/\b(?:pg_read_server_file|pg_write_server_file|pg_execute_server_program|lo_import|lo_export|dblink)\b/i, 'fungsi akses file/program server'],
+    ];
+    for (const [re, label] of banned) {
+      if (re.test(code)) {
+        throw new BadRequestException(
+          `Dump mengandung pernyataan berbahaya (${label}) — restore ditolak.`,
+        );
+      }
     }
   }
 }

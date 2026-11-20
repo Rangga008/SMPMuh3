@@ -5,8 +5,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { Button } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
-import { getStudentRecord, updateStudentRecord, uploadStudentPhoto, studentPhotoUrl } from '@/lib/api-ops';
-import { ApiError, phoneLocal } from '@/lib/api';
+import { getStudentRecord, updateStudentRecord, uploadStudentPhoto, getStudentPhotoUrl } from '@/lib/api-ops';
+import { ApiError, API, phoneLocal } from '@/lib/api';
 
 type Details = Record<string, string>;
 type Penyakit = { jenis: string; kelas: string; tahun: string; lama: string; ket: string };
@@ -93,10 +93,18 @@ export default function BukuIndukPage() {
   const [nilaiKeputusan, setNilaiKeputusan] = useState<NilaiKeputusan[]>(KOSONG_KEPUTUSAN);
   const [nik, setNik] = useState('');
   const [photoV, setPhotoV] = useState(0);
+  const [photoSrc, setPhotoSrc] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // URL foto bertanda tangan — diperbarui tiap foto diganti (photoV).
+  useEffect(() => {
+    getStudentPhotoUrl(id)
+      .then((r) => setPhotoSrc(`${API}${r.url}&v=${photoV}`))
+      .catch(() => setPhotoSrc(''));
+  }, [id, photoV]);
 
   useEffect(() => {
     getStudentRecord(id).then((r) => {
@@ -264,7 +272,7 @@ export default function BukuIndukPage() {
               </div>
               <div className="photo-box" onClick={() => fileRef.current?.click()} title="Klik untuk unggah pas foto">
                 {s.photoKey
-                  ? <img src={`${studentPhotoUrl(id)}?v=${photoV}`} alt="Pas foto" />
+                  ? <img src={photoSrc} alt="Pas foto" />
                   : <>Pas Photo<br />3 x 4 cm</>}
               </div>
               <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={pickPhoto} />
@@ -495,7 +503,7 @@ export default function BukuIndukPage() {
                   <div className="induk-row"><span className="induk-label" style={{ width: 90 }}>Nama Siswa</span><span className="induk-sep">:</span><span className="induk-val"><b>{s.name}</b></span></div>
                   <div className="induk-row"><span className="induk-label" style={{ width: 90 }}>NIS / NISN</span><span className="induk-sep">:</span><span className="induk-val">{s.nis ?? '—'} / {s.nisn ?? '—'}</span></div>
                 </div>
-                <div className="photo-box" style={{ cursor: 'default' }}>{s.photoKey ? <img src={`${studentPhotoUrl(id)}?v=${photoV}`} alt="" /> : <>Pas<br />Photo</>}</div>
+                <div className="photo-box" style={{ cursor: 'default' }}>{s.photoKey && photoSrc ? <img src={photoSrc} alt="" /> : <>Pas<br />Photo</>}</div>
               </div>
               <div style={{ display: 'flex', gap: 12, margin: '8px 0', fontSize: '10.5pt' }}>
                 {nilaiKepala.map((k, i) => (
