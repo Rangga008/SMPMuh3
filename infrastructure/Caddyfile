@@ -24,6 +24,10 @@ smpm3bdg.sch.id, www.smpm3bdg.sch.id {
 	request_body {
 		max_size 40MB
 	}
+	# Hardening anti brute-force: xmlrpc.php = amplifier login WP klasik;
+	# /wp-json/wp/v2/users = enumerasi username. Keduanya tak dipakai situs ini.
+	@forbidden path /xmlrpc.php /wp-json/wp/v2/users /wp-json/wp/v2/users/*
+	respond @forbidden 403
 	php_fastcgi wordpress:9000
 	file_server
 }
