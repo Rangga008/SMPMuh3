@@ -1205,8 +1205,8 @@ export class CbtService {
   async setExamQuestions(examId: string, questions: Parameters<OpsService['setExamQuestions']>[1], user: AuthUser) {
     await this.scopeOk(user, examId, true);
     for (const q of questions) {
-      if (!['MCQ', 'MCQ_COMPLEX', 'TRUE_FALSE', 'TRUE_FALSE_COMPLEX'].includes(q.type)) {
-        throw new BadRequestException(`Tipe soal ${q.type} tidak didukung — hanya PG/PGK/BS/BSK.`);
+      if (!['MCQ', 'MCQ_COMPLEX', 'TRUE_FALSE', 'TRUE_FALSE_COMPLEX', 'MATCHING'].includes(q.type)) {
+        throw new BadRequestException(`Tipe soal ${q.type} tidak didukung — hanya PG/PGK/BS/BSK/Menjodohkan.`);
       }
     }
     const r = await this.ops.setExamQuestions(examId, questions);
@@ -1227,8 +1227,8 @@ export class CbtService {
       passages = this.ops.parsePassageSheet(file);
     }
     for (const q of questions) {
-      if (!['MCQ', 'MCQ_COMPLEX', 'TRUE_FALSE', 'TRUE_FALSE_COMPLEX'].includes(q.type)) {
-        throw new BadRequestException(`Tipe soal ${q.type} tidak didukung — hanya PG/PGK/BS/BSK.`);
+      if (!['MCQ', 'MCQ_COMPLEX', 'TRUE_FALSE', 'TRUE_FALSE_COMPLEX', 'MATCHING'].includes(q.type)) {
+        throw new BadRequestException(`Tipe soal ${q.type} tidak didukung — hanya PG/PGK/BS/BSK/Menjodohkan.`);
       }
     }
     const r = await this.ops.setExamQuestions(examId, questions, passages);

@@ -100,7 +100,7 @@ services:
       REDIS_URL: redis://redis:6379
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-smpmuh3}:${RABBITMQ_PASSWORD:-smpmuh3_dev}@rabbitmq:5672
       S3_ENDPOINT: http://s3:9000
-      CORS_ORIGINS: http://localhost:3001,http://localhost:3002
+      CORS_ORIGINS: http://localhost:3001,http://localhost:3002,http://localhost:3003,http://localhost:3004
     ports:
       - "${API_PORT:-4000}:4000"
     depends_on:

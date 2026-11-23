@@ -195,7 +195,7 @@ export class OpsController {
 
   /** Unggah gambar untuk disisipkan ke soal/opsi/bacaan buatan manual — hasil {key,url}. */
   @Post('question-media')
-  @RequirePermission(PERMISSIONS.ACADEMIC_MANAGE)
+  @RequirePermission(PERMISSIONS.ACADEMIC_READ)
   @UseInterceptors(FileInterceptor('file'))
   uploadQuestionMedia(@UploadedFile() file: Express.Multer.File) {
     if (!file) throw new BadRequestException('File wajib diunggah.');
