@@ -8,8 +8,8 @@ import { Shell } from '@/components/shell';
 import { PageTitle, Widget } from '@/components/widgets';
 import { ExamPanel } from '@/components/exam-panel';
 import { QuestionPreview, type PreviewQuestion } from '@/components/question-preview';
+import { MathField } from '@/components/rich-editor';
 import {
-  API,
   ApiError,
   ensureAssessmentExam,
   getAssessment,
@@ -155,8 +155,8 @@ function AsesmenDetailInner() {
   const [passages, setPassages] = useState<PassageDraft[]>([]);
   const [passagesDirty, setPassagesDirty] = useState(false);
 
-  // ---- Pratinjau tampilan siswa per kartu soal ----
-  const [previewIdx, setPreviewIdx] = useState<Set<number>>(new Set());
+  // ---- Pratinjau tampilan siswa (modal) per kartu soal ----
+  const [previewIdx, setPreviewIdx] = useState<number | null>(null);
 
   // ---- Modal import (preview) ----
   const [importModal, setImportModal] = useState(false);
@@ -386,29 +386,6 @@ function AsesmenDetailInner() {
       imgTargetRef.current = null;
     }
   };
-  const ImgBtn = ({ apply }: { apply: (url: string) => void }) => (
-    <button
-      type="button"
-      title="Sisipkan gambar"
-      onClick={() => pickImage(apply)}
-      className="grid size-8 shrink-0 place-items-center rounded-lg bg-sky-100 text-sm text-sky-700 transition hover:bg-sky-200"
-    >
-      🖼
-    </button>
-  );
-  const MediaPreview = ({ html }: { html: string }) => {
-    const urls = [...html.matchAll(/<img[^>]+src="([^"]+)"/g)].map((m) => m[1] ?? '');
-    if (!urls.length) return null;
-    return (
-      <div className="mt-1 flex flex-wrap gap-1.5">
-        {urls.map((u, i) => (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img key={i} src={u.startsWith('/cbt/') ? `${API}${u}` : u} alt="" className="h-14 rounded-lg border border-sand-200 bg-white object-contain" />
-        ))}
-      </div>
-    );
-  };
-
   /** Editor isi per tipe soal. */
   const body = (d: QDraft, i: number) => {
     const setChoice = (j: number, v: string, side: 'choices' | 'rights' = 'choices') =>
@@ -464,13 +441,17 @@ function AsesmenDetailInner() {
                   >
                     {LETTERS[j]}
                   </button>
-                  <Input value={c} onChange={(e) => setChoice(j, e.target.value)} placeholder={`Pilihan ${LETTERS[j]} — teks dan/atau gambar`} />
-                  <ImgBtn apply={(url) => setChoice(j, `${c}${c.trim() ? ' ' : ''}<img src="${url}">`)} />
+                  <MathField
+                    singleLine
+                    value={c}
+                    onChange={(v) => setChoice(j, v)}
+                    pickImage={pickImage}
+                    placeholder={`Pilihan ${LETTERS[j]} — teks, rumus ƒx, atau gambar 🖼`}
+                  />
                   {d.choices.length > 2 ? (
                     <button type="button" onClick={() => delChoice(j)} className="shrink-0 text-xs font-bold text-red-500 hover:text-red-700">✕</button>
                   ) : null}
                 </div>
-                <MediaPreview html={c} />
               </div>
             );
           })}
@@ -524,13 +505,17 @@ function AsesmenDetailInner() {
                   >
                     {kb === true ? 'B' : kb === false ? 'S' : '·'}
                   </button>
-                  <Input value={c} onChange={(e) => setChoice(j, e.target.value)} placeholder={`Pernyataan ${j + 1} — teks dan/atau gambar`} />
-                  <ImgBtn apply={(url) => setChoice(j, `${c}${c.trim() ? ' ' : ''}<img src="${url}">`)} />
+                  <MathField
+                    singleLine
+                    value={c}
+                    onChange={(v) => setChoice(j, v)}
+                    pickImage={pickImage}
+                    placeholder={`Pernyataan ${j + 1} — teks, rumus ƒx, atau gambar 🖼`}
+                  />
                   {d.choices.length > 2 ? (
                     <button type="button" onClick={() => delChoice(j)} className="shrink-0 text-xs font-bold text-red-500 hover:text-red-700">✕</button>
                   ) : null}
                 </div>
-                <MediaPreview html={c} />
               </div>
             );
           })}
@@ -547,8 +532,13 @@ function AsesmenDetailInner() {
           {d.choices.map((c, j) => (
             <div key={j} className="flex items-center gap-2">
               <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-sand-100 text-xs font-black text-sand-500">{j + 1}</span>
-              <Input value={c} onChange={(e) => setChoice(j, e.target.value)} placeholder={`Pernyataan ${j + 1}`} />
-              <ImgBtn apply={(url) => setChoice(j, `${c}${c.trim() ? ' ' : ''}<img src="${url}">`)} />
+              <MathField
+                singleLine
+                value={c}
+                onChange={(v) => setChoice(j, v)}
+                pickImage={pickImage}
+                placeholder={`Pernyataan ${j + 1}`}
+              />
               {d.choices.length > 2 ? (
                 <button type="button" onClick={() => delChoice(j)} className="shrink-0 text-xs font-bold text-red-500 hover:text-red-700">✕</button>
               ) : null}
@@ -563,8 +553,13 @@ function AsesmenDetailInner() {
           {d.rights.map((c, j) => (
             <div key={j} className="flex items-center gap-2">
               <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary-100 text-xs font-black text-primary-700">{j + 1}</span>
-              <Input value={c} onChange={(e) => setChoice(j, e.target.value, 'rights')} placeholder={`Pasangan ${j + 1}`} />
-              <ImgBtn apply={(url) => setChoice(j, `${c}${c.trim() ? ' ' : ''}<img src="${url}">`, 'rights')} />
+              <MathField
+                singleLine
+                value={c}
+                onChange={(v) => setChoice(j, v, 'rights')}
+                pickImage={pickImage}
+                placeholder={`Pasangan ${j + 1}`}
+              />
               {d.rights.length > 2 ? (
                 <button type="button" onClick={() => delChoice(j, 'rights')} className="shrink-0 text-xs font-bold text-red-500 hover:text-red-700">✕</button>
               ) : null}
@@ -720,16 +715,8 @@ function AsesmenDetailInner() {
                     </Field>
                     <button
                       type="button"
-                      onClick={() =>
-                        setPreviewIdx((s) => {
-                          const n = new Set(s);
-                          if (n.has(i)) n.delete(i); else n.add(i);
-                          return n;
-                        })
-                      }
-                      className={`ml-auto rounded-lg px-2.5 py-1 text-xs font-bold transition ${
-                        previewIdx.has(i) ? 'bg-primary-100 text-primary-800' : 'bg-sand-100 text-sand-500 hover:bg-sand-200'
-                      }`}
+                      onClick={() => setPreviewIdx(i)}
+                      className="ml-auto rounded-lg bg-sand-100 px-2.5 py-1 text-xs font-bold text-sand-500 transition hover:bg-sand-200"
                       title="Lihat soal seperti yang dilihat siswa"
                     >
                       👁 Siswa
@@ -743,36 +730,14 @@ function AsesmenDetailInner() {
                     </button>
                   </div>
                   <Field label="Teks Pertanyaan" className="!mb-3">
-                    <div className="flex items-start gap-2">
-                      <textarea
-                        value={d.prompt}
-                        onChange={(e) => updateD(i, { prompt: e.target.value })}
-                        rows={2}
-                        className="w-full rounded-xl border border-sand-200 px-3 py-2 text-sm outline-none focus:border-primary-400"
-                        placeholder="Tulis pertanyaan… rumus boleh ditulis $x^2$ dan gambar lewat tombol 🖼"
-                      />
-                      <ImgBtn apply={(url) => updateD(i, { prompt: `${d.prompt}<img src="${url}">` })} />
-                    </div>
-                    <MediaPreview html={d.prompt} />
-                    {d.prompt.includes('<') || d.prompt.includes('$') ? (
-                      <div
-                        className="rich-html mt-1.5 rounded-lg border border-sand-100 bg-sand-50 px-3 py-2 text-xs text-sand-600 [&_img]:max-h-24"
-                        dangerouslySetInnerHTML={{ __html: richHtml(d.prompt) }}
-                      />
-                    ) : null}
+                    <MathField
+                      value={d.prompt}
+                      onChange={(v) => updateD(i, { prompt: v })}
+                      pickImage={pickImage}
+                      placeholder="Tulis pertanyaan… tombol ƒx untuk rumus (akar, pangkat, pecahan) dan 🖼 untuk gambar"
+                    />
                   </Field>
                   {body(d, i)}
-                  {previewIdx.has(i) ? (
-                    <div className="mt-4 rounded-2xl border-2 border-dashed border-primary-200 bg-primary-50/40 p-4">
-                      <p className="mb-3 text-[11px] font-black uppercase tracking-wide text-primary-700">
-                        Tampilan siswa — persis seperti di layar ujian (kunci ditandai hijau)
-                      </p>
-                      <QuestionPreview
-                        q={toApi(d) as PreviewQuestion}
-                        passageContent={d.passageCode ? (passages.find((p) => p.code === d.passageCode)?.content ?? null) : null}
-                      />
-                    </div>
-                  ) : null}
                 </div>
               ))}
             </div>
@@ -819,20 +784,12 @@ function AsesmenDetailInner() {
                       Hapus Bacaan
                     </button>
                   </div>
-                  <div className="flex items-start gap-2">
-                    <textarea
-                      value={p.content}
-                      onChange={(e) => updateP(i, { content: e.target.value })}
-                      rows={3}
-                      className="w-full rounded-xl border border-sand-200 px-3 py-2 text-sm outline-none focus:border-primary-400"
-                      placeholder="Teks bacaan — boleh HTML & gambar…"
-                    />
-                    <ImgBtn apply={(url) => updateP(i, { content: `${p.content}<img src="${url}">` })} />
-                  </div>
-                  <MediaPreview html={p.content} />
-                  {p.content.trim() ? (
-                    <div className="rich-html mt-1.5 rounded-lg border border-sand-100 bg-sand-50 px-3 py-2 text-xs text-sand-600 [&_img]:max-h-32" dangerouslySetInnerHTML={{ __html: richHtml(p.content) }} />
-                  ) : null}
+                  <MathField
+                    value={p.content}
+                    onChange={(v) => updateP(i, { content: v })}
+                    pickImage={pickImage}
+                    placeholder="Teks bacaan — tombol ƒx untuk rumus, 🖼 untuk gambar…"
+                  />
                 </div>
               ))}
             </div>
@@ -841,6 +798,25 @@ function AsesmenDetailInner() {
       )}
       </>
       ) : null}
+
+      {/* ---------- Modal pratinjau tampilan siswa ---------- */}
+      <Modal
+        open={previewIdx !== null}
+        onClose={() => setPreviewIdx(null)}
+        title={`Tampilan Siswa — Soal No.${previewIdx !== null ? (drafts[previewIdx]?.number ?? '') : ''}`}
+        description="Persis seperti di layar ujian siswa. Kunci ditandai hijau — hanya untuk guru, siswa tidak melihatnya."
+        size="xl"
+      >
+        {(() => {
+          const d = previewIdx !== null ? drafts[previewIdx] : undefined;
+          return d ? (
+            <QuestionPreview
+              q={toApi(d) as PreviewQuestion}
+              passageContent={d.passageCode ? (passages.find((p) => p.code === d.passageCode)?.content ?? null) : null}
+            />
+          ) : null;
+        })()}
+      </Modal>
 
       {/* ---------- Modal Import + Preview ---------- */}
       <Modal open={importModal} onClose={() => setImportModal(false)} title="Impor Soal dari File" size="xl">
