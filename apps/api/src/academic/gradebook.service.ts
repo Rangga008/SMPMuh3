@@ -129,25 +129,9 @@ export class GradebookService {
           pairs.push({ ...m, canEdit: true });
         }
       }
-      // Wali kelas: semua mapel di kelas walinya — gabungkan penugasan kelas itu
-      const homerooms = await this.prisma.class.findMany({
-        where: { homeroomId: emp.id, academicYearId: year },
-        select: { id: true },
-      });
-      for (const h of homerooms) {
-        const asg = await this.prisma.teachingAssignment.findMany({
-          where: { classId: h.id, academicYearId: year },
-          select: { classId: true, subjectId: true },
-          distinct: ['classId', 'subjectId'],
-        });
-        for (const a of asg) {
-          const p = pairs.find((x) => x.classId === a.classId && x.subjectId === a.subjectId);
-          if (p) p.canEdit = true;
-          else pairs.push({ ...a, canEdit: true });
-        }
-        // Kelas tanpa penugasan sama sekali → tetap tampil (buku dibuat on-demand)
-      }
     }
+    // Catatan: buku nilai mapel lain di kelas wali TIDAK dicampur ke daftar guru —
+    // wali kelas mengaksesnya lewat matriks rekap (tab Wali Kelas).
 
     if (!pairs.length) return { academicYearId: year, books: [] };
 

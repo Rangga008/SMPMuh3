@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { ApiError } from '@/lib/api';
 import { getResult, type CbtResult } from '@/lib/cbt';
+import { exitFullscreen } from '@/lib/exam-guard';
 import { ExamShell } from '@/components/exam-shell';
 
 export default function CbtResultPage() {
@@ -13,6 +14,11 @@ export default function CbtResultPage() {
   const auto = params.get('auto') === '1';
   const [r, setR] = useState<CbtResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Pastikan keluar dari layar penuh bila sampai lewat jalur lain (blokir/force submit).
+  useEffect(() => {
+    void exitFullscreen();
+  }, []);
 
   useEffect(() => {
     getResult(token)

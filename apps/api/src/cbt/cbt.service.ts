@@ -663,10 +663,28 @@ export class CbtService {
         });
     }
     // Hitung setiap masuk — sinyal keluar-masuk untuk monitor pelanggaran.
-    const fresh = await this.prisma.examAttempt.update({
-      where: { examId_studentId: { examId: exam.id, studentId: student.id } },
-      data: { enterCount: { increment: 1 } },
-    });
+    const fresh = await this.prisma.examAttempt
+      .update({
+        where: { examId_studentId: { examId: exam.id, studentId: student.id } },
+        data: { enterCount: { increment: 1 } },
+      })
+      .catch(async (e: unknown) => {
+        // Race dengan reset pengawas: baris terhapus antara findUnique dan update.
+        // Buat ulang sesi baru agar siswa tetap bisa masuk dari awal.
+        if ((e as { code?: string }).code !== 'P2025') throw e;
+        const deadline = new Date(
+          Math.min(Date.now() + exam.durationMin * 60_000, exam.endAt.getTime()),
+        );
+        await this.prisma.examAttempt
+          .create({ data: { examId: exam.id, studentId: student.id, deadline } })
+          .catch((e2: unknown) => {
+            if ((e2 as { code?: string }).code !== 'P2002') throw e2;
+          });
+        return this.prisma.examAttempt.update({
+          where: { examId_studentId: { examId: exam.id, studentId: student.id } },
+          data: { enterCount: { increment: 1 } },
+        });
+      });
     return this.buildSession(fresh, exam, student, enroll.class.name);
   }
 
@@ -802,13 +820,17 @@ export class CbtService {
   }
 
   /** Buka sesi yang diblokir proteksi — pelanggaran dihitung ulang dari nol.
-   *  Bila deadline sudah lewat, siswa dapat sisa durasi penuh lagi. */
+   *  Waktu DIBEKUKAN selama diblokir: siswa melanjutkan dari sisa waktu
+   *  persis saat sesinya dibekukan (bukan durasi penuh dari awal). */
   async unblockAttempt(examId: string, studentId: string, actor: AuthUser) {
     const a = await this.attemptOf(examId, studentId);
     if (a.status !== 'BLOCKED') throw new ConflictException('Sesi ini tidak sedang diblokir.');
     const exam = await this.prisma.exam.findUniqueOrThrow({ where: { id: examId } });
-    const deadline = a.deadline.getTime() > Date.now()
-      ? a.deadline
+    // Sisa waktu saat diblokir = deadline − blockedAt. Deadline baru =
+    // sekarang + sisa itu, tetap dibatasi endAt ujian.
+    const frozen = a.blockedAt ? Math.max(0, a.deadline.getTime() - a.blockedAt.getTime()) : 0;
+    const deadline = a.blockedAt && a.deadline.getTime() > a.blockedAt.getTime()
+      ? new Date(Math.min(Date.now() + frozen, exam.endAt.getTime()))
       : new Date(Math.min(Date.now() + exam.durationMin * 60_000, exam.endAt.getTime()));
     const upd = await this.prisma.examAttempt.update({
       where: { id: a.id },
@@ -931,17 +953,51 @@ export class CbtService {
     return { saved: true };
   }
 
-  /** Kumpulkan & nilai — juga menyalin hasil ke StudentAnswer + Grade asesmen. */
-  async submit(token: string) {
+  /** Autosave banyak jawaban sekaligus — flush saat pagehide (sendBeacon)
+   *  dan cadangan saat submit. Jawaban di luar paket soal ujian diabaikan. */
+  async saveAnswers(token: string, answers: Record<string, unknown>) {
+    const attempt = await this.attemptOrThrow(token);
+    await this.ensureLive(attempt);
+    const exam = await this.prisma.exam.findUniqueOrThrow({ where: { id: attempt.examId } });
+    const valid = new Set(
+      (
+        await this.prisma.assessmentQuestion.findMany({
+          where: await this.examQuestionWhere(exam),
+          select: { id: true },
+        })
+      ).map((q) => q.id),
+    );
+    const ops = Object.entries(answers ?? {})
+      .filter(([qid]) => valid.has(qid))
+      .map(([questionId, answer]) =>
+        this.prisma.examAnswer.upsert({
+          where: { attemptId_questionId: { attemptId: attempt.id, questionId } },
+          update: { answer: answer == null ? Prisma.JsonNull : (answer as Prisma.InputJsonValue) },
+          create: {
+            attemptId: attempt.id,
+            questionId,
+            answer: answer == null ? Prisma.JsonNull : (answer as Prisma.InputJsonValue),
+          },
+        }),
+      );
+    await this.prisma.$transaction(ops);
+    return { saved: ops.length };
+  }
+
+  /** Kumpulkan & nilai — juga menyalin hasil ke StudentAnswer + Grade asesmen.
+   *  `answers` = keadaan akhir jawaban di perangkat siswa — ditulis ulang di
+   *  dalam transaksi penilaian agar autosave yang belum sempat mendarat tetap
+   *  ikut dinilai (antrean balapan). */
+  async submit(token: string, answers?: Record<string, unknown>) {
     const attempt = await this.attemptOrThrow(token);
     if (attempt.status === 'SUBMITTED') {
       const exam = await this.prisma.exam.findUniqueOrThrow({ where: { id: attempt.examId } });
       return { submitted: true, score: exam.showScore ? attempt.score : null, maxScore: attempt.maxScore };
     }
-    return this.finalize(attempt.id);
+    return this.finalize(attempt.id, answers);
   }
 
-  private async finalize(attemptId: string) {
+  private async finalize(attemptId: string, submitAnswers?: Record<string, unknown>) {
     return this.prisma.$transaction(async (tx) => {
       const attempt = await tx.examAttempt.findUniqueOrThrow({
         where: { id: attemptId },
@@ -956,6 +1012,24 @@ export class CbtService {
       });
       const answers = await tx.examAnswer.findMany({ where: { attemptId } });
       const byQ = new Map(answers.map((a) => [a.questionId, a]));
+      // Payload jawaban akhir dari perangkat — menang atas autosave yang
+      // belum mendarat. Hanya soal paket ujian ini yang diterima.
+      if (submitAnswers && typeof submitAnswers === 'object') {
+        const valid = new Set(questions.map((q) => q.id));
+        for (const [questionId, answer] of Object.entries(submitAnswers)) {
+          if (!valid.has(questionId)) continue;
+          const row = await tx.examAnswer.upsert({
+            where: { attemptId_questionId: { attemptId, questionId } },
+            update: { answer: answer == null ? Prisma.JsonNull : (answer as Prisma.InputJsonValue) },
+            create: {
+              attemptId,
+              questionId,
+              answer: answer == null ? Prisma.JsonNull : (answer as Prisma.InputJsonValue),
+            },
+          });
+          byQ.set(questionId, row);
+        }
+      }
       let score = 0;
       let maxScore = 0;
       for (const q of questions) {

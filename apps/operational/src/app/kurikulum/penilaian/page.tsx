@@ -74,6 +74,14 @@ export default function PenilaianPage() {
       setErr(e instanceof ApiError ? e.message : 'Gagal membuka buku nilai.');
     }
   };
+  const openById = async (id: string) => {
+    try {
+      setErr(null);
+      setActiveBook(await getBook(id));
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : 'Gagal membuka buku nilai.');
+    }
+  };
 
   return (
     <Shell>
@@ -110,13 +118,33 @@ export default function PenilaianPage() {
           onBook={setActiveBook}
         />
       )}
-      {tab === 'wali' && <WaliMatrix classes={matrixClasses} />}
+      {tab === 'wali' && !activeBook && <WaliMatrix classes={matrixClasses} onOpenBook={openById} />}
+      {tab === 'wali' && activeBook && (
+        <BookGrid
+          book={activeBook}
+          onBack={() => setActiveBook(null)}
+          onBook={setActiveBook}
+        />
+      )}
     </Shell>
   );
 }
 
-/* ============ Daftar buku nilai ============ */
+/* ============ Daftar buku nilai — pilih kelas lalu tabel mapel ============ */
 function BookList({ books, onOpen }: { books: BookListItem[] | null; onOpen: (b: BookListItem) => void }) {
+  const classes = useMemo(() => {
+    const m = new Map<string, { id: string; name: string; level: number }>();
+    for (const b of books ?? []) {
+      if (!m.has(b.classId)) m.set(b.classId, { id: b.classId, name: b.className ?? '?', level: b.classLevel ?? 0 });
+    }
+    return [...m.values()].sort((a, b) => a.level - b.level || a.name.localeCompare(b.name));
+  }, [books]);
+  const [classId, setClassId] = useState('');
+  useEffect(() => {
+    if (classes.length && !classes.some((c) => c.id === classId)) setClassId(classes[0]!.id);
+  }, [classes, classId]);
+  const rows = (books ?? []).filter((b) => b.classId === classId);
+
   if (books === null) return <Widget title="Buku Nilai"><p className="py-10 text-center text-xs text-sand-400">Memuat…</p></Widget>;
   if (!books.length)
     return (
@@ -126,25 +154,38 @@ function BookList({ books, onOpen }: { books: BookListItem[] | null; onOpen: (b:
         </p>
       </Widget>
     );
-  // Kelompokkan per kelas
-  const byClass = new Map<string, BookListItem[]>();
-  for (const b of books) {
-    const k = b.className ?? '?';
-    byClass.set(k, [...(byClass.get(k) ?? []), b]);
-  }
   return (
-    <div className="space-y-5">
-      {[...byClass.entries()].map(([cls, items]) => (
-        <Widget key={cls} title={`Kelas ${cls}`}>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {items.map((b) => (
-              <button
-                key={`${b.classId}:${b.subjectId}`}
-                onClick={() => onOpen(b)}
-                className="rounded-2xl border border-sand-200 bg-sand-50/60 p-4 text-left transition hover:border-primary-300 hover:bg-primary-50/40"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-bold text-sand-900">{b.subjectName}</p>
+    <Widget
+      title="Buku Nilai Saya"
+      subtitle="Satu buku per kelas × mapel — struktur kolom dan bobot bebas diatur sendiri"
+      action={
+        <Select value={classId} onChange={(e) => setClassId(e.target.value)} className="w-48" searchable={false}>
+          {classes.map((c) => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </Select>
+      }
+    >
+      <div className="overflow-x-auto rounded-2xl border border-sand-200">
+        <table className="w-full border-collapse text-xs">
+          <thead>
+            <tr className="bg-sand-100 text-left text-[11px] uppercase tracking-wide text-sand-500">
+              <th className="px-3 py-2">Mata Pelajaran</th>
+              <th className="w-16 px-2 py-2 text-center">Kode</th>
+              <th className="w-24 px-2 py-2 text-center">Kolom</th>
+              <th className="w-28 px-2 py-2 text-center">Status</th>
+              <th className="w-28 px-2 py-2 text-center">Aksi</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((b) => (
+              <tr key={`${b.classId}:${b.subjectId}`} className="border-t border-sand-100 hover:bg-sand-50/60">
+                <td className="px-3 py-2.5 font-semibold text-sand-800">{b.subjectName}</td>
+                <td className="px-2 py-2.5 text-center text-sand-500">{b.subjectCode}</td>
+                <td className="px-2 py-2.5 text-center text-sand-500">
+                  {b.id ? `${b.columnCount} kolom` : '—'}
+                </td>
+                <td className="px-2 py-2.5 text-center">
                   {b.submittedAt ? (
                     <Badge tone="accent">Terkirim</Badge>
                   ) : b.id ? (
@@ -152,16 +193,23 @@ function BookList({ books, onOpen }: { books: BookListItem[] | null; onOpen: (b:
                   ) : (
                     <Badge tone="neutral">Baru</Badge>
                   )}
-                </div>
-                <p className="mt-1 text-xs text-sand-500">
-                  {b.subjectCode} · {b.id ? `${b.columnCount} kolom` : 'belum dibuat — klik untuk mulai'}
-                </p>
-              </button>
+                </td>
+                <td className="px-2 py-2.5 text-center">
+                  <Button size="sm" variant={b.id ? 'secondary' : 'primary'} onClick={() => onOpen(b)}>
+                    {b.id ? 'Buka' : 'Buat'}
+                  </Button>
+                </td>
+              </tr>
             ))}
-          </div>
-        </Widget>
-      ))}
-    </div>
+            {!rows.length && (
+              <tr>
+                <td colSpan={5} className="py-10 text-center text-sand-400">Tidak ada mapel di kelas ini.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </Widget>
   );
 }
 
@@ -264,7 +312,7 @@ function BookGrid({
   return (
     <div className="space-y-4">
       <Widget
-        title={`${book.subject.name} — Kelas ${book.class.name}`}
+        title={`${book.subject.name} — ${book.class.name}`}
         subtitle={
           book.submittedAt
             ? `Nilai akhir sudah dikirim ke wali kelas (${new Date(book.submittedAt).toLocaleDateString('id-ID')})`
@@ -309,16 +357,37 @@ function BookGrid({
                 <th className="sticky left-0 z-10 bg-sand-100 px-2 py-2 text-center">No</th>
                 <th className="sticky left-8 z-10 min-w-44 bg-sand-100 px-2 py-2">Nama Siswa</th>
                 {book.columns.map((c) => (
-                  <th key={c.id} className="min-w-20 px-1 py-1 text-center">
+                  <th key={c.id} className="min-w-24 border-l border-sand-100 px-1 py-1 text-center">
                     <div className="flex flex-col items-center gap-0.5">
-                      <button
-                        className="font-bold text-sand-800 hover:text-primary-700 disabled:cursor-default"
-                        disabled={!book.canEdit}
-                        onClick={() => setEditCol(c)}
-                        title={book.canEdit ? 'Pengaturan kolom' : ''}
-                      >
-                        {c.name}
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          className="font-bold text-sand-800 hover:text-primary-700 disabled:cursor-default"
+                          disabled={!book.canEdit}
+                          onClick={() => setEditCol(c)}
+                          title={book.canEdit ? 'Pengaturan kolom (nama, jenis, bobot, tautan ujian)' : ''}
+                        >
+                          {c.name}
+                        </button>
+                        {book.canEdit && (
+                          <button
+                            className="text-[10px] text-sand-400 hover:text-primary-700"
+                            title="Pengaturan kolom"
+                            onClick={() => setEditCol(c)}
+                          >
+                            ✎
+                          </button>
+                        )}
+                        {book.canEdit && (
+                          <button
+                            className="text-[10px] text-sand-400 hover:text-red-600 disabled:opacity-40"
+                            title="Hapus kolom"
+                            disabled={busy}
+                            onClick={() => void removeColumn(c)}
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
                       <div className="flex items-center gap-1">
                         <Badge tone={KIND_TONE[c.kind]}>{KIND_LABEL[c.kind]}</Badge>
                         {c.weight > 0 && (c.kind === 'ASAJ' || c.kind === 'CUSTOM') && (
@@ -327,7 +396,7 @@ function BookGrid({
                       </div>
                       {c.examId && (
                         <button
-                          className="text-[10px] font-semibold text-primary-700 underline decoration-dotted disabled:text-sand-400"
+                          className="rounded-md bg-primary-50 px-1.5 py-0.5 text-[10px] font-semibold text-primary-700 hover:bg-primary-100 disabled:text-sand-400"
                           disabled={!book.canEdit || busy}
                           onClick={() => void pullExam(c)}
                           title={`Tarik nilai dari: ${c.examTitle}`}
@@ -361,7 +430,8 @@ function BookGrid({
                         <input
                           type="text"
                           inputMode="decimal"
-                          className="w-14 rounded-lg border border-transparent bg-transparent px-1 py-1 text-center text-xs tabular-nums outline-none transition focus:border-primary-300 focus:bg-white focus:ring-2 focus:ring-primary-100 disabled:text-sand-700"
+                          placeholder="·"
+                          className="w-16 rounded-lg border border-sand-200 bg-white px-1 py-1.5 text-center text-xs tabular-nums shadow-sm outline-none transition placeholder:text-sand-300 hover:border-primary-300 focus:border-primary-400 focus:ring-2 focus:ring-primary-100 disabled:border-transparent disabled:bg-transparent disabled:text-sand-700 disabled:shadow-none"
                           value={draftOf(c.id, r.studentId, r.cells[c.id])}
                           disabled={!book.canEdit || savingCell === key}
                           onChange={(e) =>
@@ -394,9 +464,10 @@ function BookGrid({
           </table>
         </div>
         <p className="mt-2 text-[11px] text-sand-400">
-          Ketik nilai lalu Enter/klik luar untuk menyimpan · kosongkan sel untuk menghapus ·
-          kolom Formatif &amp; Sumatif LM ikut rata-rata ({avgCols.length} kolom) ·
-          ASAJ/Tambahan berbobot sendiri · kosong = tidak dihitung (prorata bobot terisi).
+          Isi nilai di kotak putih lalu Enter atau klik luar untuk menyimpan · kosongkan untuk
+          menghapus nilai · ✎/✕ di kepala kolom untuk atur/hapus kolom ·
+          Formatif &amp; Sumatif LM ikut rata-rata ({avgCols.length} kolom) ·
+          ASAJ/Tambahan berbobot sendiri · suku kosong tidak dihitung (prorata).
         </p>
       </Widget>
 
@@ -652,7 +723,7 @@ function BookSettingsModal({
 }
 
 /* ============ Matriks wali kelas ============ */
-function WaliMatrix({ classes }: { classes: MatrixClass[] }) {
+function WaliMatrix({ classes, onOpenBook }: { classes: MatrixClass[]; onOpenBook: (id: string) => void }) {
   const [classId, setClassId] = useState(classes[0]?.id ?? '');
   const [matrix, setMatrix] = useState<ClassMatrix | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -711,7 +782,13 @@ function WaliMatrix({ classes }: { classes: MatrixClass[] }) {
                 {matrix.subjects.map((s) => (
                   <th key={s.bookId} className="min-w-20 px-1 py-1 text-center">
                     <div className="flex flex-col items-center gap-0.5">
-                      <span className="font-bold text-sand-800" title={s.name}>{s.code}</span>
+                      <button
+                        className="font-bold text-sand-800 underline decoration-dotted underline-offset-2 hover:text-primary-700"
+                        title={`${s.name} — buka buku nilai`}
+                        onClick={() => onOpenBook(s.bookId)}
+                      >
+                        {s.code}
+                      </button>
                       {s.submittedAt ? (
                         <span className="text-[10px] font-bold text-green-700" title="Sudah dikirim guru">✓</span>
                       ) : (

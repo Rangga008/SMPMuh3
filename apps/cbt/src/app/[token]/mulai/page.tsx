@@ -11,11 +11,21 @@ import {
   saveAnswer,
   submitExam,
   reportViolation,
+  beaconAnswers,
   type CbtPaper,
   type CbtQuestion,
   type CbtSession,
 } from '@/lib/cbt';
 import { API } from '@/lib/api';
+import {
+  acquireWakeLock,
+  exitFullscreen,
+  isFullscreen,
+  isTouchDevice,
+  releaseWakeLock,
+  requestFullscreen,
+  type ScreenLock,
+} from '@/lib/exam-guard';
 
 const LETTERS = 'ABCDE';
 const fmt = (sec: number) =>
@@ -47,6 +57,8 @@ function MediaImgs({ media }: { media?: { key: string; name: string }[] | null |
 }
 
 type Ans = Record<string, unknown>;
+type QueueEntry = { value: unknown; busy: boolean; tries: number };
+const CUR_KEY = (token: string) => `cbt-cur-${token}`;
 
 export default function CbtRunnerPage() {
   const { token } = useParams<{ token: string }>();
@@ -56,7 +68,7 @@ export default function CbtRunnerPage() {
   const [answers, setAnswers] = useState<Ans>({});
   const [cur, setCur] = useState(0);
   const [left, setLeft] = useState(0);
-  const [saving, setSaving] = useState<'idle' | 'saving' | 'ok'>('idle');
+  const [saving, setSaving] = useState<'idle' | 'saving' | 'ok' | 'err'>('idle');
   const [confirmSubmit, setConfirmSubmit] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -65,14 +77,37 @@ export default function CbtRunnerPage() {
   const [violations, setViolations] = useState(0);
   const [warnInfo, setWarnInfo] = useState<{ violations: number; blockAfter: number } | null>(null);
   const [blocked, setBlocked] = useState(false);
-  const armed = useRef({ hidden: true, blur: true });
+  const [blockOpen, setBlockOpen] = useState(false); // sesi sudah dibuka pengawas
+  const [busyBlocked, setBusyBlocked] = useState(false);
+  const [confirmForce, setConfirmForce] = useState(false);
+  const [fsLost, setFsLost] = useState(false);
+  const armed = useRef({ hidden: true, blur: true, fs: false });
+  const wakeLock = useRef<ScreenLock>(null);
+  // ---- Antrean autosave per-soal + jangkar waktu ----
+  const queueRef = useRef(new Map<string, QueueEntry>());
+  const answersRef = useRef<Ans>({});
+  const pumpRef = useRef<(qid: string) => void>(() => {});
+  const endAtRef = useRef(0); // epoch ms — timer dihitung ulang tiap pulsa
 
   const finish = useCallback(
     async (auto: boolean) => {
       if (submitted.current) return;
       submitted.current = true;
+      void releaseWakeLock(wakeLock.current);
+      wakeLock.current = null;
+      void exitFullscreen();
+      try { localStorage.removeItem(CUR_KEY(token)); } catch { /* abaikan */ }
       try {
-        await submitExam(token);
+        // Tiriskan antrean autosave ≤6 detik — lalu tetap kirim payload penuh
+        // agar jawaban yang belum mendarat tetap dinilai server.
+        const until = Date.now() + 6000;
+        while (queueRef.current.size && Date.now() < until) {
+          for (const qid of queueRef.current.keys()) pumpRef.current(qid);
+          await new Promise((r) => setTimeout(r, 250));
+        }
+      } catch { /* abaikan */ }
+      try {
+        await submitExam(token, answersRef.current);
       } catch {
         /* sesi mungkin sudah dinilai server — lanjut ke hasil */
       }
@@ -81,21 +116,97 @@ export default function CbtRunnerPage() {
     [token, router],
   );
 
+  /** Terapkan paket soal ke state — dipakai saat muat awal & lanjut setelah
+   *  blokir dibuka. Antrean jawaban lokal yang belum terkirim menang atas
+   *  jawaban server (keadaan terakhir di perangkat siswa). */
+  const applyPaper = useCallback(
+    (p: CbtPaper) => {
+      const merged: Ans = { ...p.answers };
+      for (const [qid, e] of queueRef.current) merged[qid] = e.value;
+      answersRef.current = merged;
+      setAnswers(merged);
+      setPaper(p);
+      setViolations(p.violations ?? 0);
+      const rem = Math.max(0, Math.floor(p.remainingSec ?? 0));
+      endAtRef.current = Date.now() + rem * 1000;
+      setLeft(rem);
+      // Lanjut dari posisi soal terakhir yang disimpan per-token.
+      try {
+        const saved = Number(localStorage.getItem(CUR_KEY(token)) ?? '0');
+        setCur(
+          Number.isFinite(saved)
+            ? Math.min(Math.max(0, saved), Math.max(0, p.questions.length - 1))
+            : 0,
+        );
+      } catch {
+        setCur(0);
+      }
+    },
+    [token],
+  );
+
+  /** Pompa satu butir antrean — serial per soal (nilai baru menunggu yang
+   *  sedang terkirim), retry backoff untuk kegagalan sementara; kode fatal
+   *  (409=dinilai, 403=diblokir) menghentikan pompa untuk butir itu. */
+  const pump = useCallback(
+    (qid: string) => {
+      const e = queueRef.current.get(qid);
+      if (!e || e.busy) return;
+      e.busy = true;
+      const v = e.value;
+      setSaving('saving');
+      saveAnswer(token, qid, v)
+        .then(() => {
+          e.busy = false;
+          if (e.value !== v) {
+            pumpRef.current(qid);
+            return;
+          }
+          queueRef.current.delete(qid);
+          if (!queueRef.current.size) setSaving('ok');
+        })
+        .catch((err: unknown) => {
+          e.busy = false;
+          if (err instanceof ApiError && err.status === 409) {
+            queueRef.current.delete(qid);
+            void finish(true);
+            return;
+          }
+          if (err instanceof ApiError && err.status === 403 && /diblokir/i.test(err.message)) {
+            setBlocked(true); // tetap di antrean — dipompa lagi setelah dibuka
+            return;
+          }
+          e.tries += 1;
+          setSaving('err');
+          if (e.tries < 6) {
+            setTimeout(() => pumpRef.current(qid), Math.min(1500 * e.tries, 8000));
+          }
+        });
+    },
+    [token, finish],
+  );
   useEffect(() => {
-    Promise.all([getSession(token), getPaper(token)])
-      .then(([s, p]) => {
+    pumpRef.current = pump;
+  });
+
+  // Muat awal — sesi & soal diambil terpisah agar layar blokir tetap mendapat
+  // identitas siswa walau paper menolak (403 diblokir).
+  useEffect(() => {
+    let dead = false;
+    getSession(token)
+      .then((s) => {
+        if (dead) return;
         if (s.attempt.status === 'SUBMITTED') {
           router.replace(`/${token}/hasil`);
           return;
         }
         setSession(s);
-        setPaper(p);
-        setAnswers(p.answers);
-        setViolations(p.violations ?? s.attempt.violations ?? 0);
-        // Sinkronkan dengan jam server — hindari jam klien yang salah.
-        setLeft(Math.max(0, Math.floor((new Date(p.deadline).getTime() - new Date(p.serverNow).getTime()) / 1000)));
       })
+      .catch(() => { /* identitas sekunder — layar blokir tetap berjalan */ });
+    getPaper(token)
+      .then((p) => { if (!dead) applyPaper(p); })
       .catch((e) => {
+        if (dead) return;
         if (e instanceof ApiError && e.status === 409) {
           router.replace(`/${token}/hasil?auto=1`);
           return;
@@ -106,23 +217,54 @@ export default function CbtRunnerPage() {
         }
         setError(e instanceof ApiError ? e.message : 'Gagal memuat soal.');
       });
-  }, [token, router]);
+    return () => { dead = true; };
+  }, [token, router, applyPaper]);
 
-  // Timer — deadline server adalah sumber kebenaran.
+  // Timer — dihitung dari jangkar epoch deadline: koreksi otomatis setelah
+  // tab di-throttle/perangkat tidur (interval dihentikan sistem).
   useEffect(() => {
     if (!paper) return;
     const t = setInterval(() => {
-      setLeft((v) => {
-        if (v <= 1) {
-          clearInterval(t);
-          void finish(true);
-          return 0;
-        }
-        return v - 1;
-      });
-    }, 1000);
+      const rem = Math.max(0, Math.ceil((endAtRef.current - Date.now()) / 1000));
+      setLeft(rem);
+      if (rem <= 0) {
+        clearInterval(t);
+        void finish(true);
+      }
+    }, 500);
     return () => clearInterval(t);
   }, [paper, finish]);
+
+  // Ingat posisi soal — dilanjutkan setelah reload/blokir-dibuka.
+  useEffect(() => {
+    try { localStorage.setItem(CUR_KEY(token), String(cur)); } catch { /* abaikan */ }
+  }, [cur, token]);
+
+  // Halaman hasil restore bfcache menampilkan state basi — paksa muat ulang.
+  useEffect(() => {
+    const h = (e: PageTransitionEvent) => { if (e.persisted) window.location.reload(); };
+    window.addEventListener('pageshow', h);
+    return () => window.removeEventListener('pageshow', h);
+  }, []);
+
+  // Flush jawaban ke server saat halaman ditutup (sendBeacon bertahan saat unload).
+  useEffect(() => {
+    const h = () => {
+      if (submitted.current || !queueRef.current.size) return;
+      beaconAnswers(token, answersRef.current);
+    };
+    window.addEventListener('pagehide', h);
+    return () => window.removeEventListener('pagehide', h);
+  }, [token]);
+
+  // Penyapu antrean — coba ulang butir yang gagal disimpan tiap 20 detik.
+  useEffect(() => {
+    if (!paper || blocked) return;
+    const t = setInterval(() => {
+      for (const qid of queueRef.current.keys()) pumpRef.current(qid);
+    }, 20_000);
+    return () => clearInterval(t);
+  }, [paper, blocked]);
 
   // Cegah tutup/reload tak sengaja.
   useEffect(() => {
@@ -133,12 +275,12 @@ export default function CbtRunnerPage() {
     return () => window.removeEventListener('beforeunload', h);
   }, []);
 
-  // ---- Deteksi pelanggaran proteksi: keluar tab/aplikasi ----
+  // ---- Deteksi pelanggaran proteksi: keluar tab/aplikasi/layar penuh ----
   // Satu laporan per kejadian (re-arm saat kembali fokus) — server menentukan
   // ambang warn/blokir per ujian; pelanggaran kecil pertama tidak ditampilkan.
   useEffect(() => {
     if (!paper || blocked) return;
-    const report = (kind: 'tab-hidden' | 'blur', arm: 'hidden' | 'blur') => {
+    const report = (kind: 'tab-hidden' | 'blur' | 'fullscreen-exit', arm: 'hidden' | 'blur' | 'fs') => {
       if (!armed.current[arm] || submitted.current) return;
       armed.current[arm] = false;
       reportViolation(token, kind)
@@ -158,27 +300,174 @@ export default function CbtRunnerPage() {
     };
     const onBlur = () => report('blur', 'blur');
     const onFocus = () => { armed.current.blur = true; };
+    const onFs = () => {
+      // Keluar layar penuh = upaya membuka aplikasi lain di desktop.
+      if (isFullscreen()) {
+        armed.current.fs = true;
+        setFsLost(false);
+      } else if (armed.current.fs && !submitted.current) {
+        setFsLost(true);
+        report('fullscreen-exit', 'fs');
+      }
+    };
     document.addEventListener('visibilitychange', onVis);
-    window.addEventListener('blur', onBlur);
-    window.addEventListener('focus', onFocus);
+    document.addEventListener('fullscreenchange', onFs);
+    document.addEventListener('webkitfullscreenchange', onFs);
+    // Di perangkat sentuh, blur jendela juga terpicu picker <select>/keyboard
+    // bawaan → hanya deteksi di desktop (pointer halus).
+    if (!isTouchDevice()) {
+      window.addEventListener('blur', onBlur);
+      window.addEventListener('focus', onFocus);
+    }
+    // Catat status awal layar penuh (bila aktif sejak halaman persiapan).
+    armed.current.fs = isFullscreen();
+    setFsLost(false);
     return () => {
       document.removeEventListener('visibilitychange', onVis);
+      document.removeEventListener('fullscreenchange', onFs);
+      document.removeEventListener('webkitfullscreenchange', onFs);
       window.removeEventListener('blur', onBlur);
       window.removeEventListener('focus', onFocus);
     };
   }, [paper, blocked, token, finish]);
 
-  const pick = (q: CbtQuestion, value: unknown) => {
-    setAnswers((a) => ({ ...a, [q.id]: value }));
-    setSaving('saving');
-    saveAnswer(token, q.id, value)
-      .then(() => setSaving('ok'))
-      .catch((e) => {
-        setSaving('idle');
-        if (e instanceof ApiError && e.status === 409) void finish(true);
-        else if (e instanceof ApiError && e.status === 403 && /diblokir/i.test(e.message)) setBlocked(true);
-        else setError(e instanceof ApiError ? e.message : 'Jawaban gagal tersimpan.');
+  // ---- Penahan layar menyala (Wake Lock) — re-akuisisi saat kembali visible ----
+  useEffect(() => {
+    if (!paper || blocked) return;
+    let cancelled = false;
+    const acquire = () => {
+      void acquireWakeLock().then((l) => {
+        if (cancelled) void releaseWakeLock(l);
+        else wakeLock.current = l;
       });
+    };
+    acquire();
+    const onVis = () => {
+      if (document.visibilityState === 'visible' && !submitted.current) acquire();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVis);
+      void releaseWakeLock(wakeLock.current);
+      wakeLock.current = null;
+    };
+  }, [paper, blocked]);
+
+  // Lepas layar penuh saat keluar halaman tanpa lewat `finish` (mis. redirect hasil).
+  useEffect(() => () => void exitFullscreen(), []);
+
+  // ---- Anti-salin & menu konteks di area ujian + cegah pull-to-refresh ----
+  useEffect(() => {
+    if (!paper) return;
+    const prevent = (e: Event) => e.preventDefault();
+    const prevOverscroll = document.documentElement.style.overscrollBehavior;
+    document.documentElement.style.overscrollBehavior = 'contain';
+    for (const ev of ['copy', 'cut', 'contextmenu', 'selectstart'] as const) {
+      document.addEventListener(ev, prevent);
+    }
+    return () => {
+      document.documentElement.style.overscrollBehavior = prevOverscroll;
+      for (const ev of ['copy', 'cut', 'contextmenu', 'selectstart'] as const) {
+        document.removeEventListener(ev, prevent);
+      }
+    };
+  }, [paper]);
+
+  // ---- Layar diblokir: pantau status sesi — tombol lanjut menyala otomatis
+  // begitu pengawas membuka blokir, dan hilang bila ujian sudah dinilai. ----
+  useEffect(() => {
+    if (!blocked) {
+      setBlockOpen(false);
+      return;
+    }
+    let dead = false;
+    const check = () => {
+      getSession(token)
+        .then((s) => {
+          if (dead) return;
+          if (s.attempt.status === 'SUBMITTED') router.replace(`/${token}/hasil`);
+          else if (s.attempt.status === 'STARTED') {
+            setSession(s);
+            setBlockOpen(true);
+          } else setBlockOpen(false);
+        })
+        .catch(() => { /* jaringan — coba lagi siklus berikut */ });
+    };
+    check();
+    const t = setInterval(check, 8000);
+    return () => {
+      dead = true;
+      clearInterval(t);
+    };
+  }, [blocked, token, router]);
+
+  /** Lanjut mengerjakan setelah pengawas membuka blokir — muat ulang soal &
+   *  jawaban tersimpan, kembali ke posisi soal terakhir + layar penuh. */
+  const resume = useCallback(async () => {
+    setBusyBlocked(true);
+    try {
+      const s = await getSession(token);
+      if (s.attempt.status === 'SUBMITTED') {
+        router.replace(`/${token}/hasil`);
+        return;
+      }
+      if (s.attempt.status !== 'STARTED') {
+        setBlockOpen(false);
+        return;
+      }
+      const p = await getPaper(token);
+      // Gesture pengguna — penuhi syarat requestFullscreen sebelum lanjut.
+      await requestFullscreen();
+      setSession(s);
+      applyPaper(p);
+      setWarnInfo(null);
+      setFsLost(false);
+      armed.current = { hidden: true, blur: true, fs: isFullscreen() };
+      setBlocked(false);
+      setBlockOpen(false);
+      // Pompa jawaban lokal yang tertahan selama diblokir.
+      for (const qid of queueRef.current.keys()) pumpRef.current(qid);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) router.replace(`/${token}/hasil?auto=1`);
+      else if (e instanceof ApiError && e.status === 403 && /diblokir/i.test(e.message)) setBlockOpen(false);
+      else setError(e instanceof ApiError ? e.message : 'Gagal melanjutkan sesi.');
+    } finally {
+      setBusyBlocked(false);
+    }
+  }, [token, router, applyPaper]);
+
+  /** Kumpulkan jawaban apa adanya dari layar blokir — server menilai semua
+   *  yang sudah terisi (payload penuh ikut dikirim). */
+  const forceSubmit = useCallback(async () => {
+    if (submitted.current) return;
+    submitted.current = true;
+    setBusyBlocked(true);
+    void releaseWakeLock(wakeLock.current);
+    wakeLock.current = null;
+    void exitFullscreen();
+    try { localStorage.removeItem(CUR_KEY(token)); } catch { /* abaikan */ }
+    try {
+      await submitExam(token, answersRef.current);
+    } catch {
+      /* sesi mungkin sudah dinilai — tetap ke hasil */
+    }
+    router.replace(`/${token}/hasil`);
+  }, [token, router]);
+
+  const pick = (q: CbtQuestion, value: unknown) => {
+    if (submitted.current || blocked) return;
+    // Dedupe — ketukan ganda pada pilihan sama tak perlu disimpan ulang.
+    try {
+      if (JSON.stringify(answersRef.current[q.id]) === JSON.stringify(value)) return;
+    } catch { /* abaikan */ }
+    answersRef.current = { ...answersRef.current, [q.id]: value };
+    setAnswers(answersRef.current);
+    const e = queueRef.current.get(q.id) ?? { value, busy: false, tries: 0 };
+    e.value = value;
+    e.tries = 0; // aksi baru — segarkan backoff
+    queueRef.current.set(q.id, e);
+    pump(q.id);
   };
 
   const answered = (q: CbtQuestion) => {
@@ -340,12 +629,46 @@ export default function CbtRunnerPage() {
           <h1 className="text-lg font-black text-sand-900">Sesi Diblokir</h1>
           <p className="mt-2 text-sm leading-relaxed text-sand-600">
             Kamu keluar dari halaman ujian terlalu sering. Semua jawaban yang sudah diisi
-            <b> tersimpan aman</b> — panggil <b>pengawas</b> untuk membuka sesimu kembali atau mengumpulkan.
+            <b> tersimpan aman</b> — panggil <b>pengawas</b> untuk membuka sesimu kembali.
           </p>
-          <p className="mt-3 rounded-xl bg-sand-50 px-3 py-2 text-xs text-sand-500">
-            {session?.student.name} · {session?.exam.title}
+          {session ? (
+            <p className="mt-3 rounded-xl bg-sand-50 px-3 py-2 text-xs text-sand-500">
+              {session.student.name} · {session.exam.title}
+            </p>
+          ) : null}
+          {blockOpen ? (
+            <Button className="mt-4 w-full" disabled={busyBlocked} onClick={() => void resume()}>
+              {busyBlocked ? 'Memeriksa…' : '▶ Sesi dibuka — Lanjut Mengerjakan'}
+            </Button>
+          ) : (
+            <Button variant="outline" className="mt-4 w-full" disabled={busyBlocked} onClick={() => void resume()}>
+              {busyBlocked ? 'Memeriksa…' : '↻ Cek status sesi'}
+            </Button>
+          )}
+          <Button variant="outline" className="mt-2 w-full text-red-600" onClick={() => setConfirmForce(true)}>
+            Kumpulkan jawaban apa adanya
+          </Button>
+          <p className="mt-3 text-[11px] leading-snug text-sand-400">
+            Status dicek otomatis tiap beberapa detik — tombol lanjut menyala saat pengawas membuka sesimu.
           </p>
         </div>
+        {/* Konfirmasi kumpulkan paksa dari layar blokir */}
+        {confirmForce ? (
+          <div className="fixed inset-0 z-20 grid place-items-center bg-sand-950/50 p-4">
+            <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-card">
+              <h2 className="text-lg font-black text-sand-900">Kumpulkan sekarang?</h2>
+              <p className="mt-2 text-sm leading-relaxed text-sand-600">
+                Jawaban yang sudah kamu isi akan dinilai apa adanya dan tidak bisa diubah lagi.
+              </p>
+              <div className="mt-5 flex gap-2">
+                <Button variant="outline" className="flex-1" onClick={() => setConfirmForce(false)}>Batal</Button>
+                <Button className="flex-1" disabled={busyBlocked} onClick={() => void forceSubmit()}>
+                  {busyBlocked ? 'Menilai…' : 'Ya, Kumpulkan'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </main>
     );
   }
@@ -384,6 +707,24 @@ export default function CbtRunnerPage() {
         </div>
       </header>
 
+      {/* Banner layar penuh hilang — ketuk untuk kembali (gesture syarat API). */}
+      {fsLost ? (
+        <button
+          type="button"
+          onClick={() => {
+            void requestFullscreen().then((ok) => {
+              if (ok) {
+                setFsLost(false);
+                armed.current.fs = true;
+              }
+            });
+          }}
+          className="sticky top-[57px] z-10 w-full bg-amber-100 px-4 py-2 text-center text-xs font-bold text-amber-800 transition hover:bg-amber-200"
+        >
+          ⚠ Layar penuh keluar — ketuk di sini untuk kembali (pelanggaran tercatat)
+        </button>
+      ) : null}
+
       <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-4 p-4 lg:flex-row">
         {/* ---------- Soal ---------- */}
         <section className="flex-1 rounded-3xl border border-sand-200 bg-white p-5 sm:p-6">
@@ -391,8 +732,8 @@ export default function CbtRunnerPage() {
             <p className="text-xs font-black uppercase tracking-wide text-sand-400">
               Soal {cur + 1} dari {total} · bobot {q.weight}
             </p>
-            <p className="text-[11px] text-sand-400">
-              {saving === 'saving' ? 'menyimpan…' : saving === 'ok' ? '✓ tersimpan' : ''}
+            <p className={`text-[11px] ${saving === 'err' ? 'font-bold text-amber-600' : 'text-sand-400'}`}>
+              {saving === 'saving' ? 'menyimpan…' : saving === 'err' ? '⚠ menyimpan ulang…' : saving === 'ok' ? '✓ tersimpan' : ''}
             </p>
           </div>
           {q.passageCode ? (() => {

@@ -263,12 +263,21 @@ export class CbtController {
     return this.cbt.saveAnswer(token, dto);
   }
 
-  /** Kumpulkan & nilai. */
+  /** Autosave banyak jawaban — flush sendBeacon saat halaman ditutup. */
+  @Public()
+  @SkipThrottle()
+  @Post('paper/:token/answers')
+  answers(@Param('token') token: string, @Body() body?: { answers?: Record<string, unknown> }) {
+    return this.cbt.saveAnswers(token, body?.answers ?? {});
+  }
+
+  /** Kumpulkan & nilai — body opsional memuat jawaban akhir perangkat
+   *  (jaminan autosave yang belum mendarat tetap dinilai). */
   @Public()
   @SkipThrottle()
   @Post('paper/:token/submit')
-  submit(@Param('token') token: string) {
-    return this.cbt.submit(token);
+  submit(@Param('token') token: string, @Body() body?: { answers?: Record<string, unknown> }) {
+    return this.cbt.submit(token, body?.answers);
   }
 
   /** Laporan pelanggaran proteksi dari aplikasi siswa (keluar tab/aplikasi). */

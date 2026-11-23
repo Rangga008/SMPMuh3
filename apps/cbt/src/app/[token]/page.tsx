@@ -1,11 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@smpmuh3/ui';
 import { ApiError } from '@/lib/api';
 import { getSession, type CbtSession } from '@/lib/cbt';
+import { requestFullscreen } from '@/lib/exam-guard';
 import { ExamShell } from '@/components/exam-shell';
 
 const fmt = (sec: number) =>
@@ -16,29 +17,26 @@ export default function CbtPrepPage() {
   const router = useRouter();
   const [s, setS] = useState<CbtSession | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const endAt = useRef(0); // jangkar epoch — countdown koreksi otomatis
 
   const load = useCallback(() => {
     getSession(token)
       .then((d) => {
         setS(d);
+        endAt.current = Date.now() + Math.max(0, d.attempt.remainingSec) * 1000;
         if (d.attempt.status === 'SUBMITTED') router.replace(`/${token}/hasil`);
       })
       .catch((e) => setError(e instanceof ApiError ? e.message : 'Sesi tidak valid.'));
   }, [token, router]);
   useEffect(load, [load]);
 
-  // Tick countdown sisa waktu.
+  // Tick countdown dari jangkar — tetap benar setelah tab ditidurkan sistem.
   useEffect(() => {
     const t = setInterval(() => {
-      setS((cur) =>
-        cur
-          ? {
-              ...cur,
-              attempt: { ...cur.attempt, remainingSec: Math.max(0, cur.attempt.remainingSec - 1) },
-            }
-          : cur,
-      );
-    }, 1000);
+      if (!endAt.current) return;
+      const rem = Math.max(0, Math.ceil((endAt.current - Date.now()) / 1000));
+      setS((cur) => (cur ? { ...cur, attempt: { ...cur.attempt, remainingSec: rem } } : cur));
+    }, 500);
     return () => clearInterval(t);
   }, []);
 
@@ -82,9 +80,22 @@ export default function CbtPrepPage() {
               <Button variant="outline" className="mt-3 w-full" onClick={load}>↻ Cek lagi</Button>
             </div>
           ) : (
-            <Button className="w-full" onClick={() => router.push(`/${token}/mulai`)}>
-              Mulai Kerjakan →
-            </Button>
+            <>
+              <Button
+                className="w-full"
+                onClick={async () => {
+                  // Gesture pengguna — syarat requestFullscreen peramban.
+                  await requestFullscreen();
+                  router.push(`/${token}/mulai`);
+                }}
+              >
+                Mulai Kerjakan →
+              </Button>
+              <p className="text-center text-[11px] leading-snug text-sand-400">
+                Ujian berjalan dalam mode layar penuh dan layar dijaga tetap menyala.
+                Keluar dari halaman akan dicatat proteksi.
+              </p>
+            </>
           )}
         </div>
       )}

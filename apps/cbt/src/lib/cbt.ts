@@ -298,8 +298,31 @@ export const getSession = (token: string) => pub<CbtSession>(`/session/${token}`
 export const getPaper = (token: string) => pub<CbtPaper>(`/paper/${token}`);
 export const saveAnswer = (token: string, questionId: string, answer: unknown) =>
   pub<{ saved: boolean }>(`/paper/${token}/answer`, { method: 'POST', json: { questionId, answer } });
-export const submitExam = (token: string) =>
-  pub<{ submitted: boolean; score: number | null; maxScore: number | null }>(`/paper/${token}/submit`, { method: 'POST' });
+
+/** Simpan banyak jawaban sekaligus — dipakai flush beacon saat halaman ditutup. */
+export const saveAnswers = (token: string, answers: Record<string, unknown>) =>
+  pub<{ saved: number }>(`/paper/${token}/answers`, { method: 'POST', json: { answers } });
+
+/** sendBeacon jawaban penuh — satu-satunya jalur andal saat tab/browser ditutup. */
+export const beaconAnswers = (token: string, answers: Record<string, unknown>) => {
+  try {
+    if (typeof navigator === 'undefined' || !navigator.sendBeacon) return;
+    navigator.sendBeacon(
+      `${API}/cbt/paper/${token}/answers`,
+      new Blob([JSON.stringify({ answers })], { type: 'application/json' }),
+    );
+  } catch {
+    /* best-effort — abaikan */
+  }
+};
+
+/** Kumpulkan — `answers` = keadaan akhir perangkat, ditulis ulang di transaksi
+ *  penilaian server agar autosave yang belum mendarat tetap ikut dinilai. */
+export const submitExam = (token: string, answers?: Record<string, unknown>) =>
+  pub<{ submitted: boolean; score: number | null; maxScore: number | null }>(
+    `/paper/${token}/submit`,
+    { method: 'POST', json: answers ? { answers } : {} },
+  );
 export const getResult = (token: string) => pub<CbtResult>(`/result/${token}`);
 
 /** Lapor pelanggaran proteksi — level: log | warn | blocked | expired | done. */
