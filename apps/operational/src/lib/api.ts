@@ -1119,6 +1119,99 @@ export const listEnrollments = (classId: string) =>
     `/classes/${classId}/students`,
   );
 
+// ---- buku nilai (penilaian) ----
+export type GradeColumnKind = 'FORMATIF' | 'SUMATIF_LM' | 'ASAJ' | 'CUSTOM';
+export interface BookListItem {
+  id: string | null;
+  classId: string;
+  subjectId: string;
+  className: string | null;
+  classLevel: number | null;
+  subjectCode: string | null;
+  subjectName: string | null;
+  columnCount: number;
+  submittedAt: string | null;
+  canEdit: boolean;
+}
+export interface BookColumn {
+  id: string;
+  kind: GradeColumnKind;
+  name: string;
+  weight: number;
+  examId: string | null;
+  examTitle: string | null;
+  sortOrder: number;
+}
+export interface BookRow {
+  studentId: string;
+  name: string;
+  nis: string | null;
+  absenceNo: number | null;
+  cells: Record<string, number>;
+  avg: number | null;
+  nr: number | null;
+}
+export interface BookView {
+  id: string;
+  academicYearId: string;
+  avgWeight: number;
+  submittedAt: string | null;
+  class: { id: string; name: string; gradeLevel: number; homeroomId?: string | null; homeroom?: { name: string } | null };
+  subject: { id: string; code: string; name: string };
+  columns: BookColumn[];
+  rows: BookRow[];
+  canEdit: boolean;
+}
+export interface ExamOption {
+  id: string;
+  title: string;
+  assessmentName: string;
+  type: string;
+  submitted: number;
+}
+export interface MatrixClass {
+  id: string;
+  name: string;
+  gradeLevel: number;
+  homeroomName: string | null;
+  mine: boolean;
+}
+export interface ClassMatrix {
+  classId: string;
+  academicYearId: string;
+  homeroomName: string | null;
+  subjects: { bookId: string; code: string; name: string; submittedAt: string | null }[];
+  rows: { studentId: string; name: string; nis: string | null; absenceNo: number | null; per: Record<string, number | null>; mean: number | null }[];
+}
+
+export const listMyBooks = (academicYearId?: string) =>
+  req<{ academicYearId: string | null; books: BookListItem[] }>(
+    `/grade-books${academicYearId ? `?academicYearId=${academicYearId}` : ''}`,
+  );
+export const ensureBook = (dto: { classId: string; subjectId: string; academicYearId?: string }) =>
+  req<BookView>('/grade-books/ensure', { method: 'POST', json: dto });
+export const getBook = (id: string) => req<BookView>(`/grade-books/${id}`);
+export const updateBook = (id: string, dto: { avgWeight?: number; submit?: boolean }) =>
+  req<BookView>(`/grade-books/${id}`, { method: 'PATCH', json: dto });
+export const bookExamOptions = (id: string) =>
+  req<ExamOption[]>(`/grade-books/${id}/exam-options`);
+export const addBookColumn = (id: string, dto: { kind?: GradeColumnKind; name?: string; weight?: number; examId?: string | null }) =>
+  req<BookView>(`/grade-books/${id}/columns`, { method: 'POST', json: dto });
+export const updateBookColumn = (columnId: string, dto: { kind?: GradeColumnKind; name?: string; weight?: number; examId?: string | null; sortOrder?: number }) =>
+  req<BookView>(`/grade-books/columns/${columnId}`, { method: 'PATCH', json: dto });
+export const deleteBookColumn = (columnId: string) =>
+  req<{ ok: boolean }>(`/grade-books/columns/${columnId}`, { method: 'DELETE' });
+export const setColumnEntries = (columnId: string, entries: { studentId: string; score: number | null }[]) =>
+  req<BookView>(`/grade-books/columns/${columnId}/entries`, { method: 'PUT', json: { entries } });
+export const pullColumnExam = (columnId: string) =>
+  req<{ pulled: number; book: BookView }>(`/grade-books/columns/${columnId}/pull`, { method: 'POST' });
+export const listMatrixClasses = (academicYearId?: string) =>
+  req<{ academicYearId: string | null; classes: MatrixClass[] }>(
+    `/grade-books/matrix/classes${academicYearId ? `?academicYearId=${academicYearId}` : ''}`,
+  );
+export const getClassMatrix = (classId: string, academicYearId?: string) =>
+  req<ClassMatrix>(`/grade-books/matrix/${classId}${academicYearId ? `?academicYearId=${academicYearId}` : ''}`);
+
 // ---- master data ----
 export interface CurriculumView {
   id: string;

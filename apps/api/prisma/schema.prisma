@@ -173,6 +173,7 @@ model AcademicYear {
   examRecords   SchoolExamRecord[]
   titipanEntries TitipanEntry[]
   semesters     Semester[]
+  gradeBooks    GradeBook[]
   invoices      Invoice[]
   expenses      Expense[]
   payrollRuns   PayrollRun[]
@@ -1423,6 +1424,7 @@ model Student {
   examCredentials ExamCredential[]
   ekskulMemberships ExtracurricularMember[]
   mutations    StudentMutation[]
+  gradeEntries GradeEntry[]
 
   @@index([status, name])
   @@map("students")
@@ -1520,6 +1522,7 @@ model Subject {
   assignments TeachingAssignment[]
   assessments Assessment[]
   exams       Exam[]
+  gradeBooks  GradeBook[]
 
   @@map("subjects")
 }
@@ -1543,6 +1546,7 @@ model Class {
   attendances  AttendanceRecord[]
   assessments  Assessment[]
   examSeats    ExamSeat[]
+  gradeBooks   GradeBook[]
 
   @@unique([name, academicYearId])
   @@index([academicYearId])
@@ -1764,6 +1768,72 @@ model Grade {
   @@unique([assessmentId, studentId])
   @@unique([examId, studentId])
   @@map("grades")
+}
+
+// ---------- Buku nilai (daftar nilai guru → rapor oleh wali kelas) ----------
+
+enum GradeColumnKind {
+  FORMATIF   // penilaian harian per TP — ikut rata-rata
+  SUMATIF_LM // sumatif lingkup materi — ikut rata-rata
+  ASAJ       // asesmen sumatif akhir — suku berbobot tersendiri
+  CUSTOM     // kolom tambahan milik guru — suku berbobot tersendiri (bobot 0 = tak dihitung)
+}
+
+/** Satu buku nilai per (kelas × mapel × tahun ajaran) — struktur kolom & bobot milik guru. */
+model GradeBook {
+  id             String   @id @default(uuid()) @db.Uuid
+  academicYearId String   @map("academic_year_id") @db.Uuid
+  classId        String   @map("class_id") @db.Uuid
+  subjectId      String   @map("subject_id") @db.Uuid
+  avgWeight      Float    @default(2) @map("avg_weight") // bobot suku rata-rata formatif+LM pada NR
+  submittedAt    DateTime? @map("submitted_at") // nilai akhir sudah dikirim ke wali kelas
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  class        Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
+  subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  columns      GradeColumn[]
+
+  @@unique([academicYearId, classId, subjectId])
+  @@index([classId])
+  @@map("grade_books")
+}
+
+model GradeColumn {
+  id          String          @id @default(uuid()) @db.Uuid
+  gradeBookId String          @map("grade_book_id") @db.Uuid
+  kind        GradeColumnKind @default(FORMATIF)
+  name        String // "TP1", "LM1", "ASAJ", "PR", "Tugas 1" — bebas per guru
+  weight      Float           @default(0) // bobot NR — hanya untuk ASAJ & CUSTOM
+  examId      String?         @map("exam_id") @db.Uuid // tautan ujian — tarik nilai otomatis
+  sortOrder   Int             @default(0) @map("sort_order")
+  createdAt   DateTime        @default(now()) @map("created_at")
+  updatedAt   DateTime        @updatedAt @map("updated_at")
+
+  gradeBook GradeBook   @relation(fields: [gradeBookId], references: [id], onDelete: Cascade)
+  exam      Exam?       @relation(fields: [examId], references: [id], onDelete: SetNull)
+  entries   GradeEntry[]
+
+  @@index([gradeBookId])
+  @@map("grade_columns")
+}
+
+model GradeEntry {
+  id        String   @id @default(uuid()) @db.Uuid
+  columnId  String   @map("column_id") @db.Uuid
+  studentId String   @map("student_id") @db.Uuid
+  score     Float
+  updatedBy String?  @map("updated_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  column  GradeColumn @relation(fields: [columnId], references: [id], onDelete: Cascade)
+  student Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([columnId, studentId])
+  @@index([studentId])
+  @@map("grade_entries")
 }
 
 // ---------- Tata Usaha (surat menyurat, mutasi, ujian sekolah) ----------
@@ -2103,6 +2173,7 @@ model Exam {
   grades     Grade[]
   attempts   ExamAttempt[]
   credentials ExamCredential[]
+  gradeColumns GradeColumn[]
 
   @@index([academicYearId, status])
   @@map("exams")
