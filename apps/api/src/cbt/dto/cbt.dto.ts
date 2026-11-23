@@ -65,6 +65,18 @@ export class CreateExamDto {
   @IsOptional()
   @IsBoolean()
   showScore?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(20)
+  warnAfter?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(20)
+  blockAfter?: number;
 }
 
 export class UpdateExamDto {
@@ -115,6 +127,20 @@ export class UpdateExamDto {
   @IsOptional()
   @IsBoolean()
   showScore?: boolean;
+
+  /** Proteksi: pelanggaran ke-N → peringatan ke siswa. */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(20)
+  warnAfter?: number;
+
+  /** Proteksi: pelanggaran ke-N → sesi diblokir (0 = proteksi blokir nonaktif). */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(20)
+  blockAfter?: number;
 
   @IsOptional()
   @IsIn(['DRAFT', 'OPEN', 'CLOSED'])

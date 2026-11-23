@@ -2304,9 +2304,38 @@ export const selfiePunch = (inOut: 0 | 1, latitude: number, longitude: number, p
 };
 export const attendanceLogPhotoUrl = (id: string) => `${API}/admin/attendance/logs/${id}/photo`;
 
-/** Setor izin dari Absen Saya — sakit/dinas/workshop/lainnya. */
-export const submitLeave = (date: string, category: 'SAKIT' | 'DINAS' | 'WORKSHOP' | 'LAINNYA', note?: string) =>
-  req('/admin/attendance/my/leave', { method: 'POST', json: { date, category, ...(note ? { note } : {}) } });
+/** Pengajuan izin pegawai — PENDING sampai disetujui piket/kurikulum/TU. */
+export interface LeaveRequestView {
+  id: string; employeeId: string;
+  dateFrom: string; dateTo: string;
+  category: 'SAKIT' | 'DINAS' | 'WORKSHOP' | 'LAINNYA';
+  partialFromMin?: number | null;
+  note?: string | null;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+  reviewedAt?: string | null; reviewNote?: string | null; appliedDays: number;
+  createdAt: string;
+  reviewedBy?: { name: string } | null;
+  employee?: { id: string; name: string; nip?: string | null; department?: string | null };
+}
+/** Setor pengajuan izin dari Absen Saya — sakit/dinas/workshop/lainnya.
+    `endDate` untuk rentang tanggal; `fromMinute` (menit WIB) untuk pulang awal. */
+export const submitLeave = (opts: {
+  date: string; endDate?: string;
+  category: 'SAKIT' | 'DINAS' | 'WORKSHOP' | 'LAINNYA';
+  note?: string; fromMinute?: number;
+}) =>
+  req<LeaveRequestView>('/admin/attendance/my/leave', { method: 'POST', json: opts });
+export const myLeaveRequests = () =>
+  req<LeaveRequestView[]>('/admin/attendance/my/leave');
+export const cancelMyLeave = (id: string) =>
+  req<LeaveRequestView>(`/admin/attendance/my/leave/${id}`, { method: 'DELETE' });
+/** Approver (piket/kurikulum/TU). */
+export const listLeaveRequests = (status?: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED') =>
+  req<LeaveRequestView[]>(`/admin/attendance/leave-requests${status ? `?status=${status}` : ''}`);
+export const approveLeaveRequest = (id: string) =>
+  req<LeaveRequestView & { appliedDays: number; skippedDays: number }>(`/admin/attendance/leave-requests/${id}/approve`, { method: 'POST' });
+export const rejectLeaveRequest = (id: string, note?: string) =>
+  req<LeaveRequestView>(`/admin/attendance/leave-requests/${id}/reject`, { method: 'POST', json: note ? { note } : {} });
 /** Admin/TU clear absen 1 hari 1 pegawai — rekap + log mentah ikut terhapus. */
 export const clearEmployeeDay = (employeeId: string, date: string) =>
   req<{ logsRemoved: number; recordRemoved: number }>(`/admin/attendance/day?employeeId=${employeeId}&date=${date}`, { method: 'DELETE' });

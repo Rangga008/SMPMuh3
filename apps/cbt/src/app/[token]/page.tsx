@@ -75,9 +75,17 @@ export default function CbtPrepPage() {
             </p>
             <p className="mt-1 text-[11px] text-sand-400">Waktu berjalan sejak kamu masuk — jangan tutup halaman.</p>
           </div>
-          <Button className="w-full" onClick={() => router.push(`/${token}/mulai`)}>
-            Mulai Kerjakan →
-          </Button>
+          {s.attempt.status === 'BLOCKED' ? (
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-center text-sm text-red-700">
+              <p className="font-black">⛔ Sesimu diblokir proteksi.</p>
+              <p className="mt-1 text-xs">Jawaban yang sudah diisi tersimpan aman — panggil <b>pengawas</b> untuk membuka sesimu kembali.</p>
+              <Button variant="outline" className="mt-3 w-full" onClick={load}>↻ Cek lagi</Button>
+            </div>
+          ) : (
+            <Button className="w-full" onClick={() => router.push(`/${token}/mulai`)}>
+              Mulai Kerjakan →
+            </Button>
+          )}
         </div>
       )}
     </ExamShell>

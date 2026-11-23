@@ -50,6 +50,7 @@ model User {
   savingsEntries SavingsEntry[]
   expenses      Expense[]      @relation("ExpenseCreator")
   titipanEntries TitipanEntry[]
+  leaveRequestsReviewed LeaveRequest[]
 
   @@map("users")
 }
@@ -965,6 +966,38 @@ model EmployeeAttendance {
   @@map("employee_attendances")
 }
 
+enum LeaveRequestStatus {
+  PENDING  // menunggu persetujuan piket/kurikulum/TU
+  APPROVED
+  REJECTED
+  CANCELLED // dibatalkan pemohon sebelum diproses
+}
+
+/** Pengajuan izin pegawai — berlaku setelah disetujui pemegang attendance.manage. */
+model LeaveRequest {
+  id          String             @id @default(uuid()) @db.Uuid
+  employeeId  String             @map("employee_id") @db.Uuid
+  dateFrom    DateTime           @map("date_from") @db.Date // hari pertama izin
+  dateTo      DateTime           @map("date_to") @db.Date   // hari terakhir (inklusif)
+  category    LeaveCategory
+  partialFromMin Int?            @map("partial_from_min") // izin pulang awal (menit WIB) — hanya pengajuan 1 hari
+  note        String?
+  status      LeaveRequestStatus @default(PENDING)
+  reviewedById String?           @map("reviewed_by_id") @db.Uuid // user approver
+  reviewedAt  DateTime?          @map("reviewed_at")
+  reviewNote  String?            @map("review_note")
+  appliedDays Int                @default(0) @map("applied_days") // hari yang tertulis ke rekap saat disetujui
+  createdAt   DateTime           @default(now()) @map("created_at")
+  updatedAt   DateTime           @updatedAt @map("updated_at")
+
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  reviewedBy User?    @relation(fields: [reviewedById], references: [id])
+
+  @@index([status, dateFrom])
+  @@index([employeeId, dateFrom])
+  @@map("leave_requests")
+}
+
 enum AttendanceSource {
   DEVICE // tap dari mesin fingerprint/face
   IMPORT // file attlog yang diunggah
@@ -1436,6 +1469,7 @@ model Employee {
   bosHonors   BosHonor[]
   attendanceLogs AttendanceLog[]
   shifts      EmployeeShift[]
+  leaveRequests LeaveRequest[]
   staffDocuments StaffDocument[]
   collectionItems DocCollectionItem[]
   coachedEkskul  Extracurricular[]
@@ -2037,6 +2071,7 @@ enum ExamStatus {
 enum ExamAttemptStatus {
   STARTED
   SUBMITTED
+  BLOCKED // sesi dibekukan proteksi — jawaban tersimpan, menunggu keputusan pengawas
 }
 
 /** Sesi ujian CBT — siswa masuk pakai NIS + kode ujian. */
@@ -2055,6 +2090,8 @@ model Exam {
   durationMin    Int            @map("duration_min")
   shuffle        Boolean        @default(false)
   showScore      Boolean        @default(true) @map("show_score")
+  warnAfter      Int            @default(2) @map("warn_after")  // pelanggaran ke-N → peringatan ke siswa
+  blockAfter     Int            @default(4) @map("block_after") // pelanggaran ke-N → sesi diblokir (0 = nonaktif)
   status         ExamStatus     @default(DRAFT)
   createdBy      String?        @map("created_by") @db.Uuid
   createdAt      DateTime       @default(now()) @map("created_at")
@@ -2100,6 +2137,8 @@ model ExamAttempt {
   score        Int?
   maxScore     Int?              @map("max_score")
   enterCount   Int               @default(0) @map("enter_count") // berapa kali siswa login — indikasi keluar-masuk
+  violations   Int               @default(0) @map("violations") // pelanggaran proteksi terlapor (keluar tab/aplikasi)
+  blockedAt    DateTime?         @map("blocked_at") // kapan sesi dibekukan proteksi
   createdAt    DateTime          @default(now()) @map("created_at")
   updatedAt    DateTime          @updatedAt @map("updated_at")
 

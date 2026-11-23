@@ -14,7 +14,7 @@ import { ApiError, downloadFile, listClasses, type ClassView } from '@/lib/api';
 import {
   examAnalysis, examAnswersMatrix, examMonitor,
   examResults, exportExamResults, getExam, listMonitorExams, regenerateExamCode,
-  updateExam, updateExamGrade,
+  updateExam, updateExamGrade, unblockAttempt, forceSubmitAttempt, resetAttempt,
   type ExamQuestion, type ExamView, type ItemAnalysis, type MonitorClass,
 } from '@/lib/api-ops';
 
@@ -134,6 +134,24 @@ export function ExamPanel({ id, embedded = false }: { id: string; embedded?: boo
     try { await updateExam(exam.id, { status }); load(); } catch (e) { err(e, 'Gagal mengubah status.'); }
   };
 
+  // ---------- Aksi pengawas per sesi siswa ----------
+  const reloadMonitor = () => examMonitor(id).then(setMonitor).catch(() => {});
+  const attemptAction = async (kind: 'unblock' | 'submit' | 'reset', studentId: string, name: string) => {
+    const msgs: Record<typeof kind, string> = {
+      unblock: `Buka blokir sesi ${name}? Pelanggaran dihitung ulang dari nol.`,
+      submit: `Kumpulkan jawaban ${name} sekarang? Dinilai apa adanya.`,
+      reset: `Reset pengerjaan ${name}? Sesi, jawaban & nilai dihapus — siswa masuk ulang dari awal.`,
+    };
+    if (!(await confirm(msgs[kind]))) return;
+    try {
+      if (kind === 'unblock') await unblockAttempt(id, studentId);
+      else if (kind === 'submit') await forceSubmitAttempt(id, studentId);
+      else await resetAttempt(id, studentId);
+      flash(kind === 'unblock' ? `Sesi ${name} dibuka kembali.` : kind === 'submit' ? `Jawaban ${name} dikumpulkan.` : `Pengerjaan ${name} direset.`);
+      reloadMonitor();
+    } catch (e) { err(e, 'Aksi gagal.'); }
+  };
+
   const save = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!exam) return;
@@ -152,6 +170,8 @@ export function ExamPanel({ id, embedded = false }: { id: string; embedded?: boo
         classIds,
         shuffle: f.get('shuffle') === 'on',
         showScore: f.get('showScore') === 'on',
+        warnAfter: Math.max(0, Number(f.get('warnAfter')) || 0),
+        blockAfter: Math.max(0, Number(f.get('blockAfter')) || 0),
       });
       setModal(false); flash('Ujian diperbarui.'); load();
     } catch (e2) { setModalErr(e2 instanceof ApiError ? e2.message : 'Gagal menyimpan.'); }
@@ -218,6 +238,7 @@ export function ExamPanel({ id, embedded = false }: { id: string; embedded?: boo
                     <p>⏱ {exam.durationMin} menit · {exam.questions?.length ?? exam._count?.questions ?? exam.assessment._count?.questions ?? '—'} butir</p>
                     <p>🏫 {exam.classNames?.join(', ') || '—'}</p>
                     <p>🔀 Acak: {exam.shuffle ? 'Ya' : 'Tidak'} · Nilai tampil: {exam.showScore ? 'Ya' : 'Tidak'}</p>
+                    <p>🛡 Proteksi: {(exam.blockAfter ?? 0) > 0 ? `peringatan ke-${exam.warnAfter ?? 2} · blokir ke-${exam.blockAfter}` : 'nonaktif'}</p>
                   </div>
                   <div className="flex flex-col justify-end gap-2">
                     {examManage ? (
@@ -267,21 +288,48 @@ export function ExamPanel({ id, embedded = false }: { id: string; embedded?: boo
                       </div>
                       <ul className="max-h-64 divide-y divide-sand-50 overflow-y-auto">
                         {c.students.map((s) => (
-                          <li key={s.studentId} className="flex items-center justify-between px-4 py-2 text-xs">
-                            <div className="min-w-0">
-                              <p className="truncate font-semibold text-sand-800">{s.name}</p>
-                              <p className="text-sand-400">{s.nis ?? '—'}{s.answered ? ` · ${s.answered} terjawab` : ''}</p>
+                          <li key={s.studentId} className="px-4 py-2 text-xs">
+                            <div className="flex items-center justify-between">
+                              <div className="min-w-0">
+                                <p className="truncate font-semibold text-sand-800">{s.name}</p>
+                                <p className="text-sand-400">{s.nis ?? '—'}{s.answered ? ` · ${s.answered} terjawab` : ''}</p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {(s.violations ?? 0) > 0 ? (
+                                  <span title={`${s.violations} pelanggaran proteksi`} className="rounded-lg bg-amber-100 px-1.5 py-0.5 text-[10px] font-black text-amber-700">⚠{s.violations}</span>
+                                ) : null}
+                                {s.remainingSec != null ? <span className="font-mono text-[10px] text-amber-600">⏱ {mmss(s.remainingSec)}</span> : null}
+                                {s.status === 'SELESAI' ? (
+                                  <Badge tone="primary">✓ {s.score ?? 0}/{s.maxScore ?? 0}</Badge>
+                                ) : s.status === 'DIBLOKIR' ? (
+                                  <Badge tone="danger">⛔ Diblokir</Badge>
+                                ) : s.status === 'MENGERJAKAN' ? (
+                                  <Badge tone="accent">Mengerjakan</Badge>
+                                ) : (
+                                  <Badge tone="neutral">Belum masuk</Badge>
+                                )}
+                              </div>
                             </div>
-                            <div className="flex items-center gap-2">
-                              {s.remainingSec != null ? <span className="font-mono text-[10px] text-amber-600">⏱ {mmss(s.remainingSec)}</span> : null}
-                              {s.status === 'SELESAI' ? (
-                                <Badge tone="primary">✓ {s.score ?? 0}/{s.maxScore ?? 0}</Badge>
-                              ) : s.status === 'MENGERJAKAN' ? (
-                                <Badge tone="accent">Mengerjakan</Badge>
-                              ) : (
-                                <Badge tone="neutral">Belum masuk</Badge>
-                              )}
-                            </div>
+                            {(canMonitor || examManage) && s.status !== 'BELUM' ? (
+                              <div className="mt-1 flex gap-1.5 pl-0.5">
+                                {s.status === 'DIBLOKIR' ? (
+                                  <button type="button" className="rounded-lg bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 hover:bg-emerald-100"
+                                    onClick={() => void attemptAction('unblock', s.studentId, s.name)}>
+                                    Buka Blokir
+                                  </button>
+                                ) : null}
+                                {s.status === 'MENGERJAKAN' || s.status === 'DIBLOKIR' ? (
+                                  <button type="button" className="rounded-lg bg-sand-100 px-2 py-0.5 text-[10px] font-bold text-sand-600 hover:bg-sand-200"
+                                    onClick={() => void attemptAction('submit', s.studentId, s.name)}>
+                                    Kumpulkan
+                                  </button>
+                                ) : null}
+                                <button type="button" className="rounded-lg bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-600 hover:bg-red-100"
+                                  onClick={() => void attemptAction('reset', s.studentId, s.name)}>
+                                  Reset
+                                </button>
+                              </div>
+                            ) : null}
                           </li>
                         ))}
                       </ul>
@@ -450,6 +498,21 @@ export function ExamPanel({ id, embedded = false }: { id: string; embedded?: boo
             <div className="flex gap-6">
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="shuffle" defaultChecked={exam.shuffle} /> Acak urutan soal per siswa</label>
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="showScore" defaultChecked={exam.showScore} /> Tampilkan nilai setelah selesai</label>
+            </div>
+            <div className="rounded-xl border border-sand-200 p-3">
+              <p className="mb-2 text-xs font-black uppercase tracking-wide text-sand-500">Proteksi pelanggaran (keluar tab/aplikasi)</p>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Peringatan ke-">
+                  <Input name="warnAfter" type="number" min={0} max={20} defaultValue={exam.warnAfter ?? 2} />
+                </Field>
+                <Field label="Blokir ke- (0 = nonaktif)">
+                  <Input name="blockAfter" type="number" min={0} max={20} defaultValue={exam.blockAfter ?? 4} />
+                </Field>
+              </div>
+              <p className="mt-1.5 text-[11px] text-sand-400">
+                Siswa diperingatkan saat pelanggaran mencapai ambang peringatan; pada ambang blokir sesi dibekukan —
+                jawaban tersimpan aman dan hanya bisa dibuka pengawas/admin lewat Monitor.
+              </p>
             </div>
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setModal(false)}>Batal</Button>

@@ -178,6 +178,29 @@ export class CbtController {
     return this.cbt.regenCredential(id, studentId, u);
   }
 
+  // ---- Aksi pengawas pada sesi siswa (proteksi & reset) ----
+
+  /** Buka sesi yang diblokir proteksi — pelanggaran dihitung ulang dari nol. */
+  @Post('exams/:id/attempts/:studentId/unblock')
+  @RequirePermission(PERMISSIONS.CBT_MONITOR)
+  unblockAttempt(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Param('studentId', ParseUUIDPipe) studentId: string) {
+    return this.cbt.unblockAttempt(id, studentId, u);
+  }
+
+  /** Kumpulkan paksa sesi siswa (mengerjakan/diblokir) — dinilai apa adanya. */
+  @Post('exams/:id/attempts/:studentId/force-submit')
+  @RequirePermission(PERMISSIONS.CBT_MONITOR)
+  forceSubmitAttempt(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Param('studentId', ParseUUIDPipe) studentId: string) {
+    return this.cbt.forceSubmitAttempt(id, studentId, u);
+  }
+
+  /** Reset pengerjaan — hapus sesi, jawaban & nilai; siswa masuk ulang dari awal. */
+  @Post('exams/:id/attempts/:studentId/reset')
+  @RequirePermission(PERMISSIONS.CBT_MONITOR)
+  resetAttempt(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Param('studentId', ParseUUIDPipe) studentId: string) {
+    return this.cbt.resetAttempt(id, studentId, u);
+  }
+
   /** Bacaan soal (passthrough ke asesmen terkait). */
   @Get('exams/:id/passages')
   @RequirePermission(PERMISSIONS.ACADEMIC_READ)
@@ -246,6 +269,14 @@ export class CbtController {
   @Post('paper/:token/submit')
   submit(@Param('token') token: string) {
     return this.cbt.submit(token);
+  }
+
+  /** Laporan pelanggaran proteksi dari aplikasi siswa (keluar tab/aplikasi). */
+  @Public()
+  @SkipThrottle()
+  @Post('paper/:token/violation')
+  violation(@Param('token') token: string, @Body() body?: { kind?: string }) {
+    return this.cbt.reportViolation(token, body?.kind);
   }
 
   /** Hasil akhir. */

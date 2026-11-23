@@ -3,9 +3,39 @@
 import katex from 'katex';
 import { API } from './api';
 
-/** Render "$…$"/"$$…$$" di HTML menjadi rumus KaTeX — dari persamaan Word hasil impor. */
+/**
+ * Matematika telanjang (tanpa "$…$") yang umum diketik guru — konversi ke LaTeX
+ * lalu ikut dirender: pangkat `x^2`/`x^{2n}`/`x^(a+b)`, subskrip `x_1`/`x_{ij}`,
+ * dan `sqrt(…)`/`akar(…)`/`sqrt16`. Hanya menyentuh segmen teks biasa — tag
+ * HTML dan rumus "$…$" yang sudah ada tidak diubah.
+ */
+const bareMathSeg = (seg: string) =>
+  seg
+    // LaTeX telanjang duluan — bila tidak, hasil konversi sqrt(…) di bawah
+    // ikut tertimpa pola \sqrt{…} dan berakhir jadi $$…$$ display-mode.
+    .replace(/\\sqrt\{([^}]*)\}/g, '$$\\sqrt{$1}$$')
+    .replace(/\\frac\{([^}]*)\}\{([^}]*)\}/g, '$$\\frac{$1}{$2}$$')
+    // akar kuadrat: sqrt(…) / akar(…) / sqrt 16
+    .replace(/\b(?:sqrt|akar)\s*\(([^()]*(?:\([^()]*\)[^()]*)*)\)/gi, '$$\\sqrt{$1}$$')
+    .replace(/\bsqrt\s+(\d+)/gi, '$$\\sqrt{$1}$$')
+    // pangkat: x^{…} → x^(…) → x^a
+    .replace(/([a-zA-Z0-9.,)\]}])\^\{([^}]*)\}/g, '$$$1^{$2}$$')
+    .replace(/([a-zA-Z0-9.,)\]}])\^\(([^()]*)\)/g, '$$$1^{$2}$$')
+    .replace(/([a-zA-Z0-9.,])\^([a-zA-Z0-9.]+)/g, '$$$1^{$2}$$')
+    // subskrip: a_{ij} / a_12 — hanya huruf dasar + angka/kurawal (teks seperti file_name aman)
+    .replace(/\b([a-zA-Z])_\{([^}]*)\}/g, '$$$1_{$2}$$')
+    .replace(/\b([a-zA-Z])_(\d+)/g, '$$$1_{$2}$$');
+
+const autoMath = (html: string) =>
+  html
+    .split(/(<[^>]+>|\$\$[^$]+?\$\$|\$[^$\n]+?\$)/g)
+    .map((seg) => (seg.startsWith('<') || seg.startsWith('$') ? seg : bareMathSeg(seg)))
+    .join('');
+
+/** Render "$…$"/"$$…$$" di HTML menjadi rumus KaTeX — dari persamaan Word hasil impor,
+    plus pola matematika telanjang yang lazim diketik (x^2, sqrt(…), x_1). */
 export const renderMathHtml = (html: string) =>
-  html.replace(/\$\$([^$<]+?)\$\$|\$([^$<\n]+?)\$/g, (whole, disp: string, inl: string) => {
+  autoMath(html).replace(/\$\$([^$<]+?)\$\$|\$([^$<\n]+?)\$/g, (whole, disp: string, inl: string) => {
     const tex = disp ?? inl;
     try {
       return katex.renderToString(tex, { throwOnError: false, displayMode: disp !== undefined });

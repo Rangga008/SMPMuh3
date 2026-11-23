@@ -269,6 +269,11 @@ export class LeaveDto {
   @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'Format tanggal harus YYYY-MM-DD' })
   date!: string;
 
+  /** Tanggal akhir izin (opsional) — kosong = satu hari. Rentang maks 31 hari. */
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'Format tanggal harus YYYY-MM-DD' })
+  endDate?: string;
+
   @IsIn(['SAKIT', 'DINAS', 'WORKSHOP', 'LAINNYA'])
   category!: 'SAKIT' | 'DINAS' | 'WORKSHOP' | 'LAINNYA';
 
@@ -277,7 +282,8 @@ export class LeaveDto {
   @MaxLength(300)
   note?: string;
 
-  /** Izin pulang awal — menit sejak 00:00 WIB mulai izin (kosong = izin penuh sehari). */
+  /** Izin pulang awal — menit sejak 00:00 WIB mulai izin (kosong = izin penuh sehari).
+      Hanya untuk hari yang sudah ada absen masuk; abaikan endDate saat dipakai. */
   @IsOptional()
   @IsInt()
   @Min(0)

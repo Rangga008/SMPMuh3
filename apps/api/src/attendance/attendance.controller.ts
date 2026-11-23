@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Param,
   ParseUUIDPipe,
@@ -234,10 +235,52 @@ export class AttendanceController {
     return this.attendance.myAttendance(u.id, month || undefined);
   }
 
-  /** Pegawai setor izin sendiri (sakit/dinas/workshop/lainnya) — dari Absen Saya. */
+  /** Pegawai setor PENGAJUAN izin (sakit/dinas/workshop/lainnya) — menunggu
+      persetujuan piket/kurikulum/TU. Mendukung rentang tanggal & pulang awal. */
   @Post('my/leave')
   submitLeave(@Body() dto: LeaveDto, @CurrentUser() u: AuthUser) {
     return this.attendance.submitLeave(u.id, dto);
+  }
+
+  /** Riwayat pengajuan izin milik pegawai yang login. */
+  @Get('my/leave')
+  myLeaveRequests(@CurrentUser() u: AuthUser) {
+    return this.attendance.myLeaveRequests(u.id);
+  }
+
+  /** Batalkan pengajuan sendiri yang masih PENDING. */
+  @Delete('my/leave/:id')
+  cancelLeave(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) {
+    return this.attendance.cancelLeave(u.id, id);
+  }
+
+  /** Approver izin: piket/kurikulum (academic.manage) atau TU (tatausaha.manage).
+      ATTENDANCE_MANAGE sengaja TIDAK dipakai — itu izin absen-siswa milik semua guru. */
+  private assertLeaveApprover(u: AuthUser) {
+    const ok = u.permissions.includes(PERMISSIONS.ACADEMIC_MANAGE)
+      || u.permissions.includes(PERMISSIONS.TATAUSAHA_MANAGE);
+    if (!ok) throw new ForbiddenException('Hanya piket/kurikulum/TU yang bisa memproses pengajuan izin.');
+  }
+
+  /** Daftar pengajuan izin untuk approver (piket/kurikulum/TU). */
+  @Get('leave-requests')
+  listLeaveRequests(@Query('status') status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED' | undefined, @CurrentUser() u: AuthUser) {
+    this.assertLeaveApprover(u);
+    return this.attendance.listLeaveRequests(status);
+  }
+
+  /** Setujui pengajuan → status tertulis ke rekap harian. */
+  @Post('leave-requests/:id/approve')
+  approveLeave(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) {
+    this.assertLeaveApprover(u);
+    return this.attendance.approveLeave(id, u.id);
+  }
+
+  /** Tolak pengajuan (catatan opsional di body.note). */
+  @Post('leave-requests/:id/reject')
+  rejectLeave(@Param('id', ParseUUIDPipe) id: string, @Body() body: { note?: string }, @CurrentUser() u: AuthUser) {
+    this.assertLeaveApprover(u);
+    return this.attendance.rejectLeave(id, u.id, body?.note);
   }
 
   /** Admin/TU clear absen 1 hari 1 pegawai — hapus rekap + log mentahnya. */

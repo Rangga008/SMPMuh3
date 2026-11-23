@@ -4,7 +4,16 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { PageTitle, Widget } from '@/components/widgets';
-import { getMyAttendance, selfiePunch, submitLeave, type AttendanceDayRow, type MyAttendance } from '@/lib/api';
+import {
+  cancelMyLeave,
+  getMyAttendance,
+  myLeaveRequests,
+  selfiePunch,
+  submitLeave,
+  type AttendanceDayRow,
+  type LeaveRequestView,
+  type MyAttendance,
+} from '@/lib/api';
 
 const fmtTime = (iso?: string | null) =>
   iso
@@ -13,6 +22,17 @@ const fmtTime = (iso?: string | null) =>
 const STATUS_BADGE: Record<string, 'primary' | 'accent' | 'neutral' | 'danger'> = {
   HADIR: 'primary', TELAT: 'accent', IZIN: 'neutral', SAKIT: 'neutral', ALPHA: 'danger',
 };
+const LEAVE_BADGE: Record<LeaveRequestView['status'], 'primary' | 'accent' | 'neutral' | 'danger'> = {
+  PENDING: 'accent', APPROVED: 'primary', REJECTED: 'danger', CANCELLED: 'neutral',
+};
+const LEAVE_LABEL: Record<LeaveRequestView['status'], string> = {
+  PENDING: 'Menunggu', APPROVED: 'Disetujui', REJECTED: 'Ditolak', CANCELLED: 'Dibatalkan',
+};
+const LEAVE_CAT: Record<LeaveRequestView['category'], string> = {
+  SAKIT: 'Sakit', DINAS: 'Dinas', WORKSHOP: 'Workshop', LAINNYA: 'Lainnya',
+};
+const fmtDate = (iso: string) =>
+  new Date(`${String(iso).slice(0, 10)}T00:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
 const DOW = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
 const DOW_FULL = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 const minToHHMM = (m: number) =>
@@ -33,9 +53,12 @@ export default function AbsenPage() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   const [leaveOpen, setLeaveOpen] = useState(false);
+  const [leaveKind, setLeaveKind] = useState<'FULL' | 'PARTIAL'>('FULL');
+  const [leaves, setLeaves] = useState<LeaveRequestView[]>([]);
 
   const load = useCallback(() => {
     getMyAttendance(month).then(setData).catch((e) => setErr(e instanceof Error ? e.message : String(e)));
+    myLeaveRequests().then(setLeaves).catch(() => {});
   }, [month]);
   useEffect(load, [load]);
 
@@ -208,7 +231,15 @@ export default function AbsenPage() {
               >
                 {alreadyOut ? 'Sudah Absen Pulang' : 'Absen Pulang (Selfie)'}
               </Button>
-              <Button variant="secondary" onClick={() => setLeaveOpen(true)} disabled={busy}>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  // Sudah absen masuk → praktis untuk "pulang awal"; belum → izin penuh.
+                  setLeaveKind(alreadyIn ? 'PARTIAL' : 'FULL');
+                  setLeaveOpen(true);
+                }}
+                disabled={busy}
+              >
                 Ajukan Izin
               </Button>
             </div>
@@ -291,6 +322,46 @@ export default function AbsenPage() {
             )}
           </Widget>
 
+          {leaves.length > 0 && (
+            <Widget title="Pengajuan Izin Saya" subtitle="Status persetujuan piket/kurikulum">
+              <ul className="divide-y divide-sand-100">
+                {leaves.map((l) => (
+                  <li key={l.id} className="flex items-center gap-3 py-2.5">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-sand-800">
+                        {LEAVE_CAT[l.category]}
+                        {l.partialFromMin != null
+                          ? ` · pulang awal ${minToHHMM(l.partialFromMin)}`
+                          : l.dateFrom === l.dateTo
+                            ? ` · ${fmtDate(l.dateFrom)}`
+                            : ` · ${fmtDate(l.dateFrom)}–${fmtDate(l.dateTo)}`}
+                      </p>
+                      <p className="truncate text-xs text-sand-500">
+                        {l.note ?? '—'}
+                        {l.status === 'APPROVED' && l.reviewedBy ? ` · oleh ${l.reviewedBy.name}` : ''}
+                        {l.status === 'REJECTED' && l.reviewNote ? ` · ${l.reviewNote}` : ''}
+                      </p>
+                    </div>
+                    <Badge tone={LEAVE_BADGE[l.status]}>{LEAVE_LABEL[l.status]}</Badge>
+                    {l.status === 'PENDING' && (
+                      <button
+                        type="button"
+                        className="text-xs font-semibold text-red-600 hover:underline"
+                        onClick={() => {
+                          cancelMyLeave(l.id)
+                            .then(() => { setMsg('Pengajuan dibatalkan.'); load(); })
+                            .catch((er) => setErr(er instanceof Error ? er.message : 'Gagal membatalkan.'));
+                        }}
+                      >
+                        Batalkan
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </Widget>
+          )}
+
           <Widget title="Riwayat Absen" subtitle={`${(data.rows ?? []).length} catatan bulan ini`}>
             {(data.rows ?? []).length === 0 ? (
               <p className="text-sm text-sand-500">Belum ada catatan bulan ini.</p>
@@ -329,17 +400,50 @@ export default function AbsenPage() {
             e.preventDefault();
             const f = new FormData(e.currentTarget);
             const date = String(f.get('date'));
+            const endDate = String(f.get('endDate') ?? '');
             const category = String(f.get('category')) as 'SAKIT' | 'DINAS' | 'WORKSHOP' | 'LAINNYA';
             const note = String(f.get('note') ?? '').trim();
+            const time = String(f.get('leaveFrom') ?? '');
+            const [hh, mm] = time.split(':').map(Number);
+            const fromMinute = leaveKind === 'PARTIAL' && time ? hh! * 60 + mm! : undefined;
             setBusy(true); setErr('');
-            submitLeave(date, category, note || undefined)
-              .then(() => { setMsg('Izin tercatat — status absen tanggal itu kini ' + category + '.'); setLeaveOpen(false); load(); })
+            submitLeave({
+              date,
+              category,
+              ...(note ? { note } : {}),
+              ...(leaveKind === 'PARTIAL'
+                ? { fromMinute: fromMinute ?? 0 }
+                : endDate && endDate !== date ? { endDate } : {}),
+            })
+              .then(() => { setMsg('Pengajuan izin terkirim — menunggu persetujuan piket/kurikulum.'); setLeaveOpen(false); load(); })
               .catch((er) => setErr(er instanceof Error ? er.message : 'Gagal mengajukan izin.'))
               .finally(() => setBusy(false));
           }}
         >
-          <Field label="Tanggal"><Input name="date" type="date" required defaultValue={todayIso} /></Field>
-          <Field label="Jenis">
+          <Field label="Jenis Izin">
+            <Select name="kind" value={leaveKind} onChange={(e) => setLeaveKind(e.target.value as 'FULL' | 'PARTIAL')} required>
+              <option value="FULL">Izin penuh (tidak hadir / seharian)</option>
+              <option value="PARTIAL">Pulang awal (sudah absen masuk, izin sejak jam tertentu)</option>
+            </Select>
+          </Field>
+          {leaveKind === 'PARTIAL' ? (
+            <>
+              <Field label="Tanggal"><Input name="date" type="date" required defaultValue={todayIso} /></Field>
+              <Field label="Izin sejak pukul (WIB)">
+                <Input name="leaveFrom" type="time" required />
+              </Field>
+              <p className="-mt-1 text-xs text-sand-500">
+                Hanya untuk hari yang sudah ada absen masuk — mis. masuk pagi lalu sakit/ada keperluan mendadak.
+                Sisa jam setelah waktu ini dihitung izin.
+              </p>
+            </>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Dari tanggal"><Input name="date" type="date" required defaultValue={todayIso} /></Field>
+              <Field label="Sampai (kosong = 1 hari)"><Input name="endDate" type="date" /></Field>
+            </div>
+          )}
+          <Field label="Kategori">
             <Select name="category" required>
               <option value="SAKIT">Sakit</option>
               <option value="DINAS">Dinas</option>
@@ -350,7 +454,7 @@ export default function AbsenPage() {
           <Field label="Keterangan"><Input name="note" placeholder="mis. izin dinas luar ke LPMP" /></Field>
           <div className="flex justify-end gap-2 pt-1">
             <Button type="button" variant="ghost" onClick={() => setLeaveOpen(false)}>Batal</Button>
-            <Button type="submit" disabled={busy}>{busy ? 'Mengirim…' : 'Kirim Izin'}</Button>
+            <Button type="submit" disabled={busy}>{busy ? 'Mengirim…' : 'Kirim Pengajuan'}</Button>
           </div>
         </form>
       </Modal>

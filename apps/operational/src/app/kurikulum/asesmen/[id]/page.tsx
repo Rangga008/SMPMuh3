@@ -7,6 +7,7 @@ import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { PageTitle, Widget } from '@/components/widgets';
 import { ExamPanel } from '@/components/exam-panel';
+import { QuestionPreview, type PreviewQuestion } from '@/components/question-preview';
 import {
   API,
   ApiError,
@@ -153,6 +154,9 @@ function AsesmenDetailInner() {
   // ---- Bacaan ----
   const [passages, setPassages] = useState<PassageDraft[]>([]);
   const [passagesDirty, setPassagesDirty] = useState(false);
+
+  // ---- Pratinjau tampilan siswa per kartu soal ----
+  const [previewIdx, setPreviewIdx] = useState<Set<number>>(new Set());
 
   // ---- Modal import (preview) ----
   const [importModal, setImportModal] = useState(false);
@@ -716,8 +720,24 @@ function AsesmenDetailInner() {
                     </Field>
                     <button
                       type="button"
+                      onClick={() =>
+                        setPreviewIdx((s) => {
+                          const n = new Set(s);
+                          if (n.has(i)) n.delete(i); else n.add(i);
+                          return n;
+                        })
+                      }
+                      className={`ml-auto rounded-lg px-2.5 py-1 text-xs font-bold transition ${
+                        previewIdx.has(i) ? 'bg-primary-100 text-primary-800' : 'bg-sand-100 text-sand-500 hover:bg-sand-200'
+                      }`}
+                      title="Lihat soal seperti yang dilihat siswa"
+                    >
+                      👁 Siswa
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => setDrafts((qs) => renumber(qs.filter((_, k) => k !== i)))}
-                      className="ml-auto text-xs font-bold text-red-500 hover:text-red-700"
+                      className="text-xs font-bold text-red-500 hover:text-red-700"
                     >
                       Hapus Soal
                     </button>
@@ -742,6 +762,17 @@ function AsesmenDetailInner() {
                     ) : null}
                   </Field>
                   {body(d, i)}
+                  {previewIdx.has(i) ? (
+                    <div className="mt-4 rounded-2xl border-2 border-dashed border-primary-200 bg-primary-50/40 p-4">
+                      <p className="mb-3 text-[11px] font-black uppercase tracking-wide text-primary-700">
+                        Tampilan siswa — persis seperti di layar ujian (kunci ditandai hijau)
+                      </p>
+                      <QuestionPreview
+                        q={toApi(d) as PreviewQuestion}
+                        passageContent={d.passageCode ? (passages.find((p) => p.code === d.passageCode)?.content ?? null) : null}
+                      />
+                    </div>
+                  ) : null}
                 </div>
               ))}
             </div>
@@ -867,37 +898,25 @@ function AsesmenDetailInner() {
               <p className="rounded-xl bg-amber-50 px-4 py-2.5 text-xs font-medium text-amber-800">
                 Mengimpor akan <b>menggantikan {drafts.length} soal</b> yang ada saat ini{drafts.length ? ' (yang lama dihapus)' : ''}.
               </p>
-              <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
+              <div className="max-h-[28rem] space-y-3 overflow-y-auto pr-1">
                 {preview.passages.map((p) => (
                   <div key={p.code} className="rounded-xl border border-sky-200 bg-sky-50 p-3">
                     <p className="text-xs font-black text-sky-800">Bacaan {p.code}</p>
-                    <div className="rich-html mt-1 line-clamp-3 text-xs text-sand-600 [&_img]:max-h-16" dangerouslySetInnerHTML={{ __html: richHtml(p.content) }} />
+                    <div className="rich-html mt-1 text-xs text-sand-600 [&_img]:max-h-24" dangerouslySetInnerHTML={{ __html: richHtml(p.content) }} />
                   </div>
                 ))}
-                {preview.questions.map((q) => {
-                  const opts = (q.options ?? {}) as { choices?: string[]; statements?: string[] };
-                  const items = opts.choices ?? opts.statements ?? [];
-                  return (
-                    <div key={q.number} className="rounded-xl border border-sand-200 p-3">
-                      <div className="flex items-center gap-2">
-                        <span className="grid size-6 place-items-center rounded-lg bg-primary-700 text-[11px] font-black text-white">{q.number}</span>
-                        <Badge tone="neutral">{TYPE_LABEL[q.type] ?? q.type}</Badge>
-                        <span className="text-[11px] text-sand-400">bobot {q.weight}{q.passageCode ? ` · bacaan ${q.passageCode}` : ''}</span>
-                      </div>
-                      <div className="rich-html mt-1.5 line-clamp-2 text-xs text-sand-700 [&_img]:max-h-16" dangerouslySetInnerHTML={{ __html: richHtml(q.prompt ?? '') }} />
-                      {items.length ? (
-                        <div className="mt-1 grid gap-0.5">
-                          {items.slice(0, 5).map((c, j) => (
-                            <div key={j} className="rich-html line-clamp-1 text-[11px] text-sand-500 [&_img]:inline [&_img]:max-h-8 [&_img]:align-middle">
-                              {(opts.statements ? `${j + 1}` : LETTERS[j])}. <span dangerouslySetInnerHTML={{ __html: richHtml(c) }} />
-                            </div>
-                          ))}
-                          {items.length > 5 ? <p className="text-[11px] text-sand-400">+{items.length - 5} lagi</p> : null}
-                        </div>
-                      ) : null}
+                {preview.questions.map((q) => (
+                  <div key={q.number} className="rounded-xl border border-sand-200 p-3.5">
+                    <div className="mb-2 flex items-center gap-2">
+                      <Badge tone="neutral">{TYPE_LABEL[q.type] ?? q.type}</Badge>
+                      <span className="text-[11px] text-sand-400">bobot {q.weight}{q.passageCode ? ` · bacaan ${q.passageCode}` : ''} · tampilan siswa</span>
                     </div>
-                  );
-                })}
+                    <QuestionPreview
+                      q={q as PreviewQuestion}
+                      passageContent={q.passageCode ? (preview.passages.find((p) => p.code === q.passageCode)?.content ?? null) : null}
+                    />
+                  </div>
+                ))}
               </div>
               <div className="flex justify-end gap-2">
                 <Button variant="outline" onClick={() => setImportModal(false)}>Batal</Button>

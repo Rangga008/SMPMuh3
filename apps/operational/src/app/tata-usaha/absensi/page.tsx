@@ -9,15 +9,20 @@ import { DataTable } from '@/components/data-table';
 import { RowBtn } from '@/components/row-btn';
 import { PageTitle, Widget } from '@/components/widgets';
 import {
+  approveLeaveRequest,
   clearEmployeeDay,
   listAttendanceDaily,
   listEmployees,
+  listLeaveRequests,
   manualPunch,
   me,
   rederiveAttendance,
+  rejectLeaveRequest,
   type DailyRow,
   type EmployeeDto,
+  type LeaveRequestView,
 } from '@/lib/api';
+import { useConfirm } from '@/components/confirm-dialog';
 
 const STATUS_TONE: Record<string, 'primary' | 'accent' | 'neutral' | 'danger'> = {
   HADIR: 'primary',
@@ -41,8 +46,16 @@ const fmtTime = (iso?: string | null) =>
  * TU hanya meninjau & bisa mencatat tap koreksi manual bila pegawai lupa absen.
  * Pengaturan shift & lokasi sekolah dikelola bidang Kurikulum.
  */
+const LEAVE_CAT: Record<string, string> = { SAKIT: 'Sakit', DINAS: 'Dinas', WORKSHOP: 'Workshop', LAINNYA: 'Lainnya' };
+const fmtLeaveDate = (iso: string) =>
+  new Date(`${String(iso).slice(0, 10)}T00:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+
 export default function AbsensiPegawaiPage() {
+  const { confirm, dialog } = useConfirm();
   const [canManage, setCanManage] = useState(false);
+  const [canApprove, setCanApprove] = useState(false);
+  const [leaves, setLeaves] = useState<LeaveRequestView[]>([]);
+  const [leaveTab, setLeaveTab] = useState<'PENDING' | 'SELESAI'>('PENDING');
   const [employees, setEmployees] = useState<EmployeeDto[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -56,9 +69,46 @@ export default function AbsensiPegawaiPage() {
   const [fStatus, setFStatus] = useState('');
 
   useEffect(() => {
-    me().then((u) => setCanManage(u.permissions.includes(PERMISSIONS.TATAUSAHA_MANAGE))).catch(() => undefined);
+    me().then((u) => {
+      setCanManage(u.permissions.includes(PERMISSIONS.TATAUSAHA_MANAGE));
+      setCanApprove(
+        u.permissions.includes(PERMISSIONS.ACADEMIC_MANAGE)
+        || u.permissions.includes(PERMISSIONS.TATAUSAHA_MANAGE),
+      );
+    }).catch(() => undefined);
     listEmployees().then(setEmployees).catch(() => undefined);
   }, []);
+
+  const loadLeaves = useCallback(() => {
+    if (!canApprove) return;
+    listLeaveRequests(leaveTab === 'PENDING' ? 'PENDING' : undefined)
+      .then((rows) => setLeaves(leaveTab === 'PENDING' ? rows : rows.filter((r) => r.status !== 'PENDING').slice(0, 50)))
+      .catch(() => {});
+  }, [canApprove, leaveTab]);
+  useEffect(() => loadLeaves(), [loadLeaves]);
+
+  const actLeave = async (l: LeaveRequestView, ok: boolean) => {
+    const span = l.partialFromMin != null
+      ? `pulang awal ${new Date(`${String(l.dateFrom).slice(0, 10)}T00:00:00`).toLocaleDateString('id-ID')}`
+      : l.dateFrom === l.dateTo ? fmtLeaveDate(l.dateFrom) : `${fmtLeaveDate(l.dateFrom)}–${fmtLeaveDate(l.dateTo)}`;
+    if (ok) {
+      if (!(await confirm({ title: `Setujui izin ${l.employee?.name}?`, body: `${LEAVE_CAT[l.category]} — ${span}. Status absen akan tertulis ke rekap.`, confirmLabel: 'Setujui', danger: false }))) return;
+      try {
+        const r = await approveLeaveRequest(l.id);
+        setNotice(`Izin ${l.employee?.name} disetujui — ${r.appliedDays} hari tertulis${r.skippedDays ? `, ${r.skippedDays} hari dilewati (sudah hadir)` : ''}.`);
+        loadLeaves(); loadDaily();
+      } catch (e) { setError(e instanceof Error ? e.message : 'Gagal menyetujui.'); }
+    } else {
+      const note = window.prompt(`Alasan penolakan izin ${l.employee?.name}? (opsional — kosongkan lalu OK untuk langsung menolak)`);
+      if (note === null) return;
+      if (!(await confirm({ title: `Tolak izin ${l.employee?.name}?`, body: `${LEAVE_CAT[l.category]} — ${span}.`, confirmLabel: 'Tolak' }))) return;
+      try {
+        await rejectLeaveRequest(l.id, note.trim() || undefined);
+        setNotice(`Pengajuan izin ${l.employee?.name} ditolak.`);
+        loadLeaves();
+      } catch (e) { setError(e instanceof Error ? e.message : 'Gagal menolak.'); }
+    }
+  };
 
   const loadDaily = useCallback(() => {
     setLoading(true);
@@ -98,8 +148,71 @@ export default function AbsensiPegawaiPage() {
         title="Absensi Pegawai"
         subtitle="Rekap absen selfie harian semua pegawai — jam kerja & lokasi diatur bidang Kurikulum"
       />
+      {dialog}
       {error ? <p role="alert" className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</p> : null}
       {notice ? <p role="status" className="mb-4 rounded-xl bg-primary-50 px-4 py-3 text-sm font-medium text-primary-800">{notice}</p> : null}
+
+      {canApprove && (
+        <Widget
+          title="Pengajuan Izin Pegawai"
+          action={
+            <div className="flex gap-1 rounded-xl bg-sand-100 p-1 text-xs font-bold">
+              {(['PENDING', 'SELESAI'] as const).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setLeaveTab(t)}
+                  className={`rounded-lg px-3 py-1 ${leaveTab === t ? 'bg-white text-sand-900 shadow-sm' : 'text-sand-500'}`}
+                >
+                  {t === 'PENDING' ? `Menunggu (${leaves.filter((x) => x.status === 'PENDING').length})` : 'Riwayat'}
+                </button>
+              ))}
+            </div>
+          }
+        >
+          {leaves.length === 0 ? (
+            <p className="py-4 text-center text-sm text-sand-400">
+              {leaveTab === 'PENDING' ? 'Tidak ada pengajuan menunggu.' : 'Belum ada riwayat pengajuan.'}
+            </p>
+          ) : (
+            <ul className="divide-y divide-sand-100">
+              {leaves.map((l) => (
+                <li key={l.id} className="flex flex-wrap items-center gap-3 py-2.5">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-sand-800">
+                      {l.employee?.name}
+                      <span className="ml-2 font-normal text-sand-500">
+                        {LEAVE_CAT[l.category]} ·{' '}
+                        {l.partialFromMin != null
+                          ? `pulang awal ${new Date(`${String(l.dateFrom).slice(0, 10)}T00:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })} pukul ${String(Math.floor((l.partialFromMin ?? 0) / 60)).padStart(2, '0')}:${String((l.partialFromMin ?? 0) % 60).padStart(2, '0')}`
+                          : l.dateFrom === l.dateTo
+                            ? fmtLeaveDate(l.dateFrom)
+                            : `${fmtLeaveDate(l.dateFrom)} – ${fmtLeaveDate(l.dateTo)}`}
+                      </span>
+                    </p>
+                    <p className="truncate text-xs text-sand-500">
+                      {l.note ?? '—'}
+                      {l.employee?.department ? ` · ${l.employee.department}` : ''}
+                      {l.status !== 'PENDING' && l.reviewedBy ? ` · ${l.status === 'APPROVED' ? 'disetujui' : 'ditolak'} oleh ${l.reviewedBy.name}` : ''}
+                      {l.status === 'REJECTED' && l.reviewNote ? ` (${l.reviewNote})` : ''}
+                    </p>
+                  </div>
+                  {l.status === 'PENDING' ? (
+                    <div className="flex gap-2">
+                      <Button size="sm" onClick={() => void actLeave(l, true)}>✓ Setujui</Button>
+                      <Button size="sm" variant="secondary" onClick={() => void actLeave(l, false)}>✗ Tolak</Button>
+                    </div>
+                  ) : (
+                    <Badge tone={l.status === 'APPROVED' ? 'primary' : l.status === 'REJECTED' ? 'danger' : 'neutral'}>
+                      {l.status === 'APPROVED' ? 'Disetujui' : l.status === 'REJECTED' ? 'Ditolak' : 'Dibatalkan'}
+                    </Badge>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </Widget>
+      )}
 
       <Widget
         title={`Absen ${new Date(`${date}T12:00:00`).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}`}

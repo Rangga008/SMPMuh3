@@ -28,7 +28,10 @@ export interface CbtSession {
     durationMin: number; startAt: string; endAt: string; totalQuestions: number;
   };
   student: { name: string; nis: string | null; className: string };
-  attempt: { status: string; startedAt: string; deadline: string; remainingSec: number };
+  attempt: {
+    status: string; startedAt: string; deadline: string; remainingSec: number;
+    violations?: number; warnAfter?: number; blockAfter?: number;
+  };
 }
 
 export interface CbtQuestion {
@@ -48,6 +51,9 @@ export interface CbtPaper {
   deadline: string;
   serverNow: string;
   remainingSec: number;
+  violations?: number;
+  warnAfter?: number;
+  blockAfter?: number;
 }
 
 /** HTML dari impor Word — path gambar relatif API diprefiks base URL penuh. */
@@ -55,9 +61,34 @@ export const mediaUrl = (src: string) => (src.startsWith('http') ? src : `${API}
 export const fixMediaHtml = (html: string) =>
   html.replace(/src="(\/cbt\/media\/[^"]+)"/g, (_, s: string) => `src="${API}${s}"`);
 
-/** Render "$…$"/"$$…$$" di HTML menjadi rumus KaTeX — dari persamaan Word hasil impor. */
+/**
+ * Matematika telanjang (tanpa "$…$") yang umum diketik guru — konversi ke LaTeX
+ * lalu ikut dirender: pangkat `x^2`/`x^{2n}`/`x^(a+b)`, subskrip `x_1`/`x_{ij}`,
+ * dan `sqrt(…)`/`akar(…)`/`sqrt16`. Mirror lib/math.ts operational — hanya
+ * segmen teks biasa; tag HTML dan rumus "$…$" yang ada tidak diubah.
+ */
+const bareMathSeg = (seg: string) =>
+  seg
+    .replace(/\\sqrt\{([^}]*)\}/g, '$$\\sqrt{$1}$$')
+    .replace(/\\frac\{([^}]*)\}\{([^}]*)\}/g, '$$\\frac{$1}{$2}$$')
+    .replace(/\b(?:sqrt|akar)\s*\(([^()]*(?:\([^()]*\)[^()]*)*)\)/gi, '$$\\sqrt{$1}$$')
+    .replace(/\bsqrt\s+(\d+)/gi, '$$\\sqrt{$1}$$')
+    .replace(/([a-zA-Z0-9.,)\]}])\^\{([^}]*)\}/g, '$$$1^{$2}$$')
+    .replace(/([a-zA-Z0-9.,)\]}])\^\(([^()]*)\)/g, '$$$1^{$2}$$')
+    .replace(/([a-zA-Z0-9.,])\^([a-zA-Z0-9.]+)/g, '$$$1^{$2}$$')
+    .replace(/\b([a-zA-Z])_\{([^}]*)\}/g, '$$$1_{$2}$$')
+    .replace(/\b([a-zA-Z])_(\d+)/g, '$$$1_{$2}$$');
+
+const autoMath = (html: string) =>
+  html
+    .split(/(<[^>]+>|\$\$[^$]+?\$\$|\$[^$\n]+?\$)/g)
+    .map((seg) => (seg.startsWith('<') || seg.startsWith('$') ? seg : bareMathSeg(seg)))
+    .join('');
+
+/** Render "$…$"/"$$…$$" di HTML menjadi rumus KaTeX — dari persamaan Word hasil impor,
+    plus pola matematika telanjang yang lazim diketik (x^2, sqrt(…), x_1). */
 export const renderMathHtml = (html: string) =>
-  html.replace(/\$\$([^$<]+?)\$\$|\$([^$<\n]+?)\$/g, (whole, disp: string, inl: string) => {
+  autoMath(html).replace(/\$\$([^$<]+?)\$\$|\$([^$<\n]+?)\$/g, (whole, disp: string, inl: string) => {
     const tex = disp ?? inl;
     try {
       return katex.renderToString(tex, { throwOnError: false, displayMode: disp !== undefined });
@@ -144,3 +175,11 @@ export const saveAnswer = (token: string, questionId: string, answer: unknown) =
 export const submitExam = (token: string) =>
   pub<{ submitted: boolean; score: number | null; maxScore: number | null }>(`/paper/${token}/submit`, { method: 'POST' });
 export const getResult = (token: string) => pub<CbtResult>(`/result/${token}`);
+
+/** Lapor pelanggaran proteksi — level: log | warn | blocked | expired | done. */
+export interface ViolationResult {
+  level: 'log' | 'warn' | 'blocked' | 'expired' | 'done';
+  violations: number; warnAfter?: number; blockAfter?: number;
+}
+export const reportViolation = (token: string, kind: string) =>
+  pub<ViolationResult>(`/paper/${token}/violation`, { method: 'POST', json: { kind } });

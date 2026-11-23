@@ -252,6 +252,8 @@ export class CbtService {
         durationMin: dto.durationMin,
         shuffle: dto.shuffle ?? false,
         showScore: dto.showScore ?? true,
+        warnAfter: dto.warnAfter ?? 2,
+        blockAfter: dto.blockAfter ?? 4,
         createdBy: actorId,
       },
       include: { subject: { select: { name: true } }, assessment: { select: { name: true } } },
@@ -322,6 +324,11 @@ export class CbtService {
     const start = dto.startAt ? new Date(dto.startAt) : exam.startAt;
     const end = dto.endAt ? new Date(dto.endAt) : exam.endAt;
     if (!(end > start)) throw new BadRequestException('Waktu selesai harus setelah waktu mulai.');
+    const warnAfter = dto.warnAfter ?? exam.warnAfter;
+    const blockAfter = dto.blockAfter ?? exam.blockAfter;
+    if (blockAfter > 0 && warnAfter >= blockAfter) {
+      throw new BadRequestException('Ambang blokir harus lebih besar dari ambang peringatan.');
+    }
     const updated = await this.prisma.exam.update({
       where: { id },
       data: {
@@ -336,6 +343,8 @@ export class CbtService {
         ...(dto.shuffle !== undefined ? { shuffle: dto.shuffle } : {}),
         ...(dto.showScore !== undefined ? { showScore: dto.showScore } : {}),
         ...(dto.status !== undefined ? { status: dto.status } : {}),
+        warnAfter,
+        blockAfter,
       },
     });
     // Ujian dibuka / rombel berubah → siapkan password semua peserta (kartu & login).
@@ -638,6 +647,9 @@ export class CbtService {
     if (attempt?.status === 'SUBMITTED') {
       throw new ConflictException('Kamu sudah menyelesaikan ujian ini.');
     }
+    if (attempt?.status === 'BLOCKED') {
+      throw new ForbiddenException('Sesi ujianmu diblokir proteksi — hubungi pengawas untuk membukanya kembali.');
+    }
     if (!attempt) {
       const deadline = new Date(
         Math.min(now.getTime() + exam.durationMin * 60_000, exam.endAt.getTime()),
@@ -659,10 +671,11 @@ export class CbtService {
   }
 
   private async buildSession(
-    attempt: { id: string; token: string; status: string; startedAt: Date; deadline: Date },
+    attempt: { id: string; token: string; status: string; startedAt: Date; deadline: Date; violations?: number },
     exam: {
       id: string; assessmentId: string; title: string; instructions: string | null;
       durationMin: number; startAt: Date; endAt: Date; showScore: boolean;
+      warnAfter?: number; blockAfter?: number;
       subject?: { name: string } | null;
       assessment: { name: string; subject: { name: string } | null };
     },
@@ -689,6 +702,9 @@ export class CbtService {
         startedAt: attempt.startedAt,
         deadline: attempt.deadline,
         remainingSec: Math.max(0, Math.floor((attempt.deadline.getTime() - Date.now()) / 1000)),
+        violations: attempt.violations ?? 0,
+        warnAfter: exam.warnAfter ?? 0,
+        blockAfter: exam.blockAfter ?? 0,
       },
     };
   }
@@ -724,10 +740,120 @@ export class CbtService {
     if (attempt.status === 'SUBMITTED') {
       throw new ConflictException('Ujian sudah dikumpulkan.');
     }
+    if (attempt.status === 'BLOCKED') {
+      throw new ForbiddenException('Sesi ujianmu diblokir proteksi — hubungi pengawas untuk membukanya kembali.');
+    }
     if (Date.now() > attempt.deadline.getTime()) {
       await this.finalize(attempt.id);
       throw new ConflictException('Waktu habis — jawabanmu otomatis dikumpulkan.');
     }
+  }
+
+  /**
+   * Laporkan pelanggaran proteksi dari aplikasi siswa (keluar tab/aplikasi,
+   * fullscreen lepas, dsb). Ambang diatur per ujian:
+   * warnAfter → peringatan ke siswa; blockAfter → sesi diblokir (BLOCKED),
+   * jawaban tetap tersimpan dan sesi hanya bisa dibuka pengawas/admin.
+   */
+  async reportViolation(token: string, kind?: string) {
+    const attempt = await this.attemptOrThrow(token);
+    if (attempt.status === 'SUBMITTED' || attempt.status === 'BLOCKED') {
+      return { level: attempt.status === 'BLOCKED' ? 'blocked' : 'done', violations: attempt.violations };
+    }
+    if (Date.now() > attempt.deadline.getTime()) {
+      await this.finalize(attempt.id);
+      return { level: 'expired', violations: attempt.violations };
+    }
+    const exam = await this.prisma.exam.findUniqueOrThrow({ where: { id: attempt.examId } });
+    // Increment atomik — dua laporan pelanggaran bersamaan tak saling menimpa.
+    const upd = await this.prisma.examAttempt.update({
+      where: { id: attempt.id },
+      data: { violations: { increment: 1 } },
+    });
+    const v = upd.violations;
+    if (exam.blockAfter > 0 && v >= exam.blockAfter) {
+      // Hanya transisi dari STARTED — updateMany agar balapan laporan/unblock idempoten.
+      const blk = await this.prisma.examAttempt.updateMany({
+        where: { id: attempt.id, status: 'STARTED' },
+        data: { status: 'BLOCKED', blockedAt: new Date() },
+      });
+      if (blk.count) {
+        await this.audit.log({
+          action: 'exam.attempt-block', entity: 'exam_attempt', entityId: attempt.id,
+          metadata: { examId: attempt.examId, studentId: attempt.studentId, violations: v, kind },
+        });
+      }
+      return { level: 'blocked', violations: v, warnAfter: exam.warnAfter, blockAfter: exam.blockAfter };
+    }
+    return {
+      level: exam.warnAfter > 0 && v >= exam.warnAfter ? 'warn' : 'log',
+      violations: v, warnAfter: exam.warnAfter, blockAfter: exam.blockAfter,
+    };
+  }
+
+  // ---------- Aksi pengawas pada sesi siswa (monitor) ----------
+
+  private async attemptOf(examId: string, studentId: string) {
+    const a = await this.prisma.examAttempt.findUnique({
+      where: { examId_studentId: { examId, studentId } },
+    });
+    if (!a) throw new NotFoundException('Siswa ini belum punya sesi ujian.');
+    return a;
+  }
+
+  /** Buka sesi yang diblokir proteksi — pelanggaran dihitung ulang dari nol.
+   *  Bila deadline sudah lewat, siswa dapat sisa durasi penuh lagi. */
+  async unblockAttempt(examId: string, studentId: string, actor: AuthUser) {
+    const a = await this.attemptOf(examId, studentId);
+    if (a.status !== 'BLOCKED') throw new ConflictException('Sesi ini tidak sedang diblokir.');
+    const exam = await this.prisma.exam.findUniqueOrThrow({ where: { id: examId } });
+    const deadline = a.deadline.getTime() > Date.now()
+      ? a.deadline
+      : new Date(Math.min(Date.now() + exam.durationMin * 60_000, exam.endAt.getTime()));
+    const upd = await this.prisma.examAttempt.update({
+      where: { id: a.id },
+      data: { status: 'STARTED', blockedAt: null, violations: 0, deadline },
+    });
+    await this.audit.log({
+      actorId: actor.id, action: 'exam.attempt-unblock', entity: 'exam_attempt', entityId: a.id,
+      metadata: { examId, studentId },
+    });
+    return upd;
+  }
+
+  /** Kumpulkan paksa sesi siswa (sedang berjalan/diblokir) — dinilai apa adanya. */
+  async forceSubmitAttempt(examId: string, studentId: string, actor: AuthUser) {
+    const a = await this.attemptOf(examId, studentId);
+    if (a.status === 'SUBMITTED') throw new ConflictException('Sesi ini sudah dinilai.');
+    const r = await this.finalize(a.id);
+    await this.audit.log({
+      actorId: actor.id, action: 'exam.attempt-force-submit', entity: 'exam_attempt', entityId: a.id,
+      metadata: { examId, studentId },
+    });
+    return r;
+  }
+
+  /** Reset pengerjaan — hapus sesi + jawaban + nilai; siswa bisa masuk ulang dari awal.
+   *  StudentAnswer hanya dihapus untuk soal milik ujian ini (soal bank asesmen bisa
+   *  dipakai ujian/input lain — menghapusnya akan ikut menghapus data itu). */
+  async resetAttempt(examId: string, studentId: string, actor: AuthUser) {
+    const a = await this.attemptOf(examId, studentId);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.examAnswer.deleteMany({ where: { attemptId: a.id } });
+      await tx.grade.deleteMany({ where: { examId, studentId } });
+      const ownQ = await tx.assessmentQuestion.findMany({ where: { examId }, select: { id: true } });
+      if (ownQ.length) {
+        await tx.studentAnswer.deleteMany({
+          where: { questionId: { in: ownQ.map((q) => q.id) }, studentId },
+        });
+      }
+      await tx.examAttempt.delete({ where: { id: a.id } });
+    });
+    await this.audit.log({
+      actorId: actor.id, action: 'exam.attempt-reset', entity: 'exam_attempt', entityId: a.id,
+      metadata: { examId, studentId, previousStatus: a.status },
+    });
+    return { reset: true };
   }
 
   /** Daftar soal (tanpa kunci) + jawaban tersimpan — untuk halaman pengerjaan. */
@@ -771,6 +897,9 @@ export class CbtService {
       deadline: attempt.deadline,
       serverNow: new Date(),
       remainingSec: Math.max(0, Math.floor((attempt.deadline.getTime() - Date.now()) / 1000)),
+      violations: attempt.violations,
+      warnAfter: exam.warnAfter,
+      blockAfter: exam.blockAfter,
     };
   }
 
@@ -947,11 +1076,15 @@ export class CbtService {
               if ((a._count?.answers ?? 0) === 0) flags.push('TANPA_JAWABAN');
             }
             if ((a?.enterCount ?? 0) > 2) flags.push('MASUK_BERKALI');
+            const status = !a ? 'BELUM'
+              : a.status === 'SUBMITTED' ? 'SELESAI'
+              : a.status === 'BLOCKED' ? 'DIBLOKIR'
+              : 'MENGERJAKAN';
             return {
               studentId: e.student.id,
               name: e.student.name,
               nis: e.student.nis,
-              status: !a ? 'BELUM' : a.status === 'SUBMITTED' ? 'SELESAI' : 'MENGERJAKAN',
+              status,
               answered: a?._count.answers ?? 0,
               startedAt: a?.startedAt ?? null,
               submittedAt: a?.submittedAt ?? null,
@@ -959,6 +1092,8 @@ export class CbtService {
               score: a?.status === 'SUBMITTED' ? a.score : null,
               maxScore: a?.status === 'SUBMITTED' ? a.maxScore : null,
               enterCount: a?.enterCount ?? 0,
+              violations: a?.violations ?? 0,
+              blockedAt: a?.blockedAt ?? null,
               flags,
             };
           });
@@ -969,7 +1104,7 @@ export class CbtService {
           total: students.length,
           done: students.filter((s) => s.status === 'SELESAI').length,
           working: students.filter((s) => s.status === 'MENGERJAKAN').length,
-          violations: students.filter((s) => s.flags.length > 0).length,
+          violations: students.filter((s) => s.flags.length > 0 || s.violations > 0 || s.status === 'DIBLOKIR').length,
           students,
         };
       }),

@@ -974,21 +974,29 @@ export class AttendanceService {
     };
   }
 
-  /** Pegawai setor izin sendiri (sakit/dinas/workshop/lainnya) dari Absen Saya.
-      Status: SAKIT→SAKIT, lainnya→IZIN; tidak menimpa hari yang sudah HADIR/TELAT.
-      `fromMinute` (menit WIB) → izin PULANG AWAL: hanya untuk yang sudah absen masuk;
-      sisa hari setelah menit itu dihitung izin (JP & jam pulang di-cap ke sana). */
-  async submitLeave(userId: string, dto: { date: string; category: 'SAKIT' | 'DINAS' | 'WORKSHOP' | 'LAINNYA'; note?: string; fromMinute?: number }) {
+  /** Pegawai setor PENGAJUAN izin (sakit/dinas/workshop/lainnya) dari Absen Saya
+      atau aplikasi — berstatus PENDING sampai disetujui piket/kurikulum.
+      `fromMinute` → izin PULANG AWAL (hanya hari yang sudah ada absen masuk).
+      `endDate` → izin rentang tanggal (maks 31 hari). Status pegawai baru
+      ditulis ke rekap setelah disetujui (approveLeave). */
+  async submitLeave(userId: string, dto: { date: string; endDate?: string; category: 'SAKIT' | 'DINAS' | 'WORKSHOP' | 'LAINNYA'; note?: string; fromMinute?: number }) {
     const emp = await this.employeeOfUser(userId);
-    const day = localDay(new Date(`${dto.date}T00:00:00+07:00`));
-    if (Number.isNaN(day.getTime())) throw new BadRequestException('Tanggal tidak valid.');
-    const existing = await this.prisma.employeeAttendance.findUnique({
-      where: { employeeId_date: { employeeId: emp.id, date: day } },
-    });
+    const dayFrom = localDay(new Date(`${dto.date}T00:00:00+07:00`));
+    const dayTo = dto.endDate ? localDay(new Date(`${dto.endDate}T00:00:00+07:00`)) : dayFrom;
+    if (Number.isNaN(dayFrom.getTime()) || Number.isNaN(dayTo.getTime())) {
+      throw new BadRequestException('Tanggal tidak valid.');
+    }
+    if (dayTo < dayFrom) throw new BadRequestException('Tanggal akhir harus sama atau setelah tanggal mulai.');
+    const rangeDays = Math.round((dayTo.getTime() - dayFrom.getTime()) / 86400000) + 1;
+    if (rangeDays > 31) throw new BadRequestException('Rentang izin maksimal 31 hari — bagi menjadi beberapa pengajuan.');
+
     const catLabel = { SAKIT: 'Sakit', DINAS: 'Dinas luar', WORKSHOP: 'Workshop/Pelatihan', LAINNYA: 'Lainnya' }[dto.category];
 
-    // ---------- Izin pulang awal (parsial) ----------
+    // ---------- Izin pulang awal (parsial, satu hari) ----------
     if (dto.fromMinute != null) {
+      const existing = await this.prisma.employeeAttendance.findUnique({
+        where: { employeeId_date: { employeeId: emp.id, date: dayFrom } },
+      });
       if (!existing?.checkInAt) {
         throw new BadRequestException('Izin pulang awal hanya untuk hari yang sudah ada absen masuk — absen dulu, atau kirim izin penuh.');
       }
@@ -999,29 +1007,124 @@ export class AttendanceService {
       if (dto.fromMinute <= inMin) {
         throw new BadRequestException(`Waktu mulai izin harus setelah jam masuk (${minToHHMM(inMin)} WIB).`);
       }
-      const rec = await this.prisma.employeeAttendance.update({
+    } else {
+      // Izin penuh: tolak bila SELURUH rentang sudah tercatat hadir.
+      const present = await this.prisma.employeeAttendance.count({
+        where: { employeeId: emp.id, date: { gte: dayFrom, lte: dayTo }, status: { in: ['HADIR', 'TELAT'] } },
+      });
+      if (present === rangeDays) {
+        throw new ConflictException('Seluruh tanggal pengajuan sudah tercatat hadir — izin tidak bisa dikirim.');
+      }
+    }
+
+    // Tolak pengajuan yang tumpang-tindih dengan pengajuan lain yang masih menunggu.
+    const overlap = await this.prisma.leaveRequest.findFirst({
+      where: {
+        employeeId: emp.id,
+        status: 'PENDING',
+        dateFrom: { lte: dayTo },
+        dateTo: { gte: dayFrom },
+      },
+    });
+    if (overlap) {
+      throw new ConflictException('Masih ada pengajuan izin yang menunggu persetujuan pada tanggal tersebut.');
+    }
+
+    const req = await this.prisma.leaveRequest.create({
+      data: {
+        employeeId: emp.id,
+        dateFrom: dayFrom,
+        dateTo: dayTo,
+        category: dto.category,
+        note: dto.note ?? null,
+        partialFromMin: dto.fromMinute ?? null,
+      },
+    });
+    await this.audit.log({
+      actorId: userId, action: 'attendance.leave.request', entity: 'leave_request', entityId: req.id,
+      metadata: { dateFrom: dto.date, dateTo: dto.endDate ?? dto.date, category: dto.category, partialFrom: dto.fromMinute },
+    });
+    return req;
+  }
+
+  /** Daftar pengajuan izin milik pegawai yang login (30 terakhir). */
+  async myLeaveRequests(userId: string) {
+    const emp = await this.employeeOfUser(userId);
+    return this.prisma.leaveRequest.findMany({
+      where: { employeeId: emp.id },
+      orderBy: { createdAt: 'desc' },
+      take: 30,
+      include: { reviewedBy: { select: { name: true } } },
+    });
+  }
+
+  /** Batalkan pengajuan sendiri yang masih menunggu. */
+  async cancelLeave(userId: string, id: string) {
+    const emp = await this.employeeOfUser(userId);
+    const req = await this.prisma.leaveRequest.findUnique({ where: { id } });
+    if (!req || req.employeeId !== emp.id) throw new BadRequestException('Pengajuan tidak ditemukan.');
+    if (req.status !== 'PENDING') throw new ConflictException('Pengajuan sudah diproses — tidak bisa dibatalkan.');
+    const upd = await this.prisma.leaveRequest.update({ where: { id }, data: { status: 'CANCELLED' } });
+    await this.audit.log({
+      actorId: userId, action: 'attendance.leave.cancel', entity: 'leave_request', entityId: id,
+      metadata: { dateFrom: req.dateFrom, dateTo: req.dateTo },
+    });
+    return upd;
+  }
+
+  /** Daftar pengajuan untuk approver (piket/kurikulum/TU). */
+  async listLeaveRequests(status?: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED') {
+    return this.prisma.leaveRequest.findMany({
+      ...(status ? { where: { status } } : {}),
+      orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
+      take: 200,
+      include: {
+        employee: { select: { id: true, name: true, nip: true, department: true } },
+        reviewedBy: { select: { name: true } },
+      },
+    });
+  }
+
+  /** Setujui pengajuan → tulis status ke rekap harian. Parsial: cap jam pulang
+      & JP ke batas izin; penuh: per-hari upsert, lewati hari yang sudah hadir. */
+  async approveLeave(id: string, actorId: string) {
+    const req = await this.prisma.leaveRequest.findUnique({ where: { id }, include: { employee: true } });
+    if (!req) throw new BadRequestException('Pengajuan tidak ditemukan.');
+    if (req.status !== 'PENDING') throw new ConflictException('Pengajuan sudah diproses.');
+    const catLabel = { SAKIT: 'Sakit', DINAS: 'Dinas luar', WORKSHOP: 'Workshop/Pelatihan', LAINNYA: 'Lainnya' }[req.category as 'SAKIT' | 'DINAS' | 'WORKSHOP' | 'LAINNYA'];
+    let appliedDays = 0;
+    let skippedDays = 0;
+
+    if (req.partialFromMin != null) {
+      // ---------- Izin pulang awal ----------
+      const day = req.dateFrom;
+      const existing = await this.prisma.employeeAttendance.findUnique({
+        where: { employeeId_date: { employeeId: req.employeeId, date: day } },
+      });
+      if (!existing?.checkInAt) {
+        throw new BadRequestException('Belum ada absen masuk pada tanggal itu — izin pulang awal tidak bisa diterapkan.');
+      }
+      await this.prisma.employeeAttendance.update({
         where: { id: existing.id },
         data: {
-          partialLeaveFromMin: dto.fromMinute,
-          leaveCategory: dto.category,
-          note: dto.note ?? `${catLabel} — izin sejak ${minToHHMM(dto.fromMinute)} WIB`,
+          partialLeaveFromMin: req.partialFromMin,
+          leaveCategory: req.category,
+          note: req.note ?? `${catLabel} — izin sejak ${minToHHMM(req.partialFromMin)} WIB`,
           source: 'SELFIE',
         },
       });
-      // Hitung ulang rekap: jam pulang & JP di-cap ke batas izin.
-      await this.deriveDay(emp.id, day);
-      // Rekap manual tanpa log tak ter-derive — JP dihitung ulang di sini:
-      // jadwal mengajar sampai batas izin, fallback durasi masuk→(min pulang/izin).
-      const refreshed = await this.prisma.employeeAttendance.findUnique({ where: { id: rec.id } });
+      await this.deriveDay(req.employeeId, day);
+      // JP dihitung ulang: jadwal mengajar sampai batas izin, fallback durasi masuk→izin.
+      const refreshed = await this.prisma.employeeAttendance.findUnique({ where: { id: existing.id } });
       if (refreshed && (refreshed.status === 'HADIR' || refreshed.status === 'TELAT') && refreshed.checkInAt) {
         const lessonMin = await this.lessonMinutes();
         let expected = Math.round(
-          (await this.scheduledMinutes(emp.id, day, dto.fromMinute)) / lessonMin,
+          (await this.scheduledMinutes(req.employeeId, day, req.partialFromMin)) / lessonMin,
         );
         if (!expected) {
           const outMin = Math.min(
-            refreshed.checkOutAt ? localMinutes(refreshed.checkOutAt) : dto.fromMinute,
-            dto.fromMinute,
+            refreshed.checkOutAt ? localMinutes(refreshed.checkOutAt) : req.partialFromMin,
+            req.partialFromMin,
           );
           expected = Math.round(
             Math.max(0, outMin - localMinutes(refreshed.checkInAt)) / lessonMin,
@@ -1029,36 +1132,61 @@ export class AttendanceService {
         }
         if (expected !== refreshed.teachingJp) {
           await this.prisma.employeeAttendance.update({
-            where: { id: rec.id },
+            where: { id: existing.id },
             data: { teachingJp: expected },
           });
         }
       }
-      await this.audit.log({
-        actorId: userId, action: 'attendance.leave', entity: 'employee_attendance', entityId: rec.id,
-        metadata: { date: dto.date, category: dto.category, partialFrom: dto.fromMinute },
-      });
-      return this.prisma.employeeAttendance.findUnique({ where: { id: rec.id } });
+      appliedDays = 1;
+    } else {
+      // ---------- Izin penuh rentang tanggal ----------
+      const status = req.category === 'SAKIT' ? 'SAKIT' : 'IZIN';
+      for (let t = req.dateFrom.getTime(); t <= req.dateTo.getTime(); t += 86400000) {
+        const day = new Date(t);
+        const existing = await this.prisma.employeeAttendance.findUnique({
+          where: { employeeId_date: { employeeId: req.employeeId, date: day } },
+        });
+        if (existing && (existing.status === 'HADIR' || existing.status === 'TELAT')) {
+          skippedDays++;
+          continue;
+        }
+        await this.prisma.employeeAttendance.upsert({
+          where: { employeeId_date: { employeeId: req.employeeId, date: day } },
+          update: { status, leaveCategory: req.category, note: req.note ?? catLabel, source: 'SELFIE' },
+          create: {
+            employeeId: req.employeeId, date: day, status,
+            leaveCategory: req.category, note: req.note ?? catLabel, source: 'SELFIE',
+          },
+        });
+        appliedDays++;
+      }
     }
 
-    // ---------- Izin penuh sehari ----------
-    if (existing && (existing.status === 'HADIR' || existing.status === 'TELAT')) {
-      throw new ConflictException(`Tanggal ${dto.date} sudah tercatat hadir — izin tidak bisa dikirim.`);
-    }
-    const status = dto.category === 'SAKIT' ? 'SAKIT' : 'IZIN';
-    const rec = await this.prisma.employeeAttendance.upsert({
-      where: { employeeId_date: { employeeId: emp.id, date: day } },
-      update: { status, leaveCategory: dto.category, note: dto.note ?? `${catLabel}`, source: 'SELFIE' },
-      create: {
-        employeeId: emp.id, date: day, status,
-        leaveCategory: dto.category, note: dto.note ?? catLabel, source: 'SELFIE',
-      },
+    const upd = await this.prisma.leaveRequest.update({
+      where: { id },
+      data: { status: 'APPROVED', reviewedById: actorId, reviewedAt: new Date(), appliedDays },
     });
     await this.audit.log({
-      actorId: userId, action: 'attendance.leave', entity: 'employee_attendance', entityId: rec.id,
-      metadata: { date: dto.date, category: dto.category },
+      actorId, action: 'attendance.leave.approve', entity: 'leave_request', entityId: id,
+      metadata: { employeeId: req.employeeId, appliedDays, skippedDays },
     });
-    return rec;
+    return { ...upd, appliedDays, skippedDays };
+  }
+
+  /** Tolak pengajuan dengan catatan opsional. */
+  async rejectLeave(id: string, actorId: string, note?: string) {
+    const req = await this.prisma.leaveRequest.findUnique({ where: { id } });
+    if (!req) throw new BadRequestException('Pengajuan tidak ditemukan.');
+    if (req.status !== 'PENDING') throw new ConflictException('Pengajuan sudah diproses.');
+    const upd = await this.prisma.leaveRequest.update({
+      where: { id },
+      data: { status: 'REJECTED', reviewedById: actorId, reviewedAt: new Date(), reviewNote: note ?? null },
+    });
+    await this.audit.log({
+      actorId, action: 'attendance.leave.reject', entity: 'leave_request', entityId: id,
+      metadata: { employeeId: req.employeeId, note },
+    });
+    return upd;
   }
 
   /** Admin/TU clear absen 1 hari 1 pegawai (salah absen — mis. tap padahal libur):

@@ -10,6 +10,7 @@ import {
   getSession,
   saveAnswer,
   submitExam,
+  reportViolation,
   type CbtPaper,
   type CbtQuestion,
   type CbtSession,
@@ -60,6 +61,11 @@ export default function CbtRunnerPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const submitted = useRef(false);
+  // ---- Proteksi ujian ----
+  const [violations, setViolations] = useState(0);
+  const [warnInfo, setWarnInfo] = useState<{ violations: number; blockAfter: number } | null>(null);
+  const [blocked, setBlocked] = useState(false);
+  const armed = useRef({ hidden: true, blur: true });
 
   const finish = useCallback(
     async (auto: boolean) => {
@@ -85,12 +91,17 @@ export default function CbtRunnerPage() {
         setSession(s);
         setPaper(p);
         setAnswers(p.answers);
+        setViolations(p.violations ?? s.attempt.violations ?? 0);
         // Sinkronkan dengan jam server — hindari jam klien yang salah.
         setLeft(Math.max(0, Math.floor((new Date(p.deadline).getTime() - new Date(p.serverNow).getTime()) / 1000)));
       })
       .catch((e) => {
         if (e instanceof ApiError && e.status === 409) {
           router.replace(`/${token}/hasil?auto=1`);
+          return;
+        }
+        if (e instanceof ApiError && e.status === 403 && /diblokir/i.test(e.message)) {
+          setBlocked(true);
           return;
         }
         setError(e instanceof ApiError ? e.message : 'Gagal memuat soal.');
@@ -122,6 +133,41 @@ export default function CbtRunnerPage() {
     return () => window.removeEventListener('beforeunload', h);
   }, []);
 
+  // ---- Deteksi pelanggaran proteksi: keluar tab/aplikasi ----
+  // Satu laporan per kejadian (re-arm saat kembali fokus) — server menentukan
+  // ambang warn/blokir per ujian; pelanggaran kecil pertama tidak ditampilkan.
+  useEffect(() => {
+    if (!paper || blocked) return;
+    const report = (kind: 'tab-hidden' | 'blur', arm: 'hidden' | 'blur') => {
+      if (!armed.current[arm] || submitted.current) return;
+      armed.current[arm] = false;
+      reportViolation(token, kind)
+        .then((r) => {
+          setViolations(r.violations);
+          if (r.level === 'blocked') setBlocked(true);
+          else if (r.level === 'warn') setWarnInfo({ violations: r.violations, blockAfter: r.blockAfter ?? 0 });
+          else if (r.level === 'expired') void finish(true);
+        })
+        .catch((e) => {
+          if (e instanceof ApiError && e.status === 403 && /diblokir/i.test(e.message)) setBlocked(true);
+        });
+    };
+    const onVis = () => {
+      if (document.visibilityState === 'hidden') report('tab-hidden', 'hidden');
+      else armed.current.hidden = true;
+    };
+    const onBlur = () => report('blur', 'blur');
+    const onFocus = () => { armed.current.blur = true; };
+    document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('blur', onBlur);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('blur', onBlur);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [paper, blocked, token, finish]);
+
   const pick = (q: CbtQuestion, value: unknown) => {
     setAnswers((a) => ({ ...a, [q.id]: value }));
     setSaving('saving');
@@ -130,6 +176,7 @@ export default function CbtRunnerPage() {
       .catch((e) => {
         setSaving('idle');
         if (e instanceof ApiError && e.status === 409) void finish(true);
+        else if (e instanceof ApiError && e.status === 403 && /diblokir/i.test(e.message)) setBlocked(true);
         else setError(e instanceof ApiError ? e.message : 'Jawaban gagal tersimpan.');
       });
   };
@@ -285,6 +332,23 @@ export default function CbtRunnerPage() {
     );
   };
 
+  if (blocked) {
+    return (
+      <main className="flex min-h-dvh items-center justify-center bg-sand-50 px-4">
+        <div className="w-full max-w-sm rounded-3xl bg-white p-8 text-center shadow-card">
+          <span className="mx-auto mb-4 grid size-16 place-items-center rounded-full bg-red-100 text-3xl">⛔</span>
+          <h1 className="text-lg font-black text-sand-900">Sesi Diblokir</h1>
+          <p className="mt-2 text-sm leading-relaxed text-sand-600">
+            Kamu keluar dari halaman ujian terlalu sering. Semua jawaban yang sudah diisi
+            <b> tersimpan aman</b> — panggil <b>pengawas</b> untuk membuka sesimu kembali atau mengumpulkan.
+          </p>
+          <p className="mt-3 rounded-xl bg-sand-50 px-3 py-2 text-xs text-sand-500">
+            {session?.student.name} · {session?.exam.title}
+          </p>
+        </div>
+      </main>
+    );
+  }
   if (error) {
     return (
       <main className="flex min-h-dvh items-center justify-center bg-sand-50 px-4">
@@ -311,6 +375,11 @@ export default function CbtRunnerPage() {
           <p className={`rounded-xl px-3 py-1.5 font-mono text-base font-black ${left < 300 ? 'animate-pulse bg-red-50 text-red-600' : 'bg-sand-100 text-sand-800'}`}>
             ⏱ {fmt(left)}
           </p>
+          {violations > 0 ? (
+            <span title="Pelanggaran tercatat" className="rounded-xl bg-amber-100 px-2.5 py-1.5 text-xs font-black text-amber-700">
+              ⚠ {violations}
+            </span>
+          ) : null}
           <Button size="sm" onClick={() => setConfirmSubmit(true)}>Kumpulkan</Button>
         </div>
       </header>
@@ -380,6 +449,24 @@ export default function CbtRunnerPage() {
           </div>
         </aside>
       </div>
+
+      {/* ---------- Peringatan pelanggaran ---------- */}
+      {warnInfo ? (
+        <div className="fixed inset-0 z-30 grid place-items-center bg-sand-950/60 p-4">
+          <div className="w-full max-w-sm rounded-3xl bg-white p-6 text-center shadow-card">
+            <span className="mx-auto mb-3 grid size-14 place-items-center rounded-full bg-amber-100 text-3xl">⚠️</span>
+            <h2 className="text-lg font-black text-sand-900">Peringatan Proteksi</h2>
+            <p className="mt-2 text-sm leading-relaxed text-sand-600">
+              Kamu terdeteksi <b>keluar dari halaman ujian</b> — ini pelanggaran ke-{warnInfo.violations}.
+              {warnInfo.blockAfter > 0
+                ? ` Jika mencapai ${warnInfo.blockAfter}×, sesimu diblokir dan hanya bisa dibuka pengawas.`
+                : ''}
+            </p>
+            <p className="mt-2 text-xs text-sand-500">Tetap di halaman ini sampai ujian selesai.</p>
+            <Button className="mt-5 w-full" onClick={() => setWarnInfo(null)}>Saya Mengerti</Button>
+          </div>
+        </div>
+      ) : null}
 
       {/* ---------- Konfirmasi kumpul ---------- */}
       {confirmSubmit ? (

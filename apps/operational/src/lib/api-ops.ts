@@ -549,6 +549,8 @@ export interface ExamView {
   questions?: AssessmentQuestion[];
   startAt: string; endAt: string; durationMin: number;
   shuffle: boolean; showScore: boolean; createdAt: string;
+  /** Proteksi: pelanggaran ke-N → peringatan; ke-M → sesi diblokir. */
+  warnAfter?: number; blockAfter?: number;
   assessment: {
     id: string; name: string; type: string;
     subject?: { name: string; code: string } | null;
@@ -575,6 +577,7 @@ export const getExam = (id: string) => req<ExamView>(`/cbt/exams/${id}`);
 export const updateExam = (id: string, dto: Partial<{
   title: string; instructions: string | null; startAt: string; endAt: string;
   durationMin: number; classIds: string[]; shuffle: boolean; showScore: boolean;
+  warnAfter: number; blockAfter: number;
   subjectId: string | null; gradeLevel: number | null;
   status: 'DRAFT' | 'OPEN' | 'CLOSED';
 }>) => req<ExamView>(`/cbt/exams/${id}`, { method: 'PATCH', json: dto });
@@ -589,14 +592,22 @@ export interface MonitorClass {
   total: number; done: number; working: number; violations: number;
   students: {
     studentId: string; name: string; nis?: string | null;
-    status: 'BELUM' | 'MENGERJAKAN' | 'SELESAI';
+    status: 'BELUM' | 'MENGERJAKAN' | 'SELESAI' | 'DIBLOKIR';
     answered: number; startedAt?: string | null; submittedAt?: string | null;
     remainingSec?: number | null; score?: number | null; maxScore?: number | null;
-    enterCount?: number; flags: MonitorFlag[];
+    enterCount?: number; violations?: number; blockedAt?: string | null; flags: MonitorFlag[];
   }[];
 }
 export const examMonitor = (id: string) =>
   req<{ examId: string; classes: MonitorClass[] }>(`/cbt/exams/${id}/monitor`);
+
+// ---------- Aksi pengawas pada sesi siswa ----------
+export const unblockAttempt = (examId: string, studentId: string) =>
+  req(`/cbt/exams/${examId}/attempts/${studentId}/unblock`, { method: 'POST' });
+export const forceSubmitAttempt = (examId: string, studentId: string) =>
+  req<{ submitted: boolean }>(`/cbt/exams/${examId}/attempts/${studentId}/force-submit`, { method: 'POST' });
+export const resetAttempt = (examId: string, studentId: string) =>
+  req<{ reset: boolean }>(`/cbt/exams/${examId}/attempts/${studentId}/reset`, { method: 'POST' });
 /** Daftar ujian untuk monitor — endpoint cbt.monitor (semua staf: proktor/pengawas/tendik/guru). */
 export const listMonitorExams = (academicYearId?: string) =>
   req<(ExamView & { classes: { id: string; name: string; gradeLevel: number }[] })[]>(`/cbt/monitor/exams${academicYearId ? `?academicYearId=${academicYearId}` : ''}`);
