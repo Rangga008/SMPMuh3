@@ -1017,17 +1017,22 @@ export class AttendanceService {
       }
     }
 
-    // Tolak pengajuan yang tumpang-tindih dengan pengajuan lain yang masih menunggu.
+    // Tolak pengajuan yang tumpang-tindih dengan pengajuan lain yang masih
+    // menunggu ATAU sudah disetujui — tanggal itu sudah dinaungi izin.
     const overlap = await this.prisma.leaveRequest.findFirst({
       where: {
         employeeId: emp.id,
-        status: 'PENDING',
+        status: { in: ['PENDING', 'APPROVED'] },
         dateFrom: { lte: dayTo },
         dateTo: { gte: dayFrom },
       },
     });
     if (overlap) {
-      throw new ConflictException('Masih ada pengajuan izin yang menunggu persetujuan pada tanggal tersebut.');
+      throw new ConflictException(
+        overlap.status === 'APPROVED'
+          ? 'Tanggal tersebut sudah tercakup izin yang disetujui.'
+          : 'Masih ada pengajuan izin yang menunggu persetujuan pada tanggal tersebut.',
+      );
     }
 
     const req = await this.prisma.leaveRequest.create({
