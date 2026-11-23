@@ -24,7 +24,15 @@ async function bootstrap() {
 
   app.useLogger(app.get(Logger));
 
-  app.use(helmet());
+  app.use(
+    helmet({
+      // Media publik (gambar soal, foto siswa, dokumen SPMB) dimuat lewat
+      // <img> dari subdomain lain satu situs (op./cbt./spmb. → api.). Default
+      // helmet 'same-origin' memblokir semuanya; 'same-site' tetap menolak
+      // embed dari situs asing.
+      crossOriginResourcePolicy: { policy: 'same-site' },
+    }),
+  );
   // Mesin absensi (protokol iClock/ADMS) me-POST teks polos/tab-separated —
   // buffer manual jadi string untuk path /iclock, tanpa mengganggu parser JSON.
   app.use('/api/v1/iclock', (req: Request, _res: Response, next: NextFunction) => {

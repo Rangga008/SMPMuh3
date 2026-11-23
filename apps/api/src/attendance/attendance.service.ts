@@ -823,58 +823,65 @@ export class AttendanceService {
     }
     const now = new Date();
     const day = localDay(now);
-    const existing = await this.prisma.employeeAttendance.findUnique({
-      where: { employeeId_date: { employeeId: emp.id, date: day } },
-    });
     const nowMin = localMinutes(now);
-    if (inOut === 0) {
-      // Absen masuk: sekali per hari, dan hanya dalam jendela jam kerja.
-      if (existing?.checkInAt) {
-        throw new ConflictException(
-          `Sudah absen masuk hari ini pukul ${minToHHMM(localMinutes(existing.checkInAt))} WIB — masuk hanya bisa sekali.`,
-        );
-      }
-      const rule = await this.shiftRuleFor(emp.id, day);
-      if (nowMin < rule.workStartMin - CHECKIN_EARLY_MIN) {
-        throw new BadRequestException(
-          `Belum jam kerja — absen masuk paling awal ${minToHHMM(rule.workStartMin - CHECKIN_EARLY_MIN)} WIB.`,
-        );
-      }
-      if (nowMin > rule.workEndMin) {
-        throw new BadRequestException(
-          `Sudah di luar jam kerja (selesai ${minToHHMM(rule.workEndMin)} WIB) — absen masuk tidak bisa; absen pulang tetap bisa kapan saja.`,
-        );
-      }
-    } else {
-      // Absen pulang: harus sudah masuk, hanya sekali, tapi boleh jam berapa pun.
-      if (!existing?.checkInAt) {
-        throw new BadRequestException('Belum ada absen masuk hari ini — lakukan absen masuk lebih dulu.');
-      }
-      if (existing.checkOutAt) {
-        throw new ConflictException(
-          `Sudah absen pulang hari ini pukul ${minToHHMM(localMinutes(existing.checkOutAt))} WIB — pulang hanya bisa sekali.`,
-        );
-      }
-    }
+    // Aturan jendela jam masuk dibaca di luar tx — konfigurasi hampir tak
+    // pernah berubah dan bukan bagian dari race "sekali per hari".
+    const rule = inOut === 0 ? await this.shiftRuleFor(emp.id, day) : null;
     const ext = file.mimetype.includes('png') ? 'png' : 'jpg';
-    const photoKey = `attendance/selfie/${emp.id}/${localDay(now).toISOString().slice(0, 10)}-${inOut}-${now.getTime()}.${ext}`;
+    const photoKey = `attendance/selfie/${emp.id}/${day.toISOString().slice(0, 10)}-${inOut}-${now.getTime()}.${ext}`;
     await this.storage.putObject(photoKey, file.buffer, file.mimetype);
     // Platform ditandai di deviceKey ('SELFIE-APP-<id>' / 'SELFIE-WEB-<id>') agar
     // rekap bisa membedakan absen dari aplikasi HP vs browser — log lama
     // ('SELFIE-<id>') tetap kebaca sebagai SELFIE generik.
     const pltf = platform && /^[A-Z]{2,10}$/.test(platform) ? `${platform}-` : '';
-    const log = await this.prisma.attendanceLog.create({
-      data: {
-        deviceKey: `SELFIE-${pltf}${emp.id}`,
-        pin: `selfie-${emp.id}`,
-        punchedAt: now,
-        inOut,
-        employeeId: emp.id,
-        source: 'SELFIE',
-        photoKey,
-        latitude,
-        longitude,
-      },
+    // Advisory lock per pegawai+hari: cek "sekali sehari" + tulis log dalam
+    // satu transaksi — double-tap/request paralel tak bisa lolos berdua.
+    const log = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`selfie:${emp.id}:${day.toISOString()}`}))`;
+      const existing = await tx.employeeAttendance.findUnique({
+        where: { employeeId_date: { employeeId: emp.id, date: day } },
+      });
+      if (inOut === 0) {
+        // Absen masuk: sekali per hari, dan hanya dalam jendela jam kerja.
+        if (existing?.checkInAt) {
+          throw new ConflictException(
+            `Sudah absen masuk hari ini pukul ${minToHHMM(localMinutes(existing.checkInAt))} WIB — masuk hanya bisa sekali.`,
+          );
+        }
+        if (nowMin < rule!.workStartMin - CHECKIN_EARLY_MIN) {
+          throw new BadRequestException(
+            `Belum jam kerja — absen masuk paling awal ${minToHHMM(rule!.workStartMin - CHECKIN_EARLY_MIN)} WIB.`,
+          );
+        }
+        if (nowMin > rule!.workEndMin) {
+          throw new BadRequestException(
+            `Sudah di luar jam kerja (selesai ${minToHHMM(rule!.workEndMin)} WIB) — absen masuk tidak bisa; absen pulang tetap bisa kapan saja.`,
+          );
+        }
+      } else {
+        // Absen pulang: harus sudah masuk, hanya sekali, tapi boleh jam berapa pun.
+        if (!existing?.checkInAt) {
+          throw new BadRequestException('Belum ada absen masuk hari ini — lakukan absen masuk lebih dulu.');
+        }
+        if (existing.checkOutAt) {
+          throw new ConflictException(
+            `Sudah absen pulang hari ini pukul ${minToHHMM(localMinutes(existing.checkOutAt))} WIB — pulang hanya bisa sekali.`,
+          );
+        }
+      }
+      return tx.attendanceLog.create({
+        data: {
+          deviceKey: `SELFIE-${pltf}${emp.id}`,
+          pin: `selfie-${emp.id}`,
+          punchedAt: now,
+          inOut,
+          employeeId: emp.id,
+          source: 'SELFIE',
+          photoKey,
+          latitude,
+          longitude,
+        },
+      });
     });
     await this.deriveDay(emp.id, day);
     const attendance = await this.prisma.employeeAttendance.findUnique({

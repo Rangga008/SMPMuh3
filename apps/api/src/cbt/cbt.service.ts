@@ -438,6 +438,7 @@ export class CbtService {
       );
       await this.prisma.examCredential.createMany({
         data: missing.map((e) => ({ examId, studentId: e.studentId, password: pwOf.get(e.studentId)! })),
+        skipDuplicates: true,
       });
     }
     return { created: missing.length };
@@ -458,9 +459,17 @@ export class CbtService {
     if (!student.password) {
       await this.prisma.student.update({ where: { id: studentId }, data: { password: pw } });
     }
-    return this.prisma.examCredential.create({
-      data: { examId, studentId, password: pw },
-    });
+    return this.prisma.examCredential
+      .create({ data: { examId, studentId, password: pw } })
+      .catch((e: unknown) => {
+        // Race: pemanggil lain membuat credential duluan — pakai punyanya.
+        if ((e as { code?: string }).code === 'P2002') {
+          return this.prisma.examCredential.findUniqueOrThrow({
+            where: { examId_studentId: { examId, studentId } },
+          });
+        }
+        throw e;
+      });
   }
 
   /** Login awal siswa: NIS + password kartu → identitas + daftar ujian aktif.
@@ -633,9 +642,13 @@ export class CbtService {
       const deadline = new Date(
         Math.min(now.getTime() + exam.durationMin * 60_000, exam.endAt.getTime()),
       );
-      await this.prisma.examAttempt.create({
-        data: { examId: exam.id, studentId: student.id, deadline },
-      });
+      // Dua request masuk bersamaan → satu menang, satunya kena unique
+      // (examId+studentId) — aman diabaikan, baris sudah ada.
+      await this.prisma.examAttempt
+        .create({ data: { examId: exam.id, studentId: student.id, deadline } })
+        .catch((e: unknown) => {
+          if ((e as { code?: string }).code !== 'P2002') throw e;
+        });
     }
     // Hitung setiap masuk — sinyal keluar-masuk untuk monitor pelanggaran.
     const fresh = await this.prisma.examAttempt.update({
@@ -1246,7 +1259,12 @@ export class CbtService {
   /** Gambar soal/bacaan hasil impor — key `qmedia/<uuid>.<ext>`. */
   async questionMedia(key: string) {
     if (!/^qmedia\/[\w-]+\.(png|jpe?g|gif|webp)$/i.test(key)) throw new BadRequestException('Key media tidak valid.');
-    const buf = await this.storage.getObjectBuffer(key);
+    let buf: Buffer;
+    try {
+      buf = await this.storage.getObjectBuffer(key);
+    } catch {
+      throw new NotFoundException('Media tidak ditemukan.');
+    }
     const mime = /jpe?g$/i.test(key) ? 'image/jpeg' : `image/${key.split('.').pop()}`;
     return { buf, mime };
   }
