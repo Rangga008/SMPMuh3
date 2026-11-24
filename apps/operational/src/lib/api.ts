@@ -107,7 +107,7 @@ export async function req<T>(
       body?.error?.code,
     );
   }
-  return (body?.data ?? body) as T;
+  return (body && typeof body === 'object' && 'data' in body ? body.data : body) as T;
 }
 
 export const login = (identifier: string, password: string) =>

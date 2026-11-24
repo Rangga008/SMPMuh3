@@ -18,7 +18,7 @@ async function pub<T>(path: string, opts: RequestInit & { json?: unknown } = {})
   if (!res.ok) {
     throw new ApiError(body?.error?.message ?? `Permintaan gagal (${res.status})`, res.status, body?.error?.code);
   }
-  return (body?.data ?? body) as T;
+  return (body && typeof body === 'object' && 'data' in body ? body.data : body) as T;
 }
 
 export interface CbtSession {
