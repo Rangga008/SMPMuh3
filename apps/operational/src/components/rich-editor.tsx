@@ -27,7 +27,7 @@ const dispSrc = (url: string) => (url.startsWith('/') ? `${API}${url}` : url);
 const stripApi = (src: string) => (src.startsWith(`${API}/`) ? src.slice(API.length) : src);
 
 const chipHtml = (src: string) =>
-  `<span class="qf-math" contenteditable="false" data-tex="${escAttr(src)}" title="Klik untuk mengubah rumus">${renderMathHtml(src)}</span>`;
+  `<span class="qf-math" contenteditable="false" data-tex="${escAttr(src)}" title="Klik 2× untuk mengubah rumus">${renderMathHtml(src)}</span>`;
 
 const imgHtml = (url: string) =>
   `<span class="qf-img" contenteditable="false"><img src="${escAttr(dispSrc(url))}" data-src="${escAttr(url)}" alt=""><button type="button" class="qf-x" title="Hapus gambar">✕</button></span>`;
@@ -193,7 +193,9 @@ export const RichEditor = forwardRef<
           emit();
         }
       }}
-      onClick={(e) => {
+      onDoubleClick={(e) => {
+        // Edit chip hanya lewat klik ganda — klik tunggal tetap untuk
+        // menempatkan kursor mengetik seperti biasa.
         const chip = (e.target as HTMLElement).closest?.('.qf-math');
         if (chip && onMathChip) onMathChip(chip.getAttribute('data-tex') ?? '', chip as HTMLElement);
       }}

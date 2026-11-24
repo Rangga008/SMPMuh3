@@ -45,7 +45,7 @@ const stripHtml = (s: string) => s.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')
 type QDraft = {
   number: number;
   type: AssessmentQuestion['type'];
-  weight: number;
+  weight: string; // teks mentah ("2,5"/"2.5") — dinormalkan saat simpan
   prompt: string;
   passageCode: string;
   choices: string[];   // pilihan A–E (PG/PGK), pernyataan (BSK), atau sisi kiri (JODOH)
@@ -58,7 +58,7 @@ type QDraft = {
 };
 
 const blank = (number: number): QDraft => ({
-  number, type: 'MCQ', weight: 1, prompt: '', passageCode: '',
+  number, type: 'MCQ', weight: '1', prompt: '', passageCode: '',
   choices: ['', '', '', ''], rights: [],
   keySingle: null, keyMulti: [], keyBool: null, keyBools: [], keyPairs: [],
 });
@@ -67,7 +67,7 @@ function toDraft(q: AssessmentQuestion | Omit<AssessmentQuestion, 'id'>): QDraft
   const opts = (q.options ?? {}) as { choices?: string[]; statements?: string[]; pairs?: { left: string; right: string }[]; rights?: string[] };
   const d = blank(q.number);
   d.type = q.type;
-  d.weight = q.weight ?? 1;
+  d.weight = String(q.weight ?? 1);
   d.prompt = q.prompt ?? '';
   d.passageCode = q.passageCode ?? '';
   if (q.type === 'MCQ' || q.type === 'MCQ_COMPLEX') {
@@ -92,7 +92,11 @@ function toDraft(q: AssessmentQuestion | Omit<AssessmentQuestion, 'id'>): QDraft
 }
 
 function toApi(d: QDraft): Partial<AssessmentQuestion> {
-  const base: Partial<AssessmentQuestion> = { number: d.number, type: d.type, weight: d.weight || 1 };
+  // Bobot desimal — terima koma ("2,5") maupun titik ("2.5").
+  const w = Number(String(d.weight).replace(',', '.'));
+  const base: Partial<AssessmentQuestion> = {
+    number: d.number, type: d.type, weight: Number.isFinite(w) && w > 0 ? w : 1,
+  };
   if (d.prompt.trim()) base.prompt = d.prompt.trim();
   if (d.passageCode) base.passageCode = d.passageCode;
   if (d.type === 'MCQ') {
@@ -711,7 +715,7 @@ function AsesmenDetailInner() {
                       {passages.map((p) => <option key={p.code} value={p.code}>{p.code}</option>)}
                     </Select>
                     <Field label="Bobot" className="!mb-0 flex items-center gap-1 text-xs">
-                      <Input type="number" min={1} value={d.weight} onChange={(e) => updateD(i, { weight: Number(e.target.value) || 1 })} className="w-16" />
+                      <Input type="text" inputMode="decimal" value={d.weight} onChange={(e) => updateD(i, { weight: e.target.value })} className="w-16" title="Boleh desimal: 1,5 atau 2.25" />
                     </Field>
                     <button
                       type="button"

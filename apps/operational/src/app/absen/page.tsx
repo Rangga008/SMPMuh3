@@ -116,13 +116,24 @@ export default function AbsenPage() {
     if (pending != null) void startCam(pending);
   };
 
+  /** Lokasi yang andal di semua browser — Safari iOS sering timeout di
+   *  high-accuracy GPS, jadi ada fallback akurasi rendah + cache. */
+  const getPos = async (): Promise<GeolocationPosition> => {
+    const ask = (o: PositionOptions) =>
+      new Promise<GeolocationPosition>((ok, no) =>
+        navigator.geolocation.getCurrentPosition(ok, no, o));
+    try {
+      return await ask({ enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });
+    } catch {
+      return ask({ enableHighAccuracy: false, timeout: 20000, maximumAge: 300000 });
+    }
+  };
+
   const submit = async () => {
     if (pending == null || !shot) return;
     setBusy(true); setErr('');
     try {
-      const pos = await new Promise<GeolocationPosition>((ok, no) =>
-        navigator.geolocation.getCurrentPosition(ok, no, { enableHighAccuracy: true, timeout: 10000 }),
-      );
+      const pos = await getPos();
       const r = await selfiePunch(pending, pos.coords.latitude, pos.coords.longitude, shot.blob);
       setMsg(
         `Absen ${r.inOut === 0 ? 'MASUK' : 'PULANG'} tercatat ${fmtTime(r.punchedAt)} WIB — jarak ${r.distanceM} m dari sekolah${
