@@ -16,8 +16,6 @@ export interface RichEditorHandle {
   /** Sisipkan chip rumus — `src` = sumber apa adanya (sqrt(3), $x^2$, x²…). */
   insertMath: (src: string) => void;
   insertImage: (url: string) => void;
-  /** Ganti chip yang diklik dengan sumber baru hasil edit di modal. */
-  replaceChip: (node: HTMLElement, src: string) => void;
   focus: () => void;
 }
 
@@ -27,7 +25,7 @@ const dispSrc = (url: string) => (url.startsWith('/') ? `${API}${url}` : url);
 const stripApi = (src: string) => (src.startsWith(`${API}/`) ? src.slice(API.length) : src);
 
 const chipHtml = (src: string) =>
-  `<span class="qf-math" contenteditable="false" data-tex="${escAttr(src)}" title="Klik 2× untuk mengubah rumus">${renderMathHtml(src)}</span>`;
+  `<span class="qf-math" contenteditable="false" data-tex="${escAttr(src)}" title="Rumus — pilih lalu tekan Delete untuk menghapus">${renderMathHtml(src)}</span>`;
 
 const imgHtml = (url: string) =>
   `<span class="qf-img" contenteditable="false"><img src="${escAttr(dispSrc(url))}" data-src="${escAttr(url)}" alt=""><button type="button" class="qf-x" title="Hapus gambar">✕</button></span>`;
@@ -86,10 +84,8 @@ export const RichEditor = forwardRef<
     singleLine?: boolean | undefined;
     placeholder?: string | undefined;
     className?: string | undefined;
-    /** Dipanggil saat chip rumus diklik — untuk membuka modal edit. */
-    onMathChip?: ((tex: string, node: HTMLElement) => void) | undefined;
   }
->(({ value, onChange, singleLine, placeholder, className, onMathChip }, ref) => {
+>(({ value, onChange, singleLine, placeholder, className }, ref) => {
   const elRef = useRef<HTMLDivElement>(null);
   const emitted = useRef(value);
   const savedRange = useRef<Range | null>(null);
@@ -150,12 +146,6 @@ export const RichEditor = forwardRef<
   useImperativeHandle(ref, () => ({
     insertMath: (src) => insertHtml(`${chipHtml(src)} `),
     insertImage: (url) => insertHtml(`${imgHtml(url)} `),
-    replaceChip: (node, src) => {
-      const t = document.createElement('template');
-      t.innerHTML = chipHtml(src);
-      node.replaceWith(t.content);
-      emit();
-    },
     focus: () => elRef.current?.focus(),
   }));
 
@@ -192,12 +182,6 @@ export const RichEditor = forwardRef<
           x.closest('.qf-img')?.remove();
           emit();
         }
-      }}
-      onDoubleClick={(e) => {
-        // Edit chip hanya lewat klik ganda — klik tunggal tetap untuk
-        // menempatkan kursor mengetik seperti biasa.
-        const chip = (e.target as HTMLElement).closest?.('.qf-math');
-        if (chip && onMathChip) onMathChip(chip.getAttribute('data-tex') ?? '', chip as HTMLElement);
       }}
     />
   );
@@ -322,7 +306,6 @@ export function MathField({
   className?: string | undefined;
 }) {
   const ed = useRef<RichEditorHandle>(null);
-  const editNode = useRef<HTMLElement | null>(null);
   const [math, setMath] = useState<string | null>(null);
   return (
     <div className={`flex min-w-0 flex-1 gap-1.5 ${singleLine ? 'items-center' : 'items-start'} ${className ?? ''}`}>
@@ -332,19 +315,12 @@ export function MathField({
         onChange={onChange}
         singleLine={singleLine}
         placeholder={placeholder}
-        onMathChip={(tex, node) => {
-          editNode.current = node;
-          setMath(tex);
-        }}
       />
       <button
         type="button"
         title="Sisipkan rumus — akar, pangkat, pecahan, simbol"
         onMouseDown={(e) => e.preventDefault()}
-        onClick={() => {
-          editNode.current = null;
-          setMath('');
-        }}
+        onClick={() => setMath('')}
         className="grid size-8 shrink-0 place-items-center rounded-lg bg-indigo-100 text-sm font-black italic text-indigo-700 transition hover:bg-indigo-200"
       >
         ƒx
@@ -365,11 +341,8 @@ export function MathField({
         initial={math ?? ''}
         onClose={() => setMath(null)}
         onApply={(src) => {
-          const n = editNode.current;
-          if (n) ed.current?.replaceChip(n, src);
-          else ed.current?.insertMath(src);
+          ed.current?.insertMath(src);
           setMath(null);
-          editNode.current = null;
         }}
       />
     </div>
