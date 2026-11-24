@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
+import { Badge, Button, Field, Input, PasswordInput, Modal, Select } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { PageTitle } from '@/components/widgets';
 import { DataTable } from '@/components/data-table';
@@ -373,7 +373,7 @@ export default function AccountSettingsPage() {
             </Field>
           </div>
           <Field label="Kata Sandi" hint="Minimal 8 karakter">
-            <Input name="password" type="password" required minLength={8} />
+            <PasswordInput name="password" required minLength={8} />
           </Field>
           <Field label="Role / Akses">
             {rolePicker}

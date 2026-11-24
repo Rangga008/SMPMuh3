@@ -733,7 +733,7 @@ function AsesmenDetailInner() {
                       Hapus Soal
                     </button>
                   </div>
-                  <Field label="Teks Pertanyaan" className="!mb-3">
+                  <Field label="Teks Pertanyaan" className="!mb-3" asDiv>
                     <MathField
                       value={d.prompt}
                       onChange={(v) => updateD(i, { prompt: v })}

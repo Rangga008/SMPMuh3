@@ -3,7 +3,7 @@
 import { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Button, Field, Input } from '@smpmuh3/ui';
+import { Button, Field, Input, PasswordInput } from '@smpmuh3/ui';
 import { ApiError, resetPassword } from '@/lib/api';
 import { AuthShell } from '@/components/auth-shell';
 
@@ -47,7 +47,7 @@ function ResetForm() {
   return (
     <form onSubmit={onSubmit} className="space-y-4">
       <Field label="Kata Sandi Baru" hint="Minimal 8 karakter">
-        <Input name="password" type="password" required minLength={8} autoComplete="new-password" placeholder="••••••••" />
+        <PasswordInput name="password" required minLength={8} autoComplete="new-password" placeholder="••••••••" />
       </Field>
       {error ? (
         <p role="alert" className="rounded-xl bg-red-50 px-4 py-2.5 text-sm font-medium text-red-700">

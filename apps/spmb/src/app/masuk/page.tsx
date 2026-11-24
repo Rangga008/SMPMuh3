@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Button, Field, Input } from '@smpmuh3/ui';
+import { Button, Field, Input, PasswordInput } from '@smpmuh3/ui';
 import { ApiError, login, setTokens } from '@/lib/api';
 import { AuthShell } from '@/components/auth-shell';
 
@@ -50,7 +50,7 @@ export default function LoginPage() {
           <Input name="identifier" required autoComplete="username" placeholder="nama@email.com atau 08xxxxxxxxxx" />
         </Field>
         <Field label="Kata Sandi">
-          <Input name="password" type="password" required autoComplete="current-password" placeholder="••••••••" />
+          <PasswordInput name="password" required autoComplete="current-password" placeholder="••••••••" />
         </Field>
         {error ? (
           <p role="alert" className="rounded-xl bg-red-50 px-4 py-2.5 text-sm font-medium text-red-700">

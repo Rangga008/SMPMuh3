@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { AuthUser } from '@smpmuh3/types';
 import { EMPLOYEE_TYPE_LABELS } from '@smpmuh3/types';
-import { Badge, Button, Field, Input, Modal, Textarea } from '@smpmuh3/ui';
+import { Badge, Button, Field, Input, PasswordInput, Modal, Textarea } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { PageTitle, Widget } from '@/components/widgets';
 import {
@@ -359,13 +359,13 @@ export default function ProfilePage() {
           }}
         >
           <Field label="Sandi Saat Ini">
-            <Input name="currentPassword" type="password" required autoComplete="current-password" />
+            <PasswordInput name="currentPassword" required autoComplete="current-password" />
           </Field>
           <Field label="Sandi Baru" hint="Minimal 8 karakter.">
-            <Input name="newPassword" type="password" required minLength={8} autoComplete="new-password" />
+            <PasswordInput name="newPassword" required minLength={8} autoComplete="new-password" />
           </Field>
           <Field label="Ulangi Sandi Baru">
-            <Input name="confirm" type="password" required minLength={8} autoComplete="new-password" />
+            <PasswordInput name="confirm" required minLength={8} autoComplete="new-password" />
           </Field>
           <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={() => setPwOpen(false)}>

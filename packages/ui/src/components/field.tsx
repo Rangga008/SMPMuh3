@@ -92,16 +92,30 @@ export function Textarea({ className, ...props }: TextareaHTMLAttributes<HTMLTex
 interface FieldProps extends LabelHTMLAttributes<HTMLLabelElement> {
   label: string;
   hint?: string | undefined;
+  /**
+   * Render sebagai `<div>` (bukan `<label>`) — untuk kontrol komposit yang
+   * mengandung tombol (mis. MathField). Klik di dalam `<label>` diteruskan
+   * browser ke elemen labelable pertama → tombol ikut "terklik".
+   */
+  asDiv?: boolean | undefined;
   children: ReactNode;
 }
 
 /** Label + control + optional hint, stacked with consistent spacing. */
-export function Field({ label, hint, children, className, ...props }: FieldProps) {
-  return (
-    <label className={cn('flex flex-col gap-1.5', className)} {...props}>
+export function Field({ label, hint, children, className, asDiv, ...props }: FieldProps) {
+  const body = (
+    <>
       <span className="text-sm font-semibold text-sand-900">{label}</span>
       {children}
       {hint ? <span className="text-xs text-sand-500">{hint}</span> : null}
+    </>
+  );
+  if (asDiv) {
+    return <div className={cn('flex flex-col gap-1.5', className)}>{body}</div>;
+  }
+  return (
+    <label className={cn('flex flex-col gap-1.5', className)} {...props}>
+      {body}
     </label>
   );
 }

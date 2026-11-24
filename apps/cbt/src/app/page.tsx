@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Button, Field, Input } from '@smpmuh3/ui';
+import { Button, Field, Input, PasswordInput } from '@smpmuh3/ui';
 import { ApiError } from '@/lib/api';
 import { loginCbt } from '@/lib/cbt';
 import { ExamShell } from '@/components/exam-shell';
@@ -41,7 +41,7 @@ export default function CbtLoginPage() {
           <Input name="nis" required autoComplete="off" inputMode="numeric" placeholder="contoh: 2024001" />
         </Field>
         <Field label="Password (di kartu peserta)">
-          <Input name="password" required autoComplete="off" placeholder="KPXXXX" className="font-mono tracking-widest uppercase" />
+          <PasswordInput name="password" required autoComplete="off" placeholder="KPXXXX" className="font-mono tracking-widest uppercase" />
         </Field>
         {error ? (
           <p role="alert" className="rounded-xl bg-red-50 px-4 py-2.5 text-sm font-medium text-red-700">

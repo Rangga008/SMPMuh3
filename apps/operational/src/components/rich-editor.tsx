@@ -308,7 +308,13 @@ export function MathField({
   const ed = useRef<RichEditorHandle>(null);
   const [math, setMath] = useState<string | null>(null);
   return (
-    <div className={`flex min-w-0 flex-1 gap-1.5 ${singleLine ? 'items-center' : 'items-start'} ${className ?? ''}`}>
+    // preventDefault klik: bila komponen ini dibungkus <label>, klik field
+    // diteruskan browser ke tombol ƒx (elemen labelable pertama) → modal
+    // terbuka tanpa sengaja. Membatalkan aksi bawaan klik mencegah itu.
+    <div
+      onClick={(e) => e.preventDefault()}
+      className={`flex min-w-0 flex-1 gap-1.5 ${singleLine ? 'items-center' : 'items-start'} ${className ?? ''}`}
+    >
       <RichEditor
         ref={ed}
         value={value}

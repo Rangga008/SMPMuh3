@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
+import { Badge, Button, Field, Input, PasswordInput, Modal, Select } from '@smpmuh3/ui';
 import {
   ADDITIONAL_DUTIES,
   ADDITIONAL_DUTY_LABELS,
@@ -612,7 +612,7 @@ export function EmployeesView({ jenis }: { jenis: GtkType }) {
                     />
                   </Field>
                   <Field label="Password Awal" hint="Min. 8 karakter — berikan ke pegawai">
-                    <Input name="password" type="password" minLength={8} required />
+                    <PasswordInput name="password" minLength={8} required />
                   </Field>
                 </div>
               ) : null}

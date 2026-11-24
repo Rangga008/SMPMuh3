@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Badge, Button, Field, Input, Select } from '@smpmuh3/ui';
+import { Badge, Button, Field, Input, PasswordInput, Select } from '@smpmuh3/ui';
 import {
   WA_MESSAGE_STATUS_LABELS,
   WA_MESSAGE_TYPE_LABELS,
@@ -173,9 +173,8 @@ export default function WhatsappSettingsPage() {
                       : 'Token API provider (mis. Fonnte)'
                   }
 >
-                  <Input
+                  <PasswordInput
                     name="gatewayToken"
-                    type="password"
                     autoComplete="off"
                     placeholder={cfg.hasToken ? '••••••••' : 'Tempel token di sini'}
                   />

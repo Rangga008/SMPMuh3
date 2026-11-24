@@ -6,4 +6,5 @@ export { Card, type CardProps } from './components/card';
 export { Badge, type BadgeProps } from './components/badge';
 export { Accordion, AccordionItem, type AccordionItemProps } from './components/accordion';
 export { Field, Input, Select, Textarea, inputClasses, selectClasses, textareaClasses } from './components/field';
+export { PasswordInput } from './components/password-input';
 export { Modal, type ModalProps } from './components/modal';

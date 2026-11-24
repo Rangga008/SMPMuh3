@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Button, Field, Input } from '@smpmuh3/ui';
+import { Button, Field, Input, PasswordInput } from '@smpmuh3/ui';
 import { ApiError, login, redeemPublic, setTokens } from '@/lib/api';
 import { AuthShell } from '@/components/auth-shell';
 
@@ -84,9 +84,8 @@ export default function RegisterPage() {
           label="Kata Sandi"
           hint="Minimal 8 karakter. Sudah punya akun? Masukkan kata sandi akun Anda — anak ini otomatis ditambahkan ke akun yang sama."
         >
-          <Input
+          <PasswordInput
             name="password"
-            type="password"
             required
             minLength={8}
             autoComplete="new-password"

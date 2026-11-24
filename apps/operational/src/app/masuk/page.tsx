@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Button, Field, Input, Modal } from '@smpmuh3/ui';
+import { Button, Field, Input, Modal, PasswordInput } from '@smpmuh3/ui';
 import {
   API,
   ApiError,
@@ -132,7 +132,7 @@ export default function LoginPage() {
             <Input name="identifier" required autoComplete="username" placeholder="nama@sekolah.id" />
           </Field>
           <Field label="Kata Sandi">
-            <Input name="password" type="password" required autoComplete="current-password" placeholder="••••••••" />
+            <PasswordInput name="password" required autoComplete="current-password" placeholder="••••••••" />
           </Field>
           {error ? (
             <p role="alert" className="rounded-xl bg-red-50 px-4 py-2.5 text-sm font-medium text-red-700">
@@ -208,10 +208,10 @@ export default function LoginPage() {
                     />
                   </Field>
                   <Field label="Kata Sandi Baru">
-                    <Input name="password" type="password" required minLength={8} autoComplete="new-password" placeholder="Min. 8 karakter" />
+                    <PasswordInput name="password" required minLength={8} autoComplete="new-password" placeholder="Min. 8 karakter" />
                   </Field>
                   <Field label="Ulangi Kata Sandi Baru">
-                    <Input name="confirm" type="password" required minLength={8} autoComplete="new-password" />
+                    <PasswordInput name="confirm" required minLength={8} autoComplete="new-password" />
                   </Field>
                   {resetErr ? (
                     <p role="alert" className="rounded-xl bg-red-50 px-4 py-2.5 text-sm font-medium text-red-700">{resetErr}</p>
