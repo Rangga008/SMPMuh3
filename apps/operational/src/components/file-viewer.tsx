@@ -51,7 +51,17 @@ export function FileViewerModal({ target, onClose }: { target: ViewTarget | null
         const isImage = type.startsWith('image/') || ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext);
         const isPdf = type === 'application/pdf' || ext === 'pdf';
         setKind(isImage ? 'image' : isPdf ? 'pdf' : 'other');
-        revoked = URL.createObjectURL(blob);
+        // Blob menurunkan Content-Type server — kalau octet-stream/salah,
+        // iframe/img tak mau merender. Bungkus ulang dengan tipe hasil deteksi.
+        const fixedType = isPdf && type !== 'application/pdf'
+          ? 'application/pdf'
+          : isImage && !type.startsWith('image/')
+            ? `image/${ext === 'jpg' ? 'jpeg' : ext}`
+            : type;
+        const out = fixedType && fixedType !== blob.type
+          ? new Blob([blob], { type: fixedType })
+          : blob;
+        revoked = URL.createObjectURL(out);
         setUrl(revoked);
       })
       .catch((e) => setErr(e instanceof Error ? e.message : 'Gagal memuat berkas.'));

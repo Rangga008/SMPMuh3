@@ -2316,6 +2316,7 @@ model ProgramSubmission {
   amountTotal Int              @default(0) @map("amount_total")
   storageKey  String?          @map("storage_key")
   fileName    String?          @map("file_name")
+  mimeType    String?          @map("mime_type")
   status      SubmissionStatus @default(PENDING)
   submittedBy String           @map("submitted_by") @db.Uuid
   reviewedBy  String?          @map("reviewed_by") @db.Uuid

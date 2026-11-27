@@ -21,7 +21,6 @@ import {
   acquireWakeLock,
   exitFullscreen,
   isFullscreen,
-  isTouchDevice,
   releaseWakeLock,
   requestFullscreen,
   type ScreenLock,
@@ -75,13 +74,16 @@ export default function CbtRunnerPage() {
   const submitted = useRef(false);
   // ---- Proteksi ujian ----
   const [violations, setViolations] = useState(0);
-  const [warnInfo, setWarnInfo] = useState<{ violations: number; blockAfter: number } | null>(null);
+  const [warnInfo, setWarnInfo] = useState<{ violations: number; blockAfter: number; kind: string } | null>(null);
   const [blocked, setBlocked] = useState(false);
   const [blockOpen, setBlockOpen] = useState(false); // sesi sudah dibuka pengawas
   const [busyBlocked, setBusyBlocked] = useState(false);
   const [confirmForce, setConfirmForce] = useState(false);
   const [fsLost, setFsLost] = useState(false);
-  const armed = useRef({ hidden: true, blur: true, fs: false });
+  const armed = useRef({ hidden: true, blur: true, fs: false, mw: true });
+  const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const baseDim = useRef<{ w: number; h: number } | null>(null);
+  const [matchOpen, setMatchOpen] = useState<{ qid: string; index: number } | null>(null);
   const wakeLock = useRef<ScreenLock>(null);
   // ---- Antrean autosave per-soal + jangkar waktu ----
   const queueRef = useRef(new Map<string, QueueEntry>());
@@ -280,14 +282,14 @@ export default function CbtRunnerPage() {
   // ambang warn/blokir per ujian; pelanggaran kecil pertama tidak ditampilkan.
   useEffect(() => {
     if (!paper || blocked) return;
-    const report = (kind: 'tab-hidden' | 'blur' | 'fullscreen-exit', arm: 'hidden' | 'blur' | 'fs') => {
+    const report = (kind: 'tab-hidden' | 'blur' | 'fullscreen-exit' | 'multi-window', arm: 'hidden' | 'blur' | 'fs' | 'mw') => {
       if (!armed.current[arm] || submitted.current) return;
       armed.current[arm] = false;
       reportViolation(token, kind)
         .then((r) => {
           setViolations(r.violations);
           if (r.level === 'blocked') setBlocked(true);
-          else if (r.level === 'warn') setWarnInfo({ violations: r.violations, blockAfter: r.blockAfter ?? 0 });
+          else if (r.level === 'warn') setWarnInfo({ violations: r.violations, blockAfter: r.blockAfter ?? 0, kind });
           else if (r.level === 'expired') void finish(true);
         })
         .catch((e) => {
@@ -298,8 +300,28 @@ export default function CbtRunnerPage() {
       if (document.visibilityState === 'hidden') report('tab-hidden', 'hidden');
       else armed.current.hidden = true;
     };
-    const onBlur = () => report('blur', 'blur');
-    const onFocus = () => { armed.current.blur = true; };
+    const onBlur = () => {
+      if (blurTimer.current) clearTimeout(blurTimer.current);
+      blurTimer.current = setTimeout(() => report('blur', 'blur'), 1200);
+    };
+    const onFocus = () => {
+      if (blurTimer.current) { clearTimeout(blurTimer.current); blurTimer.current = null; }
+      armed.current.blur = true;
+    };
+    // Split-screen mengecilkan viewport drastis — terdeteksi walau fokus tak
+    // berpindah. Baseline direset saat rotasi/perluasan agar tak salah tembak.
+    if (!baseDim.current) baseDim.current = { w: window.innerWidth, h: window.innerHeight };
+    const onResize = () => {
+      const w = window.innerWidth, h = window.innerHeight;
+      const b = baseDim.current!;
+      if (w > b.w * 1.1) {
+        baseDim.current = { w, h };
+        armed.current.mw = true;
+        return;
+      }
+      if (w < b.w * 0.82 || h < b.h * 0.6) report('multi-window', 'mw');
+      else armed.current.mw = true;
+    };
     const onFs = () => {
       // Keluar layar penuh = upaya membuka aplikasi lain di desktop.
       if (isFullscreen()) {
@@ -313,12 +335,9 @@ export default function CbtRunnerPage() {
     document.addEventListener('visibilitychange', onVis);
     document.addEventListener('fullscreenchange', onFs);
     document.addEventListener('webkitfullscreenchange', onFs);
-    // Di perangkat sentuh, blur jendela juga terpicu picker <select>/keyboard
-    // bawaan → hanya deteksi di desktop (pointer halus).
-    if (!isTouchDevice()) {
-      window.addEventListener('blur', onBlur);
-      window.addEventListener('focus', onFocus);
-    }
+    window.addEventListener('blur', onBlur);
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('resize', onResize);
     // Catat status awal layar penuh (bila aktif sejak halaman persiapan).
     armed.current.fs = isFullscreen();
     setFsLost(false);
@@ -328,6 +347,8 @@ export default function CbtRunnerPage() {
       document.removeEventListener('webkitfullscreenchange', onFs);
       window.removeEventListener('blur', onBlur);
       window.removeEventListener('focus', onFocus);
+      window.removeEventListener('resize', onResize);
+      if (blurTimer.current) { clearTimeout(blurTimer.current); blurTimer.current = null; }
     };
   }, [paper, blocked, token, finish]);
 
@@ -423,7 +444,7 @@ export default function CbtRunnerPage() {
       applyPaper(p);
       setWarnInfo(null);
       setFsLost(false);
-      armed.current = { hidden: true, blur: true, fs: isFullscreen() };
+      armed.current = { hidden: true, blur: true, fs: isFullscreen(), mw: true };
       setBlocked(false);
       setBlockOpen(false);
       // Pompa jawaban lokal yang tertahan selama diblokir.
@@ -604,17 +625,14 @@ export default function CbtRunnerPage() {
               <span className="mr-1.5 inline-grid size-6 place-items-center rounded-lg bg-sand-100 text-[11px] font-black text-sand-500">{i + 1}</span>
               {p.left}
             </span>
-            <select
-              value={sel[i] ?? ''}
-              onChange={(e) => {
-                const next = pairs.map((_, k) => (k === i ? Number(e.target.value) : (sel[k] ?? -1)));
-                pick(q, next);
-              }}
-              className={`rounded-xl border-2 px-3 py-2 text-sm font-medium outline-none ${sel[i] !== undefined && sel[i] >= 0 ? 'border-primary-500 bg-primary-50' : 'border-sand-200'}`}
+            <button
+              type="button"
+              onClick={() => setMatchOpen({ qid: q.id, index: i })}
+              className={`flex items-center justify-between gap-2 rounded-xl border-2 px-3 py-2 text-left text-sm font-medium outline-none sm:min-w-52 ${sel[i] !== undefined && sel[i] >= 0 ? 'border-primary-500 bg-primary-50' : 'border-sand-200'}`}
             >
-              <option value="">— pilih pasangan —</option>
-              {rights.map((r, k) => <option key={k} value={k}>{r}</option>)}
-            </select>
+              <span className="flex-1">{sel[i] !== undefined && sel[i] >= 0 ? rights[sel[i]] : '— pilih pasangan —'}</span>
+              <span aria-hidden className="text-sand-400">▾</span>
+            </button>
           </div>
         ))}
       </div>
@@ -791,6 +809,49 @@ export default function CbtRunnerPage() {
         </aside>
       </div>
 
+      {/* ---------- Pilih pasangan menjodohkan — dropdown custom, tanpa
+          <select> native (pickernya mencuri fokus jendela & menyulitkan
+          deteksi overlay asisten/panel samping di HP) ---------- */}
+      {matchOpen ? (() => {
+        const mq = paper.questions.find((x) => x.id === matchOpen.qid);
+        if (!mq) return null;
+        const mopts = (mq.options ?? {}) as { pairs?: { left: string; right: string }[]; rights?: string[] };
+        const mpairs = mopts.pairs ?? [];
+        const mrights = mopts.rights?.length ? mopts.rights : [...new Set(mpairs.map((x) => x.right))];
+        const msel = Array.isArray(answers[mq.id]) ? (answers[mq.id] as number[]) : [];
+        const pair = mpairs[matchOpen.index];
+        if (!pair) return null;
+        return (
+          <div className="fixed inset-0 z-30 flex items-end justify-center bg-sand-950/50 sm:items-center sm:p-4" onClick={() => setMatchOpen(null)}>
+            <div className="w-full max-w-sm rounded-t-3xl bg-white p-5 shadow-card sm:rounded-3xl" onClick={(e) => e.stopPropagation()}>
+              <p className="text-xs font-black uppercase tracking-wide text-sand-400">Pasangan untuk</p>
+              <p className="mt-1 text-sm font-bold text-sand-900">{pair.left}</p>
+              <div className="mt-4 max-h-[50vh] space-y-2 overflow-y-auto">
+                {mrights.map((r, k) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => {
+                      const next = mpairs.map((_, kk) => (kk === matchOpen.index ? k : (msel[kk] ?? -1)));
+                      pick(mq, next);
+                      setMatchOpen(null);
+                    }}
+                    className={`w-full rounded-xl border-2 px-3 py-2.5 text-left text-sm font-medium transition ${
+                      msel[matchOpen.index] === k
+                        ? 'border-primary-500 bg-primary-50 text-primary-900'
+                        : 'border-sand-200 hover:border-primary-300'
+                    }`}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
+              <Button variant="outline" className="mt-4 w-full" onClick={() => setMatchOpen(null)}>Batal</Button>
+            </div>
+          </div>
+        );
+      })() : null}
+
       {/* ---------- Peringatan pelanggaran ---------- */}
       {warnInfo ? (
         <div className="fixed inset-0 z-30 grid place-items-center bg-sand-950/60 p-4">
@@ -798,7 +859,15 @@ export default function CbtRunnerPage() {
             <span className="mx-auto mb-3 grid size-14 place-items-center rounded-full bg-amber-100 text-3xl">⚠️</span>
             <h2 className="text-lg font-black text-sand-900">Peringatan Proteksi</h2>
             <p className="mt-2 text-sm leading-relaxed text-sand-600">
-              Kamu terdeteksi <b>keluar dari halaman ujian</b> — ini pelanggaran ke-{warnInfo.violations}.
+              {warnInfo.kind === 'multi-window' ? (
+                <>Kamu terdeteksi <b>membuka aplikasi lain di samping layar ujian</b> (split-screen/layar terbagi) — ini pelanggaran ke-{warnInfo.violations}.</>
+              ) : warnInfo.kind === 'blur' ? (
+                <>Kamu terdeteksi <b>membuka aplikasi/layanan lain di atas halaman ujian</b> (asisten AI, jendela mengambang, atau panel samping) — ini pelanggaran ke-{warnInfo.violations}.</>
+              ) : warnInfo.kind === 'fullscreen-exit' ? (
+                <>Kamu terdeteksi <b>keluar dari mode layar penuh</b> — ini pelanggaran ke-{warnInfo.violations}.</>
+              ) : (
+                <>Kamu terdeteksi <b>keluar dari halaman ujian</b> (berpindah aplikasi/tab) — ini pelanggaran ke-{warnInfo.violations}.</>
+              )}
               {warnInfo.blockAfter > 0
                 ? ` Jika mencapai ${warnInfo.blockAfter}×, sesimu diblokir dan hanya bisa dibuka pengawas.`
                 : ''}

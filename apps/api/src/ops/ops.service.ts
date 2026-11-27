@@ -1652,6 +1652,7 @@ export class OpsService {
         rab: dto.rab === undefined ? Prisma.JsonNull : (dto.rab as Prisma.InputJsonValue),
         amountTotal: dto.amountTotal ?? 0,
         storageKey, fileName: file?.originalname ?? null,
+        mimeType: file?.mimetype ?? null,
         submittedBy: userId,
       },
     });
@@ -1696,7 +1697,7 @@ export class OpsService {
       throw new ForbiddenException('Berkas ini bukan milik Anda.');
     }
     const buf = await this.storage.getObjectBuffer(sub.storageKey);
-    return { buf, mime: 'application/octet-stream', name: sub.fileName ?? 'file' };
+    return { buf, mime: sub.mimeType ?? 'application/octet-stream', name: sub.fileName ?? 'file' };
   }
 
   // ================= Arsip — tersekat per bidang =================
