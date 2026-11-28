@@ -202,7 +202,7 @@ export class CbtService {
         assessment: { select: { name: true, subject: { select: { name: true } } } },
         _count: { select: { attempts: true } },
       },
-      orderBy: { startAt: 'desc' },
+      orderBy: { startAt: 'asc' },
     });
     // Lampirkan kelas+jenjang tiap ujian — untuk filter per jenjang di monitor.
     const ids = [...new Set(exams.flatMap((x) => x.classIds as string[]))];
@@ -556,7 +556,7 @@ export class CbtService {
         assessment: { include: { subject: { select: { name: true } } } },
         attempts: { where: { studentId: student.id }, select: { status: true, score: true, maxScore: true, submittedAt: true } },
       },
-      orderBy: { startAt: 'desc' },
+      orderBy: { startAt: 'asc' },
       take: 60,
     });
     const myExams = scheduled.filter((e) => (e.classIds as string[]).some((cid) => classIds.includes(cid)));
@@ -689,7 +689,7 @@ export class CbtService {
   }
 
   private async buildSession(
-    attempt: { id: string; token: string; status: string; startedAt: Date; deadline: Date; violations?: number },
+    attempt: { id: string; token: string; status: string; startedAt: Date; deadline: Date; violations?: number; submitKind?: string | null },
     exam: {
       id: string; assessmentId: string; title: string; instructions: string | null;
       durationMin: number; startAt: Date; endAt: Date; showScore: boolean;
@@ -719,6 +719,7 @@ export class CbtService {
         status: attempt.status,
         startedAt: attempt.startedAt,
         deadline: attempt.deadline,
+        submitKind: attempt.submitKind ?? null,
         remainingSec: Math.max(0, Math.floor((attempt.deadline.getTime() - Date.now()) / 1000)),
         violations: attempt.violations ?? 0,
         warnAfter: exam.warnAfter ?? 0,
@@ -762,7 +763,7 @@ export class CbtService {
       throw new ForbiddenException('Sesi ujianmu diblokir proteksi — hubungi pengawas untuk membukanya kembali.');
     }
     if (Date.now() > attempt.deadline.getTime()) {
-      await this.finalize(attempt.id);
+      await this.finalize(attempt.id, undefined, 'auto');
       throw new ConflictException('Waktu habis — jawabanmu otomatis dikumpulkan.');
     }
   }
@@ -779,7 +780,7 @@ export class CbtService {
       return { level: attempt.status === 'BLOCKED' ? 'blocked' : 'done', violations: attempt.violations };
     }
     if (Date.now() > attempt.deadline.getTime()) {
-      await this.finalize(attempt.id);
+      await this.finalize(attempt.id, undefined, 'auto');
       return { level: 'expired', violations: attempt.violations };
     }
     const exam = await this.prisma.exam.findUniqueOrThrow({ where: { id: attempt.examId } });
@@ -847,7 +848,7 @@ export class CbtService {
   async forceSubmitAttempt(examId: string, studentId: string, actor: AuthUser) {
     const a = await this.attemptOf(examId, studentId);
     if (a.status === 'SUBMITTED') throw new ConflictException('Sesi ini sudah dinilai.');
-    const r = await this.finalize(a.id);
+    const r = await this.finalize(a.id, undefined, 'forced');
     await this.audit.log({
       actorId: actor.id, action: 'exam.attempt-force-submit', entity: 'exam_attempt', entityId: a.id,
       metadata: { examId, studentId },
@@ -994,10 +995,10 @@ export class CbtService {
       const exam = await this.prisma.exam.findUniqueOrThrow({ where: { id: attempt.examId } });
       return { submitted: true, score: exam.showScore ? attempt.score : null, maxScore: attempt.maxScore };
     }
-    return this.finalize(attempt.id, answers);
+    return this.finalize(attempt.id, answers, 'manual');
   }
 
-  private async finalize(attemptId: string, submitAnswers?: Record<string, unknown>) {
+  private async finalize(attemptId: string, submitAnswers?: Record<string, unknown>, kind: 'manual' | 'forced' | 'auto' = 'manual') {
     return this.prisma.$transaction(async (tx) => {
       const attempt = await tx.examAttempt.findUniqueOrThrow({
         where: { id: attemptId },
@@ -1070,7 +1071,7 @@ export class CbtService {
       });
       await tx.examAttempt.update({
         where: { id: attemptId },
-        data: { status: 'SUBMITTED', submittedAt: new Date(), score, maxScore },
+        data: { status: 'SUBMITTED', submittedAt: new Date(), submitKind: kind, score, maxScore },
       });
       return {
         submitted: true,
@@ -1091,6 +1092,7 @@ export class CbtService {
     return {
       status: attempt.status,
       submittedAt: attempt.submittedAt,
+      submitKind: attempt.submitKind,
       examTitle: exam.title,
       subject: exam.subject?.name ?? exam.assessment.subject?.name ?? '—',
       score: attempt.status === 'SUBMITTED' && exam.showScore ? attempt.score : null,

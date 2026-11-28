@@ -608,6 +608,9 @@ export const forceSubmitAttempt = (examId: string, studentId: string) =>
   req<{ submitted: boolean }>(`/cbt/exams/${examId}/attempts/${studentId}/force-submit`, { method: 'POST' });
 export const resetAttempt = (examId: string, studentId: string) =>
   req<{ reset: boolean }>(`/cbt/exams/${examId}/attempts/${studentId}/reset`, { method: 'POST' });
+/** Password login baru untuk siswa — berlaku di semua ujian (diumumkan pengawas). */
+export const regenCredential = (examId: string, studentId: string) =>
+  req<{ studentId: string; password: string }>(`/cbt/exams/${examId}/credentials/${studentId}/regen`, { method: 'POST' });
 /** Daftar ujian untuk monitor — endpoint cbt.monitor (semua staf: proktor/pengawas/tendik/guru). */
 export const listMonitorExams = (academicYearId?: string) =>
   req<(ExamView & { classes: { id: string; name: string; gradeLevel: number }[] })[]>(`/cbt/monitor/exams${academicYearId ? `?academicYearId=${academicYearId}` : ''}`);

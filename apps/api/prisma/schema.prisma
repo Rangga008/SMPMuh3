@@ -2210,6 +2210,7 @@ model ExamAttempt {
   enterCount   Int               @default(0) @map("enter_count") // berapa kali siswa login — indikasi keluar-masuk
   violations   Int               @default(0) @map("violations") // pelanggaran proteksi terlapor (keluar tab/aplikasi)
   blockedAt    DateTime?         @map("blocked_at") // kapan sesi dibekukan proteksi
+  submitKind   String?           @map("submit_kind") // manual | forced (pengawas) | auto (waktu habis)
   createdAt    DateTime          @default(now()) @map("created_at")
   updatedAt    DateTime          @updatedAt @map("updated_at")
 
