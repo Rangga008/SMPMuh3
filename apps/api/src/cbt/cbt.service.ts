@@ -72,6 +72,72 @@ function gradeAnswer(
 
 @Injectable()
 export class CbtService {
+  // ── Cache in-memory untuk data statis ujian ─────────────────────────────
+  // Satu sesi ujian diikuti 100+ siswa serentak dari lab (1 IP NAT) — semua
+  // memuat paket soal & himpunan id soal yang IDENTIK. Tanpa cache, setiap
+  // autosave/poll memicu query exam+soal redundan; dengan 100 siswa itu
+  // berarti ribuan query/menit sia-sia. TTL 30 dtk: cukup singkat agar edit
+  // konfigurasi pengawas cepat terlihat, cukup panjang menyerap burst.
+  private static readonly CACHE_TTL = 30_000;
+  private qCache = new Map<string, {
+    at: number;
+    ids: Set<string>;
+    questions: {
+      id: string; number: number; type: string; weight: number;
+      prompt: unknown; options: unknown; passageCode: string | null; media: unknown;
+    }[];
+    passages: { code: string; content: unknown; media: unknown }[];
+  }>();
+
+  private eCache = new Map<string, { at: number; exam: {
+    id: string; assessmentId: string; shuffle: boolean; warnAfter: number; blockAfter: number;
+  } }>();
+
+  /** Invalidasi cache soal ujian — dipanggil saat ujian/paket soal diubah. */
+  invalidateExamCache(examId: string) {
+    this.qCache.delete(examId);
+    this.eCache.delete(examId);
+  }
+
+  /** Baris exam (config statis) dari cache — status/tanggal tidak dipakai di
+   *  jalur panas sehingga TTL pendek aman. */
+  private async cachedExam(examId: string) {
+    const hit = this.eCache.get(examId);
+    if (hit && Date.now() - hit.at < CbtService.CACHE_TTL) return hit.exam;
+    const exam = await this.prisma.exam.findUniqueOrThrow({
+      where: { id: examId },
+      select: { id: true, assessmentId: true, shuffle: true, warnAfter: true, blockAfter: true },
+    });
+    this.eCache.set(examId, { at: Date.now(), exam });
+    return exam;
+  }
+
+  /** Paket soal + bacaan ujian dari cache/DB — identik untuk semua peserta. */
+  private async cachedPaperSet(examOrId: string | { id: string; assessmentId: string }) {
+    const exam = typeof examOrId === 'string' ? await this.cachedExam(examOrId) : examOrId;
+    const hit = this.qCache.get(exam.id);
+    if (hit && Date.now() - hit.at < CbtService.CACHE_TTL) return hit;
+    const where = await this.examQuestionWhere(exam);
+    const questions = await this.prisma.assessmentQuestion.findMany({
+      where,
+      orderBy: { number: 'asc' },
+      select: { id: true, number: true, type: true, weight: true, prompt: true, options: true, passageCode: true, media: true },
+    });
+    const codes = [...new Set(questions.map((q) => q.passageCode).filter((c): c is string => !!c))];
+    const passages = codes.length
+      ? await this.prisma.assessmentPassage.findMany({ where: { assessmentId: exam.assessmentId, code: { in: codes } }, select: { code: true, content: true, media: true } })
+      : [];
+    const entry = { at: Date.now(), ids: new Set(questions.map((q) => q.id)), questions, passages };
+    this.qCache.set(exam.id, entry);
+    // Jaga ukuran map — maksimal puluhan ujian aktif; buang entri kedaluwarsa.
+    if (this.qCache.size > 50) {
+      for (const [k, v] of this.qCache) {
+        if (Date.now() - v.at >= CbtService.CACHE_TTL) this.qCache.delete(k);
+      }
+    }
+    return entry;
+  }
+
   constructor(
     private prisma: PrismaService,
     private audit: AuditService,
@@ -320,6 +386,7 @@ export class CbtService {
   }
 
   async updateExam(id: string, dto: UpdateExamDto, actor: AuthUser) {
+    this.invalidateExamCache(id);
     const exam = await this.scopeOk(actor, id, true);
     const start = dto.startAt ? new Date(dto.startAt) : exam.startAt;
     const end = dto.endAt ? new Date(dto.endAt) : exam.endAt;
@@ -387,6 +454,7 @@ export class CbtService {
   }
 
   async deleteExam(id: string, actor: AuthUser) {
+    this.invalidateExamCache(id);
     const exam = await this.scopeOk(actor, id, true).then((e) =>
       this.prisma.exam.findUniqueOrThrow({ where: { id: e.id }, include: { _count: { select: { attempts: true } } } }),
     );
@@ -700,9 +768,9 @@ export class CbtService {
     student: { name: string; nis: string | null },
     className: string,
   ) {
-    const qCount = await this.prisma.assessmentQuestion.count({
-      where: await this.examQuestionWhere(exam),
-    });
+    // Jumlah soal dari cache — identik untuk semua peserta; tanpa ini setiap
+    // poll sesi memicu COUNT + resolution query redundan per siswa.
+    const qCount = (await this.cachedPaperSet(exam)).questions.length;
     return {
       token: attempt.token,
       exam: {
@@ -730,22 +798,26 @@ export class CbtService {
 
   /** Ambil sesi untuk halaman persiapan — tanpa membuat attempt baru. */
   async sessionByToken(token: string) {
-    const attempt = await this.attemptOrThrow(token);
-    const exam = await this.prisma.exam.findUniqueOrThrow({
-      where: { id: attempt.examId },
-      include: { subject: { select: { name: true } }, assessment: { include: { subject: { select: { name: true } } } } },
-    });
-    const student = await this.prisma.student.findUniqueOrThrow({
-      where: { id: attempt.studentId },
+    // Satu query — endpoint ini dipoll tiap 15 dtk oleh setiap siswa yang
+    // mengerjakan (100+ siswa = ~7 req/s berkelanjutan), jadi tiga query
+    // terpisah sebelumnya berarti ~20 query/s sia-sia selama ujian.
+    const attempt = await this.prisma.examAttempt.findUnique({
+      where: { token },
       include: {
-        enrollments: {
-          where: { academicYearId: exam.academicYearId },
-          include: { class: { select: { name: true } } },
-          take: 1,
+        exam: { include: { subject: { select: { name: true } }, assessment: { include: { subject: { select: { name: true } } } } } },
+        student: {
+          include: {
+            enrollments: {
+              include: { class: { select: { name: true } } },
+            },
+          },
         },
       },
     });
-    return this.buildSession(attempt, exam, student, student.enrollments[0]?.class.name ?? '—');
+    if (!attempt) throw new NotFoundException('Sesi ujian tidak ditemukan — masuk ulang dengan NIS & kode.');
+    const enroll = attempt.student.enrollments.find((e) => e.academicYearId === attempt.exam.academicYearId)
+      ?? attempt.student.enrollments[0];
+    return this.buildSession(attempt, attempt.exam, attempt.student, enroll?.class.name ?? '—');
   }
 
   private async attemptOrThrow(token: string) {
@@ -883,23 +955,19 @@ export class CbtService {
   async paper(token: string) {
     const attempt = await this.attemptOrThrow(token);
     await this.ensureLive(attempt);
-    const exam = await this.prisma.exam.findUniqueOrThrow({ where: { id: attempt.examId } });
-    const [questions, answers] = await Promise.all([
-      this.prisma.assessmentQuestion.findMany({
-        where: await this.examQuestionWhere(exam),
-        orderBy: { number: 'asc' },
-        select: { id: true, number: true, type: true, weight: true, prompt: true, options: true, passageCode: true, media: true },
-      }),
+    const exam = await this.cachedExam(attempt.examId);
+    // Paket soal+bacaan dari cache bersama — burst 100+ siswa masuk serentak
+    // di awal sesi hanya memuat paket dari DB sekali per 30 dtk, bukan
+    // sekali per siswa. Jawaban tetap per-attempt (tidak di-cache).
+    const [set, answers] = await Promise.all([
+      this.cachedPaperSet(exam),
       this.prisma.examAnswer.findMany({
         where: { attemptId: attempt.id },
         select: { questionId: true, answer: true },
       }),
     ]);
-    // Bacaan yang dirujuk soal — kirim sekali per kode.
-    const codes = [...new Set(questions.map((q) => q.passageCode).filter((c): c is string => !!c))];
-    const passages = codes.length
-      ? await this.prisma.assessmentPassage.findMany({ where: { assessmentId: exam.assessmentId, code: { in: codes } }, select: { code: true, content: true, media: true } })
-      : [];
+    const questions = set.questions;
+    const passages = set.passages;
     // Anti-bocor kunci: untuk JODOH, `pairs[].right` adalah jawaban benar —
     // jangan kirim ke siswa. Siswa hanya butuh `left` + pool `rights`.
     const sanitized = questions.map((q) => {
@@ -937,17 +1005,17 @@ export class CbtService {
   async saveAnswer(token: string, dto: AnswerDto) {
     const attempt = await this.attemptOrThrow(token);
     await this.ensureLive(attempt);
-    const exam = await this.prisma.exam.findUniqueOrThrow({ where: { id: attempt.examId } });
-    const q = await this.prisma.assessmentQuestion.findFirst({
-      where: { id: dto.questionId, OR: [{ examId: exam.id }, { assessmentId: exam.assessmentId, examId: null }] },
-    });
-    if (!q) throw new BadRequestException('Soal tidak dikenal.');
+    // Validasi soal dari cache — autosave adalah endpoint terpanas selama
+    // ujian (100+ siswa mengetuk jawaban terus-menerus); query exam+soal
+    // per autosave sebelumnya menggandakan beban DB tanpa manfaat.
+    const set = await this.cachedPaperSet(attempt.examId);
+    if (!set.ids.has(dto.questionId)) throw new BadRequestException('Soal tidak dikenal.');
     await this.prisma.examAnswer.upsert({
-      where: { attemptId_questionId: { attemptId: attempt.id, questionId: q.id } },
+      where: { attemptId_questionId: { attemptId: attempt.id, questionId: dto.questionId } },
       update: { answer: dto.answer === undefined ? Prisma.JsonNull : (dto.answer as Prisma.InputJsonValue) },
       create: {
         attemptId: attempt.id,
-        questionId: q.id,
+        questionId: dto.questionId,
         answer: dto.answer === undefined ? Prisma.JsonNull : (dto.answer as Prisma.InputJsonValue),
       },
     });
@@ -959,15 +1027,9 @@ export class CbtService {
   async saveAnswers(token: string, answers: Record<string, unknown>) {
     const attempt = await this.attemptOrThrow(token);
     await this.ensureLive(attempt);
-    const exam = await this.prisma.exam.findUniqueOrThrow({ where: { id: attempt.examId } });
-    const valid = new Set(
-      (
-        await this.prisma.assessmentQuestion.findMany({
-          where: await this.examQuestionWhere(exam),
-          select: { id: true },
-        })
-      ).map((q) => q.id),
-    );
+    // Himpunan id soal dari cache — flush sendBeacon seluruh jawaban ini
+    // datang serentak dari puluhan siswa saat sesi berakhir/ditutup.
+    const valid = (await this.cachedPaperSet(attempt.examId)).ids;
     const ops = Object.entries(answers ?? {})
       .filter(([qid]) => valid.has(qid))
       .map(([questionId, answer]) =>
@@ -1016,48 +1078,57 @@ export class CbtService {
       // Payload jawaban akhir dari perangkat — menang atas autosave yang
       // belum mendarat. Hanya soal paket ujian ini yang diterima.
       if (submitAnswers && typeof submitAnswers === 'object') {
+        // Merge in-memory — penulisan digabung ke batch penilaian di bawah
+        // (satu query multi-row). Upsert per-butir seperti sebelumnya berarti
+        // ~80+ roundtrip sequential per submit; saat 100+ siswa terkumpul
+        // serentak (atau auto-submit deadline bersamaan) itu mengunci pool
+        // koneksi DB berdetik-detik.
         const valid = new Set(questions.map((q) => q.id));
         for (const [questionId, answer] of Object.entries(submitAnswers)) {
           if (!valid.has(questionId)) continue;
-          const row = await tx.examAnswer.upsert({
-            where: { attemptId_questionId: { attemptId, questionId } },
-            update: { answer: answer == null ? Prisma.JsonNull : (answer as Prisma.InputJsonValue) },
-            create: {
-              attemptId,
-              questionId,
-              answer: answer == null ? Prisma.JsonNull : (answer as Prisma.InputJsonValue),
-            },
-          });
-          byQ.set(questionId, row);
+          const prev = byQ.get(questionId) as { answer: unknown } | undefined;
+          if (prev) prev.answer = answer;
+          else byQ.set(questionId, { answer } as never);
         }
       }
       let score = 0;
       let maxScore = 0;
+      const rows: { qid: string; answer: unknown; correct: boolean; score: number }[] = [];
       for (const q of questions) {
         maxScore += q.weight;
         const g = gradeAnswer(q.type, q.key, byQ.get(q.id)?.answer ?? null, q.weight);
         score += g.score;
-        await tx.examAnswer.upsert({
-          where: { attemptId_questionId: { attemptId, questionId: q.id } },
-          update: { isCorrect: g.isCorrect, score: g.score },
-          create: { attemptId, questionId: q.id, isCorrect: g.isCorrect, score: g.score },
-        });
+        rows.push({ qid: q.id, answer: byQ.get(q.id)?.answer ?? null, correct: g.isCorrect, score: g.score });
+      }
+      // Batch multi-row INSERT … ON CONFLICT — satu roundtrip per tabel,
+      // bukan 2× jumlah soal. jsonb_array_elements memastikan payload tetap
+      // ter-parameterisasi penuh (aman dari injection).
+      if (rows.length) {
+        const rowsJson = JSON.stringify(rows);
+        await tx.$executeRaw`
+          INSERT INTO exam_answers (id, attempt_id, question_id, answer, is_correct, score, created_at, updated_at)
+          SELECT gen_random_uuid(), ${attemptId}::uuid, (r->>'qid')::uuid, r->'answer',
+                 (r->>'correct')::boolean, (r->>'score')::int, now(), now()
+          FROM jsonb_array_elements(${rowsJson}::jsonb) AS r
+          ON CONFLICT (attempt_id, question_id) DO UPDATE SET
+            answer = EXCLUDED.answer,
+            is_correct = EXCLUDED.is_correct,
+            score = EXCLUDED.score,
+            updated_at = now()
+        `;
         // Salin ke StudentAnswer → analisis butir & input manual tetap terpusat.
-        await tx.studentAnswer.upsert({
-          where: { questionId_studentId: { questionId: q.id, studentId: attempt.studentId } },
-          update: {
-            answer: byQ.get(q.id)?.answer ?? Prisma.JsonNull,
-            isCorrect: g.isCorrect,
-            score: g.score,
-          },
-          create: {
-            questionId: q.id,
-            studentId: attempt.studentId,
-            answer: byQ.get(q.id)?.answer ?? Prisma.JsonNull,
-            isCorrect: g.isCorrect,
-            score: g.score,
-          },
-        });
+        const studentId = attempt.studentId;
+        await tx.$executeRaw`
+          INSERT INTO student_answers (id, question_id, student_id, answer, is_correct, score, created_at, updated_at)
+          SELECT gen_random_uuid(), (r->>'qid')::uuid, ${studentId}::uuid, r->'answer',
+                 (r->>'correct')::boolean, (r->>'score')::int, now(), now()
+          FROM jsonb_array_elements(${rowsJson}::jsonb) AS r
+          ON CONFLICT (question_id, student_id) DO UPDATE SET
+            answer = EXCLUDED.answer,
+            is_correct = EXCLUDED.is_correct,
+            score = EXCLUDED.score,
+            updated_at = now()
+        `;
       }
       // Skala ke maxScore asesmen → masuk buku nilai (Grade).
       const scale = attempt.exam.assessment.maxScore || 100;

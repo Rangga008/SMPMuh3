@@ -208,9 +208,12 @@ export class CbtController {
     return this.cbt.examPassages(id, u);
   }
 
-  /** Media gambar soal — publik agar <img> di aplikasi siswa langsung tampil. */
+  /** Media gambar soal — publik agar <img> di aplikasi siswa langsung tampil.
+   *  SkipThrottle: satu sesi diisi 100+ siswa dari 1 IP NAT — semua memuat
+   *  gambar soal serentak di awal ujian; throttle global akan memblokirnya. */
   @Get('media/qmedia/:file')
   @Public()
+  @SkipThrottle()
   async media(@Param('file') file: string, @Res() res: Response) {
     const f = await this.cbt.questionMedia(`qmedia/${file}`);
     res.setHeader('Content-Type', f.mime);
