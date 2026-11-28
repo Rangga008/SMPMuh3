@@ -95,7 +95,7 @@ function HistoryModal({ studentId, yearId, onClose }: { studentId: string; yearI
     <Modal open onClose={onClose} title={h ? `Riwayat Absen — ${h.student.name}` : 'Riwayat Absen'} size="xl">
       {!h ? <p className="py-6 text-center text-sm text-sand-400">Memuat…</p> : (
         <>
-          <div className="mb-4 grid grid-cols-5 gap-2 text-center">
+          <div className="mb-4 grid grid-cols-3 gap-2 text-center sm:grid-cols-5">
             {([['present', 'Hadir', 'text-emerald-700 bg-emerald-50'], ['sick', 'Sakit', 'text-sky-700 bg-sky-50'], ['permit', 'Izin', 'text-amber-700 bg-amber-50'], ['absent', 'Alfa', 'text-red-700 bg-red-50'], ['total', 'Hari tercatat', 'text-sand-700 bg-sand-100']] as const).map(([k, l, c]) => (
               <div key={k} className={`rounded-xl px-3 py-2 ${c}`}><div className="text-xl font-bold">{h.counts[k]}</div><div className="text-[11px] font-medium">{l}</div></div>
             ))}

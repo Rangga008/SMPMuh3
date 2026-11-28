@@ -1080,7 +1080,19 @@ export class OpsService {
         startMinute: s.startMinute, endMinute: s.endMinute, room: s.room,
       })))
       .sort((a, b) => a.startMinute - b.startMinute);
-    return { employee: emp, date, dayOfWeek: dow, sessions: today, year };
+    // Tandai sesi yang kelasnya sudah diabsen tanggal ini — absen siswa
+    // dicatat per kelas per tanggal, jadi satu kueri untuk semua sesi.
+    const classIds = [...new Set(today.map((t) => t.class.id))];
+    const takenRows = classIds.length
+      ? await this.prisma.attendanceRecord.findMany({
+          where: { classId: { in: classIds }, date },
+          select: { classId: true },
+          distinct: ['classId'],
+        })
+      : [];
+    const takenSet = new Set(takenRows.map((r) => r.classId));
+    const sessions = today.map((t) => ({ ...t, taken: takenSet.has(t.class.id) }));
+    return { employee: emp, date, dayOfWeek: dow, sessions, year };
   }
 
   /** Siswa satu kelas + status absen tanggal tsb — prefill PRESENT utk auto-absen. */

@@ -55,7 +55,6 @@ export default function UsPage() {
   const [modal, setModal] = useState<ExamRecord | 'new' | null>(null);
   const [docGrade, setDocGrade] = useState<number>(9);
   const [docBusy, setDocBusy] = useState(false);
-  const [gradeOpts, setGradeOpts] = useState<number[]>([7, 8, 9]);
   // Data administrasi siswa (kandidat US) — tabel + edit + kategori pasca-lulus.
   const [usData, setUsData] = useState<UsCandidates | null>(null);
   const [usLoading, setUsLoading] = useState(false);
@@ -63,6 +62,9 @@ export default function UsPage() {
   const [categories, setCategories] = useState<GraduationCategory[]>([]);
   const [editStu, setEditStu] = useState<(UsCandidate & { rombel: string }) | null>(null);
   const [catModal, setCatModal] = useState(false);
+  // Filter tampilan tabel: '' = semua rombel kelas 9, atau id rombel tertentu.
+  const [rombelFilter, setRombelFilter] = useState('');
+  const [usSearch, setUsSearch] = useState('');
 
   useEffect(() => {
     listAcademicYears()
@@ -77,9 +79,10 @@ export default function UsPage() {
   useEffect(() => {
     if (!yearId) return;
     listClasses(yearId).then((cs) => {
+      // Halaman ini khusus US kelas akhir — jenjang dikunci ke tingkat
+      // tertinggi yang ada (9 untuk SMP); kelas 7/8 memang tidak dimuat.
       const g = [...new Set(cs.map((c) => c.gradeLevel))].sort((a, b) => a - b);
-      if (g.length) setGradeOpts(g);
-      if (g.length && !g.includes(docGrade)) setDocGrade(Math.max(...g));
+      if (g.length) setDocGrade(Math.max(...g));
     }).catch(() => {});
   }, [yearId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -274,11 +277,10 @@ export default function UsPage() {
           <p className="text-sm font-bold text-sand-900">Dokumen US-1 / US-2</p>
           <p className="text-xs text-sand-500">US-1: daftar calon peserta per rombel · US-2: rekapitulasi jumlah peserta</p>
         </div>
-        <Field label="Jenjang" className="w-32">
-          <Select value={String(docGrade)} onChange={(e) => setDocGrade(Number(e.target.value))} searchable={false}>
-            {gradeOpts.map((g) => <option key={g} value={g}>Kelas {g}</option>)}
-          </Select>
-        </Field>
+        <div className="rounded-xl bg-primary-50 px-3 py-2 text-center">
+          <p className="text-[10px] font-bold uppercase tracking-wide text-primary-600">Jenjang</p>
+          <p className="text-sm font-extrabold text-primary-800">Kelas {docGrade}</p>
+        </div>
         <Button size="sm" variant="outline" onClick={() => void printUs('us1')} disabled={docBusy || !yearId}>🖨 Cetak US-1</Button>
         <Button size="sm" variant="outline" onClick={() => void printUs('us2')} disabled={docBusy || !yearId}>🖨 Cetak US-2</Button>
         <span className="grow" />
@@ -290,7 +292,28 @@ export default function UsPage() {
       {/* Data administrasi siswa kelas 9 — sesuai kolom buku induk US:
           NISN, NIS, Nama, L/P, Rombel, Agama, Ortu, TTL, Absen, Token/Kode,
           No Ijazah, TA rapor 7/8/9, status ijazah & transkrip, kelanjutan. */}
-      <Widget title={`Data Siswa Kelas ${docGrade} — ${usData ? `${usData.classes.reduce((a, c) => a + c.total, 0)} siswa` : '…'}`}>
+      <Widget
+        title={`Data Siswa Kelas ${docGrade} — ${usData ? `${usData.classes.reduce((a, c) => a + c.total, 0)} siswa` : '…'}`}
+        action={
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="w-40">
+              <Field label="Rombel">
+                <Select value={rombelFilter} onChange={(e) => setRombelFilter(e.target.value)} searchable={false}>
+                  <option value="">Semua Kelas {docGrade}</option>
+                  {(usData?.classes ?? []).map((c) => (
+                    <option key={c.id} value={c.id}>{c.name} ({c.total})</option>
+                  ))}
+                </Select>
+              </Field>
+            </div>
+            <div className="w-48">
+              <Field label="Cari siswa">
+                <Input type="search" value={usSearch} onChange={(e) => setUsSearch(e.target.value)} placeholder="Nama / NISN / NIS…" />
+              </Field>
+            </div>
+          </div>
+        }
+      >
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1450px] text-sm">
             <thead>
@@ -313,8 +336,19 @@ export default function UsPage() {
                 <tr><td colSpan={20} className="px-3 py-6 text-center text-sand-400">Memuat data siswa…</td></tr>
               ) : !usData?.classes.some((c) => c.students.length) ? (
                 <tr><td colSpan={20} className="px-3 py-6 text-center text-sand-400">Belum ada siswa di jenjang ini.</td></tr>
+              ) : !usData.classes.some((c) => (!rombelFilter || c.id === rombelFilter) && c.students.some((stu) => {
+                const q = usSearch.trim().toLowerCase();
+                return !q || `${stu.name} ${stu.nisn ?? ''} ${stu.nis ?? ''}`.toLowerCase().includes(q);
+              })) ? (
+                <tr><td colSpan={20} className="px-3 py-6 text-center text-sand-400">Tidak ada siswa cocok dengan filter.</td></tr>
               ) : (
-                usData.classes.map((c) => (
+                usData.classes
+                  .filter((c) => !rombelFilter || c.id === rombelFilter)
+                  .map((c) => ({ ...c, students: c.students.filter((stu) => {
+                    const q = usSearch.trim().toLowerCase();
+                    return !q || `${stu.name} ${stu.nisn ?? ''} ${stu.nis ?? ''}`.toLowerCase().includes(q);
+                  }) }))
+                  .map((c) => (
                   <Fragment key={c.id}>
                     <tr className="bg-sand-50">
                       <td colSpan={20} className="px-3 py-2 text-xs font-bold text-sand-700">
@@ -494,7 +528,7 @@ export default function UsPage() {
             }}
           >
             <p className="text-xs text-sand-500">{editStu.rombel} · NISN {editStu.nisn ?? '—'}</p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
               <Field label="No. Absen">
                 <Input name="absenceNo" type="number" min={1} defaultValue={editStu.absenceNo ?? ''} />
               </Field>

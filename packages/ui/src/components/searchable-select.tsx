@@ -87,6 +87,29 @@ export function SearchableSelect({
   const [hi, setHi] = useState(0);
   const wrapRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  // Posisi dropdown dihitung fixed — bebas dari clipping container overflow
+  // (modal scroll, tabel horizontal scroll) yang selama ini memotong menu.
+  const [dropPos, setDropPos] = useState<{ top: number; left: number; width: number; up: boolean } | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const r = inputRef.current?.getBoundingClientRect();
+      if (!r) return;
+      const below = window.innerHeight - r.bottom;
+      const up = below < 240 && r.top > below;
+      setDropPos({ top: up ? r.top : r.bottom, left: r.left, width: r.width, up });
+    };
+    place();
+    window.addEventListener('resize', place);
+    // capture=true — scroll di container mana pun (modal, tabel) tetap terpantau.
+    window.addEventListener('scroll', place, true);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
+  }, [open]);
 
   useEffect(() => {
     setText(shownText);
@@ -141,6 +164,7 @@ export function SearchableSelect({
     <div ref={wrapRef} className="relative" style={style}>
       {name ? <input type="hidden" name={name} value={val} /> : null}
       <input
+        ref={inputRef}
         type="text"
         role="combobox"
         aria-expanded={open}
@@ -190,11 +214,17 @@ export function SearchableSelect({
         }}
       />
       <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sand-400">▾</span>
-      {open ? (
+      {open && dropPos ? (
         <ul
           ref={listRef}
           role="listbox"
-          className="absolute z-40 mt-1 max-h-56 w-full overflow-auto rounded-xl border border-sand-200 bg-white py-1 shadow-lg"
+          style={{
+            position: 'fixed',
+            left: dropPos.left,
+            width: dropPos.width,
+            ...(dropPos.up ? { bottom: window.innerHeight - dropPos.top + 4 } : { top: dropPos.top + 4 }),
+          }}
+          className="z-[80] max-h-56 overflow-auto rounded-xl border border-sand-200 bg-white py-1 shadow-lg"
         >
           {rows.map((r, i) =>
             r.kind === 'group' ? (

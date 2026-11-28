@@ -542,7 +542,7 @@ export default function UjianPage() {
               ? <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800">Absen bebas: <b>{ranges.join(', ')}</b> — {a.freeAbsen.length} siswa belum dapat tempat.</p>
               : <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">Semua siswa kelas ini sudah duduk di periode ini.</p>;
           })()}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Dari absen" hint="Nomor absen pertama yang ditempatkan.">
               <Input type="number" min={1} value={assignFrom} onChange={(e) => setAssignFrom(e.target.value)} placeholder="1" />
             </Field>

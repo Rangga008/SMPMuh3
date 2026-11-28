@@ -269,7 +269,10 @@ export default function JadwalKerjaPage() {
         title="Jadwal Kerja Pegawai"
         subtitle="Aturan jam masuk, lokasi absen selfie, dan daftar shift — dikelola bidang Kurikulum"
         actions={
-          <Link href="/kurikulum/jadwal-kerja/penugasan" className="text-sm font-semibold text-primary-700 hover:text-primary-800">
+          <Link
+            href="/kurikulum/jadwal-kerja/penugasan"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-primary-700 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-primary-800"
+          >
             Penugasan Shift →
           </Link>
         }
@@ -279,63 +282,69 @@ export default function JadwalKerjaPage() {
 
       {canManage && settings && (
         <Widget title="Aturan Global & Lokasi Absen">
-          <form onSubmit={onSaveSettings} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Field label="Jam masuk (default)">
-              <Input type="time" name="workStart" required defaultValue={settings.workStart} />
-            </Field>
-            <Field label="Akhir jam kerja" hint="Absen masuk dibatasi sampai jam ini; jam pulang tersimpan maksimal jam ini">
-              <Input type="time" name="workEnd" required defaultValue={settings.workEnd ?? '15:00'} />
-            </Field>
-            <Field label="Toleransi telat (menit)">
-              <Input type="number" name="lateAfter" min={0} max={240} required defaultValue={settings.lateAfter} />
-            </Field>
-            <Field label="Boleh absen pulang mulai">
-              <Input type="time" name="checkOutFrom" required defaultValue={settings.checkOutFrom} />
-            </Field>
-            <Field label="Radius absen selfie (meter)">
-              <Input
-                type="number"
-                name="radiusM"
-                min={10}
-                max={5000}
-                required
-                value={mapRadius}
-                onChange={(e) => setMapRadius(Number(e.target.value) || 0)}
-              />
-            </Field>
-            <div className="sm:col-span-2 lg:col-span-3">
+          <form onSubmit={onSaveSettings}>
+            {/* Baris jam kerja — empat kolom rapi di desktop, susun di HP. */}
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <Field label="Jam masuk (default)">
+                <Input type="time" name="workStart" required defaultValue={settings.workStart} />
+              </Field>
+              <Field label="Akhir jam kerja" hint="Absen masuk dibatasi sampai jam ini">
+                <Input type="time" name="workEnd" required defaultValue={settings.workEnd ?? '15:00'} />
+              </Field>
+              <Field label="Toleransi telat (menit)">
+                <Input type="number" name="lateAfter" min={0} max={240} required defaultValue={settings.lateAfter} />
+              </Field>
+              <Field label="Boleh absen pulang mulai">
+                <Input type="time" name="checkOutFrom" required defaultValue={settings.checkOutFrom} />
+              </Field>
+            </div>
+            {/* Bagian lokasi — peta lebar di kiri, kontrol rapi di kanan. */}
+            <div className="mt-5 grid gap-4 lg:grid-cols-[1fr_260px]">
               <MapPicker
                 lat={mapLat}
                 lng={mapLng}
                 radiusM={mapRadius}
                 onPick={(la, ln) => { setMapLat(la); setMapLng(ln); }}
               />
-            </div>
-            <div className="grid gap-3">
-              <Field label="Latitude sekolah">
-                <Input
-                  name="schoolLat"
-                  value={mapLat ?? ''}
-                  onChange={(e) => setMapLat(e.target.value === '' ? null : Number(e.target.value))}
-                  placeholder="-6.9xxxx"
-                />
-              </Field>
-              <Field label="Longitude sekolah">
-                <Input
-                  name="schoolLng"
-                  value={mapLng ?? ''}
-                  onChange={(e) => setMapLng(e.target.value === '' ? null : Number(e.target.value))}
-                  placeholder="107.6xxxx"
-                />
-              </Field>
-              <Button type="button" variant="secondary" onClick={fillMyLocation}>
-                Pakai Lokasi Saya
-              </Button>
-              <label className="flex items-center gap-2 text-sm text-sand-700">
-                <input type="checkbox" name="autoDerive" defaultChecked={settings.autoDerive} />
-                Auto-derive
-              </label>
-              <Button type="submit" disabled={busy}>Simpan Pengaturan</Button>
+              <div className="grid content-start gap-3">
+                <Field label="Radius absen selfie (meter)">
+                  <Input
+                    type="number"
+                    name="radiusM"
+                    min={10}
+                    max={5000}
+                    required
+                    value={mapRadius}
+                    onChange={(e) => setMapRadius(Number(e.target.value) || 0)}
+                  />
+                </Field>
+                <div className="grid grid-cols-2 gap-2">
+                  <Field label="Latitude">
+                    <Input
+                      name="schoolLat"
+                      value={mapLat ?? ''}
+                      onChange={(e) => setMapLat(e.target.value === '' ? null : Number(e.target.value))}
+                      placeholder="-6.9xxxx"
+                    />
+                  </Field>
+                  <Field label="Longitude">
+                    <Input
+                      name="schoolLng"
+                      value={mapLng ?? ''}
+                      onChange={(e) => setMapLng(e.target.value === '' ? null : Number(e.target.value))}
+                      placeholder="107.6xxxx"
+                    />
+                  </Field>
+                </div>
+                <Button type="button" variant="secondary" size="sm" onClick={fillMyLocation}>
+                  📍 Pakai Lokasi Saya
+                </Button>
+                <label className="flex items-center gap-2 text-sm text-sand-700" title="Isi otomatis jam kerja dari jadwal mengajar">
+                  <input type="checkbox" name="autoDerive" defaultChecked={settings.autoDerive} />
+                  Auto-derive dari jadwal mengajar
+                </label>
+                <Button type="submit" disabled={busy}>{busy ? 'Menyimpan…' : 'Simpan Pengaturan'}</Button>
+              </div>
             </div>
           </form>
           <p className="mt-3 text-xs text-slate-500">
@@ -450,7 +459,7 @@ export default function JadwalKerjaPage() {
           <Field label="Nama shift">
             <Input name="name" required defaultValue={shiftModal === 'new' ? '' : (shiftModal as WorkShift)?.name} placeholder="Pagi / Siang / Malam" />
           </Field>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Jam masuk">
               <Input type="time" name="startTime" required defaultValue={shiftModal === 'new' ? '07:00' : minToHHMM((shiftModal as WorkShift)?.startMinute ?? 420)} />
             </Field>
@@ -458,7 +467,7 @@ export default function JadwalKerjaPage() {
               <Input type="time" name="endTime" required defaultValue={shiftModal === 'new' ? '15:00' : minToHHMM((shiftModal as WorkShift)?.endMinute ?? 900)} />
             </Field>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Boleh pulang mulai">
               <Input type="time" name="checkOutFrom" required defaultValue={shiftModal === 'new' ? '14:00' : minToHHMM((shiftModal as WorkShift)?.checkOutFrom ?? 840)} />
             </Field>

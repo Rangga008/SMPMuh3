@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
+import { Badge, Button, Field, Input, Modal } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
 import { DataTable } from '@/components/data-table';
 import { PageTitle, Widget } from '@/components/widgets';
@@ -212,9 +212,10 @@ export default function AbsensiPage() {
         open={Boolean(date)}
         onClose={() => setDate('')}
         title={`Entri Harian — ${date ? new Date(`${date}T12:00:00`).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : ''}`}
+        size="2xl"
       >
         <div className="mb-3 flex items-end gap-3">
-          <div className="w-64">
+          <div className="w-full max-w-64">
             <Field label="Cari pegawai">
               <Input
                 type="search"
@@ -225,93 +226,115 @@ export default function AbsensiPage() {
             </Field>
           </div>
         </div>
-        <DataTable
-          head={['Pegawai', 'Masuk', 'Pulang', 'Status', 'JP ngajar', 'Catatan']}
-          loading={loading}
-          error={null}
-          empty={employees.length === 0 ? 'Belum ada pegawai aktif.' : 'Tidak ada pegawai cocok dengan pencarian.'}
-        >
+        {loading ? <p className="py-6 text-center text-sm text-sand-400">Memuat data hari ini…</p> : null}
+        {/* Kartu per pegawai — menggantikan tabel 6 kolom yang sempit di modal:
+            chip status tak mungkin terpotong layout, nyaman diketuk di HP TU. */}
+        <ul className="grid gap-2">
           {employees
             .filter((e) => {
               const q = daySearch.trim().toLowerCase();
               return !q || `${e.name} ${e.nip ?? ''}`.toLowerCase().includes(q);
             })
             .map((e) => {
-            const r = rows[e.id] ?? { status: 'HADIR' as const, minutes: '', note: '' };
-            const rec = monthly.find((a) => a.employeeId === e.id && a.date.slice(0, 10) === date);
-            return (
-              <tr key={e.id}>
-                <td className="px-5 py-2.5">
-                  <p className="font-medium text-sand-900">{e.name}</p>
-                  <p className="text-[10px] text-sand-400">{e.nip ?? ''}{e.payScale?.name ? ` · ${e.payScale.name}` : ''}</p>
-                </td>
-                <td className="px-5 py-2.5 font-semibold text-sand-900">
-                  {rec?.checkInAt ? new Date(rec.checkInAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '—'}
-                </td>
-                <td className="px-5 py-2.5 font-semibold text-sand-900">
-                  {rec?.checkOutAt ? new Date(rec.checkOutAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '—'}
-                </td>
-                <td className="px-5 py-2.5">
-                  <Select
-                    aria-label={`Status ${e.name}`}
-                    value={r.status}
-                    disabled={!canManage}
-                    onChange={(ev) => {
-                      mark(e.id);
-                      setRows((prev) => ({
-                        ...prev,
-                        [e.id]: { ...r, status: ev.target.value as Row['status'] },
-                      }));
-                    }}
-                   searchable>
-                    {STATUSES.map((s) => (
-                      <option key={s} value={s}>{s}</option>
-                    ))}
-                  </Select>
-                </td>
-                <td className="px-5 py-2.5">
-                  <Input
-                    aria-label={`Menit ${e.name}`}
-                    type="number"
-                    min={0}
-                    placeholder="0"
-                    className="w-24"
-                    value={r.minutes}
-                    disabled={!canManage}
-                    onChange={(ev) => {
-                      mark(e.id);
-                      setRows((prev) => ({
-                        ...prev,
-                        [e.id]: { ...r, minutes: ev.target.value },
-                      }));
-                    }}
-                  />
-                </td>
-                <td className="px-5 py-2.5">
-                  <Input
-                    aria-label={`Catatan ${e.name}`}
-                    placeholder="opsional"
-                    value={r.note}
-                    disabled={!canManage}
-                    onChange={(ev) => {
-                      mark(e.id);
-                      setRows((prev) => ({
-                        ...prev,
-                        [e.id]: { ...r, note: ev.target.value },
-                      }));
-                    }}
-                  />
-                </td>
-              </tr>
-            );
-          })}
-        </DataTable>
+              const r = rows[e.id] ?? { status: 'HADIR' as const, minutes: '', note: '' };
+              const rec = monthly.find((a) => a.employeeId === e.id && a.date.slice(0, 10) === date);
+              const isDirty = dirty.has(e.id);
+              return (
+                <li
+                  key={e.id}
+                  className={`rounded-2xl border p-3 transition ${isDirty ? 'border-primary-300 bg-primary-50/40' : 'border-sand-200 bg-white'}`}
+                >
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-semibold text-sand-900">{e.name}</p>
+                      <p className="text-[10px] text-sand-400">{e.nip ?? ''}{e.payScale?.name ? ` · ${e.payScale.name}` : ''}</p>
+                    </div>
+                    <p className="text-xs font-semibold text-sand-700">
+                      {rec?.checkInAt ? new Date(rec.checkInAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '—'}
+                      {' — '}
+                      {rec?.checkOutAt ? new Date(rec.checkOutAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '—'}
+                    </p>
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5" role="radiogroup" aria-label={`Status ${e.name}`}>
+                    {STATUSES.map((st) => {
+                      const active = r.status === st;
+                      const tone = STATUS_TONE[st];
+                      return (
+                        <button
+                          key={st}
+                          type="button"
+                          disabled={!canManage}
+                          aria-pressed={active}
+                          onClick={() => {
+                            mark(e.id);
+                            setRows((prev) => ({ ...prev, [e.id]: { ...r, status: st } }));
+                          }}
+                          className={`rounded-lg px-2.5 py-1.5 text-[11px] font-extrabold tracking-wide transition disabled:opacity-50 ${
+                            active
+                              ? tone === 'primary'
+                                ? 'bg-primary-700 text-white shadow-sm'
+                                : tone === 'accent'
+                                  ? 'bg-amber-500 text-white shadow-sm'
+                                  : tone === 'danger'
+                                    ? 'bg-red-600 text-white shadow-sm'
+                                    : 'bg-sand-500 text-white shadow-sm'
+                              : 'bg-sand-100 text-sand-500 hover:bg-sand-200'
+                          }`}
+                        >
+                          {st}
+                        </button>
+                      );
+                    })}
+                    {isDirty ? <span className="ml-1 text-[10px] font-bold text-primary-600">● diubah</span> : null}
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <label className="flex items-center gap-1.5 text-xs text-sand-500">
+                      JP
+                      <input
+                        aria-label={`JP ngajar ${e.name}`}
+                        type="number"
+                        min={0}
+                        placeholder="0"
+                        value={r.minutes}
+                        disabled={!canManage}
+                        onChange={(ev) => {
+                          mark(e.id);
+                          setRows((prev) => ({ ...prev, [e.id]: { ...r, minutes: ev.target.value } }));
+                        }}
+                        className="h-8 w-16 rounded-lg border border-sand-300 bg-white px-2 text-center text-sm font-semibold text-sand-800 disabled:opacity-50"
+                      />
+                    </label>
+                    <input
+                      aria-label={`Catatan ${e.name}`}
+                      placeholder="Catatan (opsional)"
+                      value={r.note}
+                      disabled={!canManage}
+                      onChange={(ev) => {
+                        mark(e.id);
+                        setRows((prev) => ({ ...prev, [e.id]: { ...r, note: ev.target.value } }));
+                      }}
+                      className="h-8 min-w-0 flex-1 rounded-lg border border-sand-300 bg-white px-2.5 text-xs text-sand-800 disabled:opacity-50"
+                    />
+                  </div>
+                </li>
+              );
+            })}
+        </ul>
+        {!loading && employees.length > 0 && !employees.some((e) => {
+          const q = daySearch.trim().toLowerCase();
+          return !q || `${e.name} ${e.nip ?? ''}`.toLowerCase().includes(q);
+        }) ? (
+          <p className="py-6 text-center text-sm text-sand-400">Tidak ada pegawai cocok dengan pencarian.</p>
+        ) : null}
+        {!loading && employees.length === 0 ? (
+          <p className="py-6 text-center text-sm text-sand-400">Belum ada pegawai aktif.</p>
+        ) : null}
         {canManage ? (
           <>
             <p className="mt-3 text-[11px] text-sand-400">
               JP ngajar terisi otomatis dari jadwal hari itu saat disimpan (dikonversi {lessonMin} mnt = 1 JP) — isi manual hanya untuk koreksi (mis. guru pengganti).
             </p>
-            <div className="mt-2 flex justify-end">
+            <div className="sticky bottom-0 -mx-5 mt-2 flex justify-end border-t border-sand-100 bg-white px-5 pb-1 pt-3">
               <Button size="sm" onClick={save} disabled={busy}>{busy ? 'Menyimpan…' : 'Simpan Perubahan'}</Button>
             </div>
           </>

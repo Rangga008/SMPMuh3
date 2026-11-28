@@ -195,7 +195,7 @@ export default function JadwalKelasPage() {
           <Field label="Nama blok" hint="Ishoma, Pembiasaan, Istirahat, Upacara, dll">
             <Input name="label" required placeholder="Ishoma" />
           </Field>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Hari (rutin mingguan)">
               <Select name="day" defaultValue="1" searchable>
                 <option value="">— tanggal spesifik —</option>
@@ -206,7 +206,7 @@ export default function JadwalKelasPage() {
               <Input name="date" type="date" />
             </Field>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Mulai"><Input name="start" type="time" required defaultValue="12:00" /></Field>
             <Field label="Selesai"><Input name="end" type="time" required defaultValue="13:00" /></Field>
           </div>

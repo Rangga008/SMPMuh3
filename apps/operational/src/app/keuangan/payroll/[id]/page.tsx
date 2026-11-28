@@ -266,7 +266,7 @@ export default function PayrollRunPage() {
                   if (ei) ei.value = clamp(y, m, eDay);
                 }} />
             </Field>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Absen mulai">
                 <Input name="periodStart" type="date" defaultValue={run.periodStart?.slice(0, 10) ?? ''} />
               </Field>

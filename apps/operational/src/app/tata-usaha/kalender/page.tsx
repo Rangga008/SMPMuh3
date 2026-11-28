@@ -307,7 +307,7 @@ export default function KalenderAkademikPage() {
         title={evModal === 'new' ? 'Tambah Event' : 'Edit Event'}
       >
         <form className="grid gap-4" onSubmit={onSaveEvent}>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Tanggal">
               <Input
                 type="date"

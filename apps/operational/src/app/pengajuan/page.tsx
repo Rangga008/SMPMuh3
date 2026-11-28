@@ -105,7 +105,7 @@ export default function PengajuanPage() {
             setModal(false); load();
           } catch (err) { setError(err instanceof Error ? err.message : 'Gagal mengirim.'); } finally { setBusy(false); }
         }}>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Bidang">
               <Select name="department" searchable>{DEPTS.map((d) => <option key={d} value={d}>{d}</option>)}</Select>
             </Field>

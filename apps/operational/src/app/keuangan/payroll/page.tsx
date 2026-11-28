@@ -135,7 +135,7 @@ export default function PayrollPage() {
                 if (ei) ei.value = clamp(y, m, cycle.end);
               }} />
           </Field>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Absen mulai" hint={`Siklus: tgl ${cycle.start}`}>
               <Input name="periodStart" type="date" />
             </Field>

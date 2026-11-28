@@ -123,9 +123,9 @@ export default function AbsenPage() {
       new Promise<GeolocationPosition>((ok, no) =>
         navigator.geolocation.getCurrentPosition(ok, no, o));
     try {
-      return await ask({ enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });
+      return await ask({ enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 });
     } catch {
-      return ask({ enableHighAccuracy: false, timeout: 20000, maximumAge: 300000 });
+      return ask({ enableHighAccuracy: false, timeout: 20000, maximumAge: 30000 });
     }
   };
 
@@ -449,7 +449,7 @@ export default function AbsenPage() {
               </p>
             </>
           ) : (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Dari tanggal"><Input name="date" type="date" required defaultValue={todayIso} /></Field>
               <Field label="Sampai (kosong = 1 hari)"><Input name="endDate" type="date" /></Field>
             </div>

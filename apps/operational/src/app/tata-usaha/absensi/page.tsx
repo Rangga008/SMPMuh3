@@ -338,7 +338,7 @@ export default function AbsensiPegawaiPage() {
               ? 'Tap ini dicatat sebagai absen PULANG — dipakai bila pegawai lupa absen pulang.'
               : 'Tap ini dicatat sebagai absen MASUK — menentukan status HADIR/TELAT hari itu.'}
           </p>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Tanggal">
               <Input type="date" name="mdate" required defaultValue={date} />
             </Field>
