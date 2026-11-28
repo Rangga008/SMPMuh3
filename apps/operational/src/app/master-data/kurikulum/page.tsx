@@ -96,7 +96,7 @@ export default function KurikulumDataPage() {
                 <RowBtn tone="neutral" type="button" onClick={async () => setEditing(c)}>
                   Edit
                 </RowBtn>
-                <RowBtn tone="danger" type="button" onClick={async () => { if (!confirm(`Hapus kurikulum ${c.name}?`)) return; void run(() => deleteCurriculum(c.id), `Kurikulum ${c.name} dihapus.`); }}>
+                <RowBtn tone="danger" type="button" onClick={async () => { if (!(await confirm(`Hapus kurikulum ${c.name}?`))) return; void run(() => deleteCurriculum(c.id), `Kurikulum ${c.name} dihapus.`); }}>
                   Hapus
                 </RowBtn>
               </div>

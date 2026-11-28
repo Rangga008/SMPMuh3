@@ -146,7 +146,7 @@ export default function TahunAjaranPage() {
                   Edit
                 </RowBtn>
                 {!y.isActive ? (
-                  <RowBtn tone="danger" type="button" onClick={async () => { if (!confirm(`Hapus tahun ajaran ${y.name}?`)) return; void run( () => deleteAcademicYear(y.id), `Tahun ajaran ${y.name} dihapus.`, ); }}>
+                  <RowBtn tone="danger" type="button" onClick={async () => { if (!(await confirm(`Hapus tahun ajaran ${y.name}?`))) return; void run( () => deleteAcademicYear(y.id), `Tahun ajaran ${y.name} dihapus.`, ); }}>
                     Hapus
                   </RowBtn>
                 ) : null}

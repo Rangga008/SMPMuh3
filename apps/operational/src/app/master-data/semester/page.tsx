@@ -134,7 +134,7 @@ export default function SemesterPage() {
                 <RowBtn tone="neutral" type="button" onClick={async () => setEditing(s)}>
                   Edit
                 </RowBtn>
-                <RowBtn tone="danger" type="button" onClick={async () => { if (!confirm(`Hapus semester ${s.name} (${s.academicYear?.name ?? ''})?`)) return; void run(() => deleteSemester(s.id), `Semester ${s.name} dihapus.`); }}>
+                <RowBtn tone="danger" type="button" onClick={async () => { if (!(await confirm(`Hapus semester ${s.name} (${s.academicYear?.name ?? ''})?`))) return; void run(() => deleteSemester(s.id), `Semester ${s.name} dihapus.`); }}>
                   Hapus
                 </RowBtn>
               </div>

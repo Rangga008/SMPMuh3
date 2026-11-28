@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
+import { useConfirm } from '@/components/confirm-dialog';
 import { DataTable } from '@/components/data-table';
 import { PageTitle } from '@/components/widgets';
 import { rowActionClasses } from '@/components/row-btn';
@@ -63,6 +64,7 @@ function JenisModal({
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [manage, setManage] = useState(false);
+  const { confirm, dialog: confirmDialog } = useConfirm();
   useEffect(() => { me().then((u) => setManage(u.permissions.includes(PERMISSIONS.SARPRAS_MANAGE))).catch(() => undefined); }, []);
 
   const load = useCallback(() => {
@@ -195,8 +197,8 @@ function JenisModal({
                           <button
                             type="button"
                             className={rowActionClasses('danger')}
-                            onClick={() => {
-                              if (confirm(`Hapus jenis "${t.label}"?`)) {
+                            onClick={async () => {
+                              if (await confirm(`Hapus jenis "${t.label}"?`)) {
                                 act(() => deleteSaranaType(t.id), 'Jenis dihapus.');
                               }
                             }}
@@ -216,6 +218,7 @@ function JenisModal({
           </tbody>
         </table></div>
       </div>
+      {confirmDialog}
     </Modal>
   );
 }
@@ -341,6 +344,7 @@ function SaranaForm({
 }
 
 export default function SaranaPage() {
+  const { confirm, dialog } = useConfirm();
   const [rows, setRows] = useState<SaranaItem[]>([]);
   const [types, setTypes] = useState<SaranaType[]>([]);
   const [classes, setClasses] = useState<ClassView[]>([]);
@@ -380,7 +384,7 @@ export default function SaranaPage() {
   });
 
   const remove = async (r: SaranaItem) => {
-    if (!confirm(`Hapus sarana "${r.type.label}" di ${r.location ?? '—'}?`)) return;
+    if (!(await confirm(`Hapus sarana "${r.type.label}" di ${r.location ?? '—'}?`))) return;
     try {
       await deleteSarana(r.id);
       setNotice('Sarana dihapus.');
@@ -456,6 +460,7 @@ export default function SaranaPage() {
       {edit ? (
         <SaranaForm item={edit} types={types} classes={classes} onSaved={() => { setEdit(null); load(); }} onClose={() => setEdit(null)} />
       ) : null}
+          {dialog}
     </Shell>
   );
 }

@@ -199,6 +199,7 @@ export interface ProgramSubmissionView {
   rab?: { name: string; qty: number; unit: string; price: number; amount: number }[] | null;
   amountTotal: number; status: 'PENDING' | 'APPROVED' | 'REJECTED';
   fileName?: string | null; mimeType?: string | null; reviewNote?: string | null; createdAt: string;
+  submittedBy?: string | null;
 }
 export const listSubmissions = (q: { department?: string | undefined; status?: string | undefined }) =>
   req<ProgramSubmissionView[]>(`/ops/submissions${qs(q)}`);
@@ -214,6 +215,8 @@ export const createSubmission = (dto: { department: string; kind: string; title:
 export const reviewSubmission = (id: string, action: 'APPROVED' | 'REJECTED', note?: string) =>
   req(`/ops/submissions/${id}/review`, { method: 'PATCH', json: { action, note } });
 export const submissionFileUrl = (id: string) => `/api/v1/ops/submissions/${id}/file`;
+export const deleteSubmission = (id: string) =>
+  req(`/ops/submissions/${id}`, { method: 'DELETE' });
 
 export interface ArchiveItemView {
   id: string; title: string; refNumber?: string | null; date?: string | null;

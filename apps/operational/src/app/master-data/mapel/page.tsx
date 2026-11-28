@@ -95,7 +95,7 @@ export default function MapelPage() {
                 <RowBtn tone="neutral" type="button" onClick={async () => setEditing(s)}>
                   Edit
                 </RowBtn>
-                <RowBtn tone="danger" type="button" onClick={async () => { if (!confirm(`Hapus mapel ${s.name} (${s.code})?`)) return; void run(() => deleteSubject(s.id), `Mapel ${s.name} dihapus.`); }}>
+                <RowBtn tone="danger" type="button" onClick={async () => { if (!(await confirm(`Hapus mapel ${s.name} (${s.code})?`))) return; void run(() => deleteSubject(s.id), `Mapel ${s.name} dihapus.`); }}>
                   Hapus
                 </RowBtn>
               </div>

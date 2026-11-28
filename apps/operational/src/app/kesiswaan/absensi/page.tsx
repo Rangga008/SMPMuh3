@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
+import { useConfirm } from '@/components/confirm-dialog';
 import { PageTitle, Widget } from '@/components/widgets';
 import { ApiError, listAcademicYears, listClasses, listStudents, type ClassView } from '@/lib/api';
 import type { StudentDto } from '@smpmuh3/types';
@@ -124,6 +125,7 @@ function HistoryModal({ studentId, yearId, onClose }: { studentId: string; yearI
 
 // ================================ HALAMAN ================================
 export default function AbsensiPage() {
+  const { confirm, dialog } = useConfirm();
   const [tab, setTab] = useState<'harian' | 'laporan'>('harian');
   const [years, setYears] = useState<{ id: string; name: string; isActive: boolean }[]>([]);
   const [yearId, setYearId] = useState('');
@@ -267,8 +269,12 @@ export default function AbsensiPage() {
                                   {c.taken ? 'Detail / Revisi' : 'Absen Sekarang'}
                                 </Button>
                                 {c.taken ? (
-                                  <Button size="sm" variant="outline" onClick={() => {
-                                    if (!window.confirm(`Hapus seluruh absen ${c.name} tanggal ${date}?`)) return;
+                                  <Button size="sm" variant="outline" onClick={async () => {
+                                    if (!(await confirm({
+                                      title: `Hapus seluruh absen ${c.name} tanggal ${date}?`,
+                                      body: 'Semua catatan kehadiran siswa kelas itu di tanggal tersebut ikut terhapus permanen.',
+                                      confirmLabel: 'Ya, hapus',
+                                    }))) return;
                                     clearClassAttendance(c.classId, date)
                                       .then(() => { setNotice(`Absen ${c.name} tanggal itu dihapus.`); loadOverview(); })
                                       .catch((e) => setError(e instanceof ApiError ? e.message : 'Gagal menghapus.'));
@@ -429,6 +435,7 @@ export default function AbsensiPage() {
 
       {editor ? <ClassEditor classId={editor.classId} className={editor.name} date={date} takenBy={editor.takenBy} onClose={() => setEditor(null)} onSaved={() => { setEditor(null); setNotice('Absensi tersimpan.'); loadOverview(); }} /> : null}
       {hist ? <HistoryModal studentId={hist} yearId={yearId} onClose={() => setHist(null)} /> : null}
+          {dialog}
     </Shell>
   );
 }

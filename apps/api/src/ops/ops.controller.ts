@@ -430,6 +430,11 @@ export class OpsController {
   review(@Param('id') id: string, @Body() dto: ReviewDto, @CurrentUser() u: AuthUser) {
     return this.ops.reviewSubmission(id, dto.action, dto.note, u.id);
   }
+  @Delete('submissions/:id')
+  @RequirePermission(PERMISSIONS.EMPLOYEE_READ)
+  deleteSubmission(@Param('id') id: string, @CurrentUser() u: AuthUser) {
+    return this.ops.deleteSubmission(id, u);
+  }
   @Get('submissions/:id/file')
   @RequirePermission(PERMISSIONS.EMPLOYEE_READ)
   async submissionFile(@Param('id') id: string, @Res() res: Response, @CurrentUser() u: AuthUser) {

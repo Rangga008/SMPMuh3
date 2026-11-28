@@ -14,7 +14,7 @@ import {
 import { Badge, Button, Field, Input, Modal, Select, Textarea } from '@smpmuh3/ui';
 import { RpInput } from '@/components/rp-input';
 import { Shell } from '@/components/shell';
-import { useConfirm } from '@/components/confirm-dialog';
+import { useConfirm, usePrompt } from '@/components/confirm-dialog';
 import { PageTitle, Widget } from '@/components/widgets';
 import {
   bulkPromote,
@@ -60,6 +60,7 @@ export default function AdminRegistrationPage() {
   const [modal, setModal] = useState<'invoice' | 'plan' | null>(null);
   const [questions, setQuestions] = useState<FormQuestionDto[]>([]);
   const { confirm, dialog } = useConfirm();
+  const { prompt, dialog: promptDialog } = usePrompt();
   const allowedTargets: RegistrationStatus[] = reg ? [...(STAFF_TRANSITIONS[reg.status] ?? [])] : [];
 
   const refresh = useCallback(async () => {
@@ -186,8 +187,17 @@ export default function AdminRegistrationPage() {
     setError(null);
     let note: string | undefined;
     if (action === 'reject') {
-      note = window.prompt('Alasan penolakan pembayaran:') ?? '';
-      if (!note) return;
+      const n = await prompt({
+        title: 'Tolak pembayaran ini?',
+        body: 'Pembayaran ditolak — tagihan kembali terbuka dan wali murid diminta membayar ulang.',
+        label: 'Alasan penolakan',
+        placeholder: 'mis. Bukti transfer tidak terbaca / nominal tidak sesuai…',
+        required: true,
+        multiline: true,
+        confirmLabel: 'Lanjut',
+      });
+      if (n === null || !n.trim()) return;
+      note = n.trim();
     }
     const ok = await confirm({
       title:
@@ -673,6 +683,7 @@ export default function AdminRegistrationPage() {
         </form>
       </Modal>
       {dialog}
+      {promptDialog}
     </Shell>
   );
 }

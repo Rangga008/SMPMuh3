@@ -7,7 +7,7 @@ import { PageTitle, Widget } from '@/components/widgets';
 import { DataTable } from '@/components/data-table';
 import { RowBtn } from '@/components/row-btn';
 import { FilePick } from '@/components/file-pick';
-import { useConfirm } from '@/components/confirm-dialog';
+import { useConfirm, usePrompt } from '@/components/confirm-dialog';
 import {
   createArchiveCategory, deleteArchive, deleteArchiveCategory, listArchiveCategories, listArchives,
   updateArchive, updateArchiveCategory, uploadArchive,
@@ -19,6 +19,7 @@ import { useFileViewer } from '@/components/file-viewer';
  *  hanya melihat arsip bidangnya). Dipakai halaman arsip tiap bidang. */
 export function ArchivePanel({ section, title, subtitle }: { section: ArchiveSection; title: string; subtitle: string }) {
   const { confirm, dialog } = useConfirm();
+  const { prompt, dialog: promptDialog } = usePrompt();
   const fv = useFileViewer();
   const [cats, setCats] = useState<Awaited<ReturnType<typeof listArchiveCategories>>>([]);
   const [rows, setRows] = useState<ArchiveItemView[]>([]);
@@ -72,6 +73,7 @@ export function ArchivePanel({ section, title, subtitle }: { section: ArchiveSec
           </div>
         } />
       {dialog}
+      {promptDialog}
       {fv.viewer}
       {error ? <p className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p> : null}
       {notice ? <p className="mb-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{notice}</p> : null}
@@ -120,7 +122,14 @@ export function ArchivePanel({ section, title, subtitle }: { section: ArchiveSec
               <span className="text-xs text-sand-400">{c._count.items} arsip</span>
               <button type="button" className="text-xs font-bold text-primary-700 hover:underline"
                 onClick={async () => {
-                  const name = window.prompt('Ubah nama kategori:', c.name)?.trim();
+                  const renamed = await prompt({
+                    title: 'Ubah nama kategori',
+                    label: 'Nama kategori',
+                    defaultValue: c.name,
+                    required: true,
+                    confirmLabel: 'Simpan',
+                  });
+                  const name = renamed?.trim();
                   if (!name || name === c.name) return;
                   try { await updateArchiveCategory(c.id, name); setNotice('Kategori diubah.'); load(); }
                   catch (err) { setError(err instanceof Error ? err.message : 'Gagal.'); }

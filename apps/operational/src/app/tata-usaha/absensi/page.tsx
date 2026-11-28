@@ -22,7 +22,7 @@ import {
   type EmployeeDto,
   type LeaveRequestView,
 } from '@/lib/api';
-import { useConfirm } from '@/components/confirm-dialog';
+import { useConfirm, usePrompt } from '@/components/confirm-dialog';
 
 const STATUS_TONE: Record<string, 'primary' | 'accent' | 'neutral' | 'danger'> = {
   HADIR: 'primary',
@@ -52,6 +52,7 @@ const fmtLeaveDate = (iso: string) =>
 
 export default function AbsensiPegawaiPage() {
   const { confirm, dialog } = useConfirm();
+  const { prompt, dialog: promptDialog } = usePrompt();
   const [canManage, setCanManage] = useState(false);
   const [canApprove, setCanApprove] = useState(false);
   const [leaves, setLeaves] = useState<LeaveRequestView[]>([]);
@@ -99,7 +100,14 @@ export default function AbsensiPegawaiPage() {
         loadLeaves(); loadDaily();
       } catch (e) { setError(e instanceof Error ? e.message : 'Gagal menyetujui.'); }
     } else {
-      const note = window.prompt(`Alasan penolakan izin ${l.employee?.name}? (opsional — kosongkan lalu OK untuk langsung menolak)`);
+      const note = await prompt({
+        title: `Tolak izin ${l.employee?.name}?`,
+        body: `${LEAVE_CAT[l.category]} — ${span}. Alasan opsional — kosongkan bila tidak perlu.`,
+        label: 'Alasan penolakan',
+        placeholder: 'mis. Tidak ada pengganti hari itu…',
+        confirmLabel: 'Lanjut',
+        multiline: true,
+      });
       if (note === null) return;
       if (!(await confirm({ title: `Tolak izin ${l.employee?.name}?`, body: `${LEAVE_CAT[l.category]} — ${span}.`, confirmLabel: 'Tolak' }))) return;
       try {
@@ -149,6 +157,7 @@ export default function AbsensiPegawaiPage() {
         subtitle="Rekap absen selfie harian semua pegawai — jam kerja & lokasi diatur bidang Kurikulum"
       />
       {dialog}
+      {promptDialog}
       {error ? <p role="alert" className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</p> : null}
       {notice ? <p role="status" className="mb-4 rounded-xl bg-primary-50 px-4 py-3 text-sm font-medium text-primary-800">{notice}</p> : null}
 
@@ -252,7 +261,12 @@ export default function AbsensiPegawaiPage() {
               disabled={busy}
               title="Hitung ulang rekap semua hari dari log mentah — dipakai setelah jadwal/shift diubah"
               onClick={async () => {
-                if (!window.confirm('Hitung ulang rekap SEMUA tanggal dari log mentah? Status izin/sakit manual tetap dipertahankan.')) return;
+                if (!(await confirm({
+                  title: 'Hitung ulang rekap SEMUA tanggal dari log mentah?',
+                  body: 'Status izin/sakit manual tetap dipertahankan — dipakai setelah jadwal/shift diubah.',
+                  confirmLabel: 'Ya, hitung ulang',
+                  danger: false,
+                }))) return;
                 setBusy(true);
                 try {
                   const r = await rederiveAttendance();
@@ -306,8 +320,12 @@ export default function AbsensiPegawaiPage() {
                       <RowBtn
                         tone="danger"
                         type="button"
-                        onClick={() => {
-                          if (!window.confirm(`Clear absen ${r.employee.name} tanggal ${date}? Rekap & log ikut terhapus.`)) return;
+                        onClick={async () => {
+                          if (!(await confirm({
+                            title: `Clear absen ${r.employee.name} tanggal ${date}?`,
+                            body: 'Rekap & log mentah ikut terhapus permanen.',
+                            confirmLabel: 'Ya, hapus',
+                          }))) return;
                           clearEmployeeDay(r.employee.id, date)
                             .then(() => { setNotice(`Absen ${r.employee.name} di tanggal itu dihapus.`); loadDaily(); })
                             .catch((er) => setError(er instanceof Error ? er.message : 'Gagal menghapus.'));

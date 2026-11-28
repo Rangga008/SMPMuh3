@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
+import { useConfirm } from '@/components/confirm-dialog';
 import { PageTitle, Widget } from '@/components/widgets';
 import { DataTable } from '@/components/data-table';
 import {
@@ -16,6 +17,7 @@ import { listAcademicYears, listClasses, type AcademicYear, type ClassView } fro
 import { printHtml, esc } from '@/lib/print';
 
 function SeatTable({ seats, roomName, roomId, onChanged }: { seats: ExamSeatView[]; roomName: string; roomId: string; onChanged: () => void }) {
+  const { confirm, dialog: seatConfirm } = useConfirm();
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState<Record<string, boolean | null>>({});
   const val = (s: ExamSeatView) => (s.id in tick ? tick[s.id] : s.present ?? null);
@@ -70,7 +72,7 @@ function SeatTable({ seats, roomName, roomId, onChanged }: { seats: ExamSeatView
               <td className="py-1.5 pr-4 font-mono text-xs text-sand-500">{s.code ?? '—'}</td>
               <td className="py-1.5 text-right">
                 <button type="button" className="text-xs font-semibold text-red-500 hover:text-red-700" onClick={async () => {
-                  if (!window.confirm(`Keluarkan ${s.student.name} dari ${roomName}?`)) return;
+                  if (!(await confirm(`Keluarkan ${s.student.name} dari ${roomName}?`))) return;
                   try { await removeExamSeat(s.id); onChanged(); } catch (err) { setError(err instanceof Error ? err.message : 'Gagal.'); }
                 }}>Keluarkan</button>
               </td>
@@ -78,11 +80,13 @@ function SeatTable({ seats, roomName, roomId, onChanged }: { seats: ExamSeatView
           ))}
         </tbody>
       </table></div>
+      {seatConfirm}
     </>
   );
 }
 
 export default function UjianPage() {
+  const { confirm, dialog } = useConfirm();
   const [years, setYears] = useState<AcademicYear[]>([]);
   const [classes, setClasses] = useState<ClassView[]>([]);
   const [yearId, setYearId] = useState('');
@@ -362,7 +366,11 @@ export default function UjianPage() {
                 <div className="flex flex-wrap gap-1.5">
                   <Button size="sm" variant="outline" onClick={() => setEditRoom(r)}>Edit</Button>
                   <Button size="sm" variant="outline" className="text-red-600" onClick={async () => {
-                    if (!window.confirm(`Hapus ruang ${r.name}? Semua peserta ikut terhapus.`)) return;
+                    if (!(await confirm({
+                      title: `Hapus ruang ${r.name}?`,
+                      body: 'Semua peserta yang sudah ditempatkan di ruang ini ikut terhapus.',
+                      confirmLabel: 'Ya, hapus',
+                    }))) return;
                     try { await deleteExamRoom(r.id); setNotice('Ruang dihapus.'); load(); }
                     catch (err) { setError(err instanceof Error ? err.message : 'Gagal menghapus.'); }
                   }}>Hapus</Button>
@@ -568,6 +576,7 @@ export default function UjianPage() {
           <p className="text-xs text-sand-500">Pecah satu kelas ke beberapa ruang: mis. absen 1–15 di ruang ini, lalu 16–30 (atau kosong = sisa) di ruang berikutnya — siswa yang sudah duduk dilewati otomatis, tak ada duplikat. Nomor peserta lanjut antar ruang.</p>
         </div>
       </Modal>
+          {dialog}
     </Shell>
   );
 }

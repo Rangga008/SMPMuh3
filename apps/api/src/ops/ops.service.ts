@@ -1701,6 +1701,21 @@ export class OpsService {
     });
   }
 
+  /** Hapus pengajuan — pemilik hanya selagi PENDING; pengelola kapan saja. */
+  async deleteSubmission(id: string, u: { id: string; permissions: string[] }) {
+    const sub = await this.prisma.programSubmission.findUniqueOrThrow({ where: { id } });
+    const manage = u.permissions.includes('academic.manage');
+    if (!manage) {
+      if (sub.submittedBy !== u.id) throw new ForbiddenException('Pengajuan ini bukan milik Anda.');
+      if (sub.status !== 'PENDING') throw new ConflictException('Pengajuan yang sudah direview tidak bisa dihapus.');
+    }
+    if (sub.storageKey) {
+      try { await this.storage.deleteObject(sub.storageKey); } catch { /* objek hilang — lanjut */ }
+    }
+    await this.prisma.programSubmission.delete({ where: { id } });
+    return { ok: true };
+  }
+
   async submissionFile(id: string, u: { id: string; permissions: string[] }) {
     const sub = await this.prisma.programSubmission.findUniqueOrThrow({ where: { id } });
     if (!sub.storageKey) throw new NotFoundException('Tidak ada berkas.');

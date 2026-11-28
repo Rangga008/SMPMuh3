@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Badge, Button, Field, Input, Modal, Select } from '@smpmuh3/ui';
 import { Shell } from '@/components/shell';
+import { useConfirm } from '@/components/confirm-dialog';
 import { DataTable } from '@/components/data-table';
 import { PageTitle } from '@/components/widgets';
 import { rowActionClasses } from '@/components/row-btn';
@@ -132,6 +133,7 @@ function PrasaranaForm({
 }
 
 export default function PrasaranaPage() {
+  const { confirm, dialog } = useConfirm();
   const [rows, setRows] = useState<Prasarana[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -158,7 +160,7 @@ export default function PrasaranaPage() {
   });
 
   const remove = async (r: Prasarana) => {
-    if (!confirm(`Hapus ruang "${r.name}"?`)) return;
+    if (!(await confirm(`Hapus ruang "${r.name}"?`))) return;
     try {
       await deletePrasarana(r.id);
       setNotice('Ruang dihapus.');
@@ -227,6 +229,7 @@ export default function PrasaranaPage() {
       {edit ? (
         <PrasaranaForm item={edit} onSaved={() => { setEdit(null); load(); }} onClose={() => setEdit(null)} />
       ) : null}
+          {dialog}
     </Shell>
   );
 }

@@ -7,8 +7,10 @@ import { PageTitle, Widget } from '@/components/widgets';
 import { DataTable } from '@/components/data-table';
 import { useConfirm } from '@/components/confirm-dialog';
 import { FilePick } from '@/components/file-pick';
-import { createSubmission, listSubmissions, reviewSubmission, type ProgramSubmissionView } from '@/lib/api-ops';
+import { createSubmission, deleteSubmission, listSubmissions, reviewSubmission, type ProgramSubmissionView } from '@/lib/api-ops';
 import { useFileViewer } from '@/components/file-viewer';
+import { me } from '@/lib/api';
+import { PERMISSIONS } from '@smpmuh3/types';
 
 const KINDS = ['RKS', 'PROKER', 'RENCANA', 'REALISASI'];
 const DEPTS = ['KURIKULUM', 'KESISWAAN', 'TATA_USAHA', 'KEUANGAN', 'LAINNYA'];
@@ -26,6 +28,18 @@ export default function PengajuanPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // Review lewat modal proper (bukan prompt/confirm native) — aksi + catatan.
+  const [review, setReview] = useState<{ sub: ProgramSubmissionView; action: 'APPROVED' | 'REJECTED' } | null>(null);
+  const [reviewNote, setReviewNote] = useState('');
+  const [myId, setMyId] = useState('');
+  const [canManage, setCanManage] = useState(false);
+
+  useEffect(() => {
+    me().then((u) => {
+      setMyId(u.id);
+      setCanManage(u.permissions.includes(PERMISSIONS.ACADEMIC_MANAGE));
+    }).catch(() => undefined);
+  }, []);
 
   const load = useCallback(() => {
     listSubmissions({ department: fDept || undefined, status: fStatus || undefined }).then(setRows).catch(() => {});
@@ -66,27 +80,101 @@ export default function PengajuanPage() {
               <td className="px-5 py-2.5 text-right font-semibold">{s.amountTotal ? rp(s.amountTotal) : '—'}</td>
               <td className="px-5 py-2.5"><Badge tone={TONE[s.status]}>{s.status === 'PENDING' ? 'Menunggu' : s.status === 'APPROVED' ? 'Disetujui' : 'Ditolak'}</Badge></td>
               <td className="px-5 py-2.5 text-right">
-                {s.status === 'PENDING' ? (
-                  <span className="flex justify-end gap-2">
-                    <button className="text-xs font-bold text-emerald-700" onClick={async () => {
-                      const note = prompt('Catatan persetujuan (opsional):') ?? undefined;
-                      if (await confirm(`Setujui "${s.title}"?`)) {
-                        await reviewSubmission(s.id, 'APPROVED', note); load(); setNotice('Disetujui.');
-                      }
-                    }}>Setujui</button>
-                    <button className="text-xs font-bold text-red-600" onClick={async () => {
-                      const note = prompt('Alasan penolakan:') ?? undefined;
-                      if (await confirm(`Tolak "${s.title}"?`)) {
-                        await reviewSubmission(s.id, 'REJECTED', note); load(); setNotice('Ditolak.');
-                      }
-                    }}>Tolak</button>
-                  </span>
-                ) : null}
+                <span className="flex justify-end gap-2">
+                  {s.status === 'PENDING' && canManage ? (
+                    <>
+                      <button
+                        type="button"
+                        className="text-xs font-bold text-emerald-700 hover:underline"
+                        onClick={() => { setReviewNote(''); setReview({ sub: s, action: 'APPROVED' }); }}
+                      >Setujui</button>
+                      <button
+                        type="button"
+                        className="text-xs font-bold text-red-600 hover:underline"
+                        onClick={() => { setReviewNote(''); setReview({ sub: s, action: 'REJECTED' }); }}
+                      >Tolak</button>
+                    </>
+                  ) : null}
+                  {(canManage || (s.status === 'PENDING' && s.submittedBy === myId)) ? (
+                    <button
+                      type="button"
+                      className="text-xs font-bold text-sand-500 hover:text-red-600 hover:underline"
+                      onClick={async () => {
+                        if (!(await confirm({
+                          title: `Hapus pengajuan "${s.title}"?`,
+                          body: 'Lampiran yang terunggah ikut terhapus permanen.',
+                          confirmLabel: 'Ya, hapus',
+                        }))) return;
+                        try {
+                          await deleteSubmission(s.id);
+                          setNotice('Pengajuan dihapus.');
+                          load();
+                        } catch (err) { setError(err instanceof Error ? err.message : 'Gagal menghapus.'); }
+                      }}
+                    >Hapus</button>
+                  ) : null}
+                </span>
               </td>
             </tr>
           ))}
         </DataTable>
       </Widget>
+
+      {/* Modal review — pengganti prompt()+confirm() native: catatan
+          persetujuan/penolakan diisi di sini, warna tombol mengikuti aksi. */}
+      <Modal
+        open={review !== null}
+        onClose={() => setReview(null)}
+        title={review ? `${review.action === 'APPROVED' ? 'Setujui' : 'Tolak'} — "${review.sub.title}"` : ''}
+        size="md"
+      >
+        {review ? (
+          <form
+            className="grid gap-4"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setBusy(true); setError(null);
+              try {
+                await reviewSubmission(review.sub.id, review.action, reviewNote.trim() || undefined);
+                setNotice(review.action === 'APPROVED' ? 'Pengajuan disetujui.' : 'Pengajuan ditolak.');
+                setReview(null);
+                load();
+              } catch (err) {
+                setError(err instanceof Error ? err.message : 'Gagal menyimpan review.');
+              } finally { setBusy(false); }
+            }}
+          >
+            <div className="rounded-xl bg-sand-50 px-3 py-2 text-xs text-sand-600">
+              {review.sub.kind} · {review.sub.department}
+              {review.sub.amountTotal ? ` · RAB ${rp(review.sub.amountTotal)}` : ''}
+            </div>
+            <Field label={review.action === 'APPROVED' ? 'Catatan persetujuan (opsional)' : 'Alasan penolakan'}>
+              <textarea
+                value={reviewNote}
+                onChange={(e) => setReviewNote(e.target.value)}
+                rows={3}
+                autoFocus
+                required={review.action === 'REJECTED'}
+                placeholder={review.action === 'APPROVED' ? 'mis. Disetujui sesuai RAB…' : 'mis. Anggaran belum tersedia semester ini…'}
+                className="w-full rounded-xl border border-sand-300 bg-white px-3 py-2 text-sm text-sand-800"
+              />
+            </Field>
+            {review.action === 'REJECTED' ? (
+              <p className="-mt-2 text-[11px] text-sand-400">Alasan wajib diisi — ditampilkan ke pengaju sebagai catatan KS.</p>
+            ) : null}
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={() => setReview(null)}>Batal</Button>
+              <Button
+                type="submit"
+                variant={review.action === 'REJECTED' ? 'danger' : 'primary'}
+                disabled={busy || (review.action === 'REJECTED' && !reviewNote.trim())}
+              >
+                {busy ? 'Menyimpan…' : review.action === 'APPROVED' ? 'Ya, setujui' : 'Ya, tolak'}
+              </Button>
+            </div>
+          </form>
+        ) : null}
+      </Modal>
 
       <Modal open={modal} onClose={() => setModal(false)} title="Pengajuan Baru">
         <form className="grid gap-4" onSubmit={async (e) => {
